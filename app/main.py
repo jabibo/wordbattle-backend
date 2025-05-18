@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from app.routers import users, games, moves
+from app.routers import users, games, moves, gameplay
+from app import auth
 
 app = FastAPI(
     title="Scrabble Backend API",
@@ -14,3 +15,5 @@ async def root():
 app.include_router(users.router)
 app.include_router(games.router)
 app.include_router(moves.router)
+app.include_router(gameplay.router)
+app.include_router(auth.router)
