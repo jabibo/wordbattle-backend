@@ -2,19 +2,23 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.database import SessionLocal
 from app.models import Game, User
+import uuid
+import json
 
 client = TestClient(app)
 
 def test_join_deal_exchange():
     db = SessionLocal()
 
-    # Setup: User + Game
-    user = User(username="testspieler", hashed_password="test")
+    # Setup: User + Game mit eindeutiger ID
+    unique_name = f"testspieler_{uuid.uuid4().hex[:6]}"
+    user = User(username=unique_name, hashed_password="test")
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    game = Game(id="game123", state="[]", current_player_id=user.id)
+    game_id = f"game_{uuid.uuid4().hex[:6]}"
+    game = Game(id=game_id, state=json.dumps([[None]*15 for _ in range(15)]), current_player_id=user.id)
     db.add(game)
     db.commit()
 
