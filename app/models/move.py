@@ -1,0 +1,10 @@
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from app.database import Base
+
+class Move(Base):
+    __tablename__ = "moves"
+    id = Column(Integer, primary_key=True, index=True)
+    game_id = Column(String, ForeignKey("games.id"))
+    player_id = Column(Integer, ForeignKey("users.id"))
+    move_data = Column(String)
+    timestamp = Column(DateTime(timezone=True))

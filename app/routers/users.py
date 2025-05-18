@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from app.models import User
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_db
+from sqlalchemy.future import select
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -11,14 +12,14 @@ class RegisterUser(BaseModel):
     password: str
 
 @router.post("/register")
-async def register(user: RegisterUser, db: AsyncSession = Depends(get_db)):
-    # Dummy-Erstellung, echte Logik sollte Passwörter hashen
-    existing = await db.execute(
-        "SELECT * FROM users WHERE username = :u", {"u": user.username}
-    )
-    if existing.first():
-        raise HTTPException(status_code=400, detail="User exists")
+def register(user: RegisterUser, db: Session = Depends(get_db)):
+    result = db.execute(select(User).where(User.username == user.username))
+    existing_user = result.scalars().first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
+
     new_user = User(username=user.username, hashed_password=user.password)
     db.add(new_user)
-    await db.commit()
-    return {"message": "User registered"}
+    db.commit()
+    db.refresh(new_user)
+    return {"message": "Benutzer erfolgreich registriert", "id": new_user.id}
