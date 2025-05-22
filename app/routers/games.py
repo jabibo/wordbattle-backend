@@ -148,12 +148,12 @@ def pass_turn(game_id: str,
     
     # Record the pass as an empty move
     from app.models import Move
-    from datetime import datetime
+    from datetime import datetime, timezone
     move_entry = Move(
         game_id=game_id,
         player_id=current_user.id,
         move_data=json.dumps([]),  # Empty move data indicates a pass
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(move_entry)
     

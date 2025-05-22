@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models import Game, Player, Move
 from app.config import GAME_INACTIVE_DAYS
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 def check_game_completion(game_id: str, db: Session) -> Tuple[bool, Optional[Dict]]:
     """
@@ -57,7 +57,7 @@ def check_game_completion(game_id: str, db: Session) -> Tuple[bool, Optional[Dic
     
     # Check for inactivity
     last_move = db.query(Move).filter(Move.game_id == game_id).order_by(Move.timestamp.desc()).first()
-    if last_move and (datetime.utcnow() - last_move.timestamp) > timedelta(days=GAME_INACTIVE_DAYS):
+    if last_move and (datetime.now(timezone.utc) - last_move.timestamp) > timedelta(days=GAME_INACTIVE_DAYS):
         return True, {
             "reason": "inactivity",
             "scores": {p.user_id: p.score for p in players},
@@ -109,7 +109,7 @@ def finalize_game(game_id: str, db: Session) -> Dict:
             "board": board,
             "completed": True,
             "completion_data": completion_data,
-            "completed_at": datetime.utcnow().isoformat()
+            "completed_at": datetime.now(timezone.utc).isoformat()
         }
         game.state = json.dumps(game_state)
         game.current_player_id = None  # No current player in completed game

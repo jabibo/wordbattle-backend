@@ -8,6 +8,6 @@ engine = create_engine(
     # Only use check_same_thread for SQLite
     connect_args={} if not DATABASE_URL.startswith("sqlite") else {"check_same_thread": False}
 )
-
+print(f"Using database: {DATABASE_URL}")
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()

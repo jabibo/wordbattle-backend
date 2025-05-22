@@ -4,7 +4,7 @@ from app.database import SessionLocal
 from app.models import User, Game, Player, Move
 import uuid
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 
 client = TestClient(app)
 
@@ -214,7 +214,7 @@ def test_game_completion_inactivity():
         
         # Manually update the timestamp of the last move to be 8 days ago
         last_move = db.query(Move).filter(Move.game_id == game_id).first()
-        last_move.timestamp = datetime.utcnow() - timedelta(days=8)
+        last_move.timestamp = datetime.now(timezone.utc) - timedelta(days=8)
         db.commit()
         
         # Check game completion
