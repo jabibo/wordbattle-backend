@@ -5,7 +5,7 @@ from app.models import Game, Move, Player
 from pydantic import BaseModel
 from typing import List
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from app.game_logic.board_utils import apply_move_to_board
 from app.game_logic.full_points import calculate_full_move_points
 from app.game_logic.validate_move import validate_move
@@ -98,7 +98,7 @@ def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db), cur
         game_id=game_id,
         player_id=current_user.id,
         move_data=json.dumps([m.model_dump() for m in move.move_data]),
-        timestamp=datetime.utcnow()
+        timestamp=datetime.now(timezone.utc)
     )
     db.add(move_entry)
     # Punkte berechnen + Spielerpunkte erhöhen
@@ -136,10 +136,3 @@ def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db), cur
         response["completion_data"] = completion_data
     
     return response
-
-    return {
-        "message": "Zug erfolgreich",
-        "points": result["total"],
-        "words": result["words"],
-        "new_state": new_board
-    }
