@@ -9,6 +9,7 @@ from datetime import datetime
 from app.game_logic.board_utils import apply_move_to_board
 from app.game_logic.full_points import calculate_full_move_points
 from app.game_logic.validate_move import validate_move
+from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
 
 router = APIRouter(prefix="/games", tags=["moves"])
@@ -17,7 +18,8 @@ MULTIPLIERS = {
     (0, 0): "WW", (7, 7): "WW", (1, 5): "WL", (2, 2): "BL"
 }
 
-DICTIONARY = {"HALLO", "WELT", "DU", "ICH", "TAG", "TAGE", "TEST"}
+from app.wordlist import load_wordlist
+DICTIONARY = load_wordlist()
 
 LETTER_POINTS = {
     'A': 1, 'B': 3, 'C': 4, 'D': 1, 'E': 1, 'F': 4, 'G': 2, 'H': 2, 'I': 1,
@@ -34,7 +36,7 @@ class MoveCreate(BaseModel):
     move_data: List[MoveLetter]
 
 @router.post("/{game_id}/move")
-def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db)):
+def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
@@ -66,7 +68,7 @@ def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db)):
 
     move_entry = Move(
         game_id=game_id,
-        player_id=1,
+        player_id=current_user.id,
         move_data=json.dumps([m.dict() for m in move.move_data]),
         timestamp=datetime.utcnow()
     )
