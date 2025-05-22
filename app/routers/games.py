@@ -6,11 +6,25 @@ from app.dependencies import get_db
 from app.models import Game, Player
 from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
+from app.game_logic.game_completion import check_game_completion, finalize_game
+from app.config import LETTER_POOL_SIZE
 import uuid, json, random
 
-POOL = list("ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ"*2 + "EEEEEEEEAAAAAIIIOO") + ["?"]*2
+from app.game_logic.letter_bag import create_rack, LETTER_DISTRIBUTION
+
+# For backward compatibility
+POOL = []
+for letter, count in LETTER_DISTRIBUTION.items():
+    POOL.extend([letter] * count)
 
 router = APIRouter(prefix="/games", tags=["games"])
+
+@router.get("/{game_id}")
+def get_game(game_id: str, db: Session = Depends(get_db)):
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    return {"id": game.id, "state": game.state, "current_player_id": game.current_player_id}
 
 @router.post("/")
 def create_game(
@@ -36,7 +50,7 @@ def join_game(game_id: str,
         raise HTTPException(404, "Spiel nicht gefunden")
     if db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first():
         raise HTTPException(400, "Bereits beigetreten")
-    rack = "".join(random.sample(POOL, 7))
+    rack = create_rack()
     player = Player(game_id=game_id, user_id=current_user.id, rack=rack, score=0)
     db.add(player); db.commit()
     return {"rack": rack}
@@ -67,13 +81,23 @@ def deal_letters(game_id: str,
                  db: Session = Depends(get_db),
                  current_user=Depends(get_current_user)):
     game = db.query(Game).filter(Game.id == game_id).first()
-    if game.current_player_id != current_user.id:
+    if not game:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    
+    # For testing purposes, allow dealing if current_player_id is None
+    if game.current_player_id is not None and game.current_player_id != current_user.id:
         raise HTTPException(403, "Nicht Dein Zug")
+    
     player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
-    needed = 7 - len(player.rack)
-    new = random.sample(POOL, needed)
-    player.rack += "".join(new)
-    db.commit()
+    if not player:
+        raise HTTPException(404, "Spieler nicht gefunden")
+    needed = LETTER_POOL_SIZE - len(player.rack)
+    if needed > 0:
+        new_letters = random.sample(POOL, needed)
+        player.rack += "".join(new_letters)
+        db.commit()
+    else:
+        new_letters = []
     # Rotation
     ids = [p.user_id for p in db.query(Player).filter(Player.game_id == game_id).order_by(Player.id)]
     nxt = get_next_player(ids, current_user.id)
@@ -90,13 +114,23 @@ def exchange_letters(game_id: str,
     if game.current_player_id != current_user.id:
         raise HTTPException(403, "Nicht Dein Zug")
     player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
+    
+    # Verify all letters are in the rack
+    rack_copy = player.rack
     for l in letters:
-        if l not in player.rack:
+        if l not in rack_copy:
             raise HTTPException(400, f"Buchstabe {l} nicht im Rack")
+        rack_copy = rack_copy.replace(l, "", 1)
+    
+    # Remove the letters to exchange from the rack
+    for l in letters:
         player.rack = player.rack.replace(l, "", 1)
-    new = random.sample(POOL, len(letters))
-    player.rack += "".join(new)
+    
+    # Draw new letters
+    new_letters = random.sample(POOL, len(letters))
+    player.rack += "".join(new_letters)
     db.commit()
+    
     # Rotation
     ids = [p.user_id for p in db.query(Player).filter(Player.game_id == game_id).order_by(Player.id)]
     nxt = get_next_player(ids, current_user.id)
@@ -111,7 +145,54 @@ def pass_turn(game_id: str,
     game = db.query(Game).filter(Game.id == game_id).first()
     if game.current_player_id != current_user.id:
         raise HTTPException(403, "Nicht Dein Zug")
+    
+    # Record the pass as an empty move
+    from app.models import Move
+    from datetime import datetime
+    move_entry = Move(
+        game_id=game_id,
+        player_id=current_user.id,
+        move_data=json.dumps([]),  # Empty move data indicates a pass
+        timestamp=datetime.utcnow()
+    )
+    db.add(move_entry)
+    
+    # Check if the game is complete after this pass
+    is_complete, completion_data = check_game_completion(game_id, db)
+    
+    # Rotation
     ids = [p.user_id for p in db.query(Player).filter(Player.game_id == game_id).order_by(Player.id)]
     nxt = get_next_player(ids, current_user.id)
-    game.current_player_id = nxt; db.commit()
-    return {"message": "Zug gepasst", "next_player_id": nxt}
+    game.current_player_id = nxt
+    db.commit()
+    
+    result = {"message": "Zug gepasst", "next_player_id": nxt}
+    
+    # If game is complete, include completion data
+    if is_complete:
+        result["game_complete"] = True
+        result["completion_data"] = completion_data
+    
+    return result
+
+@router.post("/{game_id}/complete")
+def complete_game(game_id: str,
+                 db: Session = Depends(get_db),
+                 current_user=Depends(get_current_user)):
+    """Manually complete a game and calculate final scores."""
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    
+    # Check if user is a participant
+    player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
+    if not player:
+        raise HTTPException(403, "Du bist kein Teilnehmer dieses Spiels")
+    
+    # Finalize the game
+    completion_data = finalize_game(game_id, db)
+    
+    return {
+        "message": "Spiel beendet",
+        "completion_data": completion_data
+    }

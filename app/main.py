@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.routers import users, games, moves, profile
+from app.routers import users, games, moves, profile, rack
 from app import auth
 
 app = FastAPI(
@@ -17,3 +17,4 @@ app.include_router(games.router)
 app.include_router(moves.router)
 app.include_router(auth.router)
 app.include_router(profile.router)
+app.include_router(rack.router)

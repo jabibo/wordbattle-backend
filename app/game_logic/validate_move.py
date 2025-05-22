@@ -9,6 +9,12 @@ def validate_move(
     if not move_letters:
         return False, "Kein Buchstabe gelegt."
 
+    # Prüfe: Koordinaten sind innerhalb des Spielfelds
+    board_size = len(board)
+    for r, c, _ in move_letters:
+        if r < 0 or r >= board_size or c < 0 or c >= board_size:
+            return False, f"Koordinaten ({r},{c}) außerhalb des Spielfelds."
+
     # Prüfe: Nur eine Zeile oder Spalte
     rows = {r for r, c, l in move_letters}
     cols = {c for r, c, l in move_letters}
@@ -37,7 +43,7 @@ def validate_move(
         for r, c, _ in move_letters:
             for dr, dc in [(-1,0), (1,0), (0,-1), (0,1)]:
                 rr, cc = r + dr, c + dc
-                if 0 <= rr < 15 and 0 <= cc < 15 and board[rr][cc]:
+                if 0 <= rr < board_size and 0 <= cc < board_size and board[rr][cc]:
                     adjacent = True
         if not adjacent:
             return False, "Zug muss an bestehendem Wort angrenzen."
