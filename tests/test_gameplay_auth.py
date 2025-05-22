@@ -6,12 +6,12 @@ import json
 client = TestClient(app)
 
 def test_join_deal_exchange_authenticated():
-    username = f"user_{uuid.uuid4().hex[:6]}"
-    password = "testpass"
+    username = f"authuser_{uuid.uuid4().hex[:6]}"
+    password = "secret"
 
-    # Registrierung
-    reg = client.post("/users/register", json={"username": username, "password": password})
-    assert reg.status_code in (200, 400)
+    # Registrierung via API
+    register = client.post("/users/register", json={"username": username, "password": password})
+    assert register.status_code in (200, 400)
 
     # Token holen
     token_res = client.post("/auth/token", data={"username": username, "password": password})
@@ -19,9 +19,7 @@ def test_join_deal_exchange_authenticated():
     token = token_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Spiel erstellen
-    game_id = f"game_{uuid.uuid4().hex[:6]}"
-    board = json.dumps([[None]*15 for _ in range(15)])
+        # Spiel erstellen
     res = client.post("/games/")
     assert res.status_code == 200
     game_id = res.json()["id"]
