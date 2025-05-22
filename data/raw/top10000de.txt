@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Fehlerseite</title>
+
+
+        <!-- FA-Icons -->
+        <link rel="stylesheet" type="text/css" href="https://wortschatz.uni-leipzig.de/public/css/font-awesome.min.css" />
+        <!-- Bootstrap -->
+        <link rel="stylesheet" type="text/css" href="https://wortschatz.uni-leipzig.de/public/css/bootstrap.min.css" />
+        <link rel="stylesheet" type="text/css" href="https://wortschatz.uni-leipzig.de/public/css/style.css" />
+        
+        <link rel="shortcut icon" type="image/x-icon" href="https://wortschatz.uni-leipzig.de/public/images/favicon.ico" />
+        
+            </head>
+    <body>
+        <div class="wrapper center">
+            <div class="col-md-6 col-sm-8 col-md-offset-3 col-sm-offset-2">
+                <div id="header">
+                    <h1>Wortschatz</h1>
+                </div>
+                <h2>Es ist ein Fehler aufgetreten</h2>
+                <div>404</div>
+                
+                <a href="https://wortschatz.uni-leipzig.de/de">Zurück zur Startseite</a>
+            </div>
+        </div>
+        
+        
+
+        <script src="https://wortschatz.uni-leipzig.de/public/js/jquery.min.js"></script>
+        <script src="https://wortschatz.uni-leipzig.de/public/js/bootstrap.min.js"></script>
+    </body>
+</html>
