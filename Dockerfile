@@ -15,11 +15,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
-# Make wait script executable
-RUN chmod +x wait-for-postgres.sh
-
 # Create data directory
 RUN mkdir -p /app/data
 
 # Expose port
 EXPOSE 8000
+
+# Make sure DATABASE_URL is set correctly
+ENV DATABASE_URL=postgresql://postgres:postgres@db:5432/wordbattle
