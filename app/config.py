@@ -1,12 +1,12 @@
 import os
 from dotenv import load_dotenv
+import urllib.parse
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Database settings
-# DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./wordbattle.db")
-DATABASE_URL="postgresql://postgres:delta42%@localhost:5432/wordbattle"
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@db:5432/wordbattle")
 
 # Security settings
 SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
