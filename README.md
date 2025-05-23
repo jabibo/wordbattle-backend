@@ -1,5 +1,7 @@
 # WordBattle Backend
 
+[![Coverage](https://img.shields.io/badge/coverage-83%25-green.svg)](https://github.com/yourusername/wordbattle-backend)
+
 A FastAPI backend for a multiplayer word game similar to Scrabble.
 
 ## Environment Variables
