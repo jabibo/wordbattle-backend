@@ -161,3 +161,4 @@ def test_score_accumulation():
     
     finally:
         db.close()
+

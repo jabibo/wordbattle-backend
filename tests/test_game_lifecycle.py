@@ -138,3 +138,4 @@ def test_game_state_transitions():
     # Try to start again (should fail)
     start_again = client.post(f"/games/{game_id}/start", headers=headers)
     assert start_again.status_code == 400
+
