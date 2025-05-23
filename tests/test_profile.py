@@ -1,3 +1,4 @@
+from tests.test_utils import get_test_token
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
@@ -14,7 +15,7 @@ def test_me_and_my_games():
     assert res.status_code in (200, 400)
 
     # Token holen
-    token = client.post("/auth/token", data={"username": username, "password": password}).json()["access_token"]
+    token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
 
     # /me
@@ -25,3 +26,4 @@ def test_me_and_my_games():
     # Skip the games/mine test since it's causing issues
     # This test is passing in the other tests that use the same functionality
     assert True
+

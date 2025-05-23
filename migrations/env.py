@@ -9,7 +9,7 @@ from app.config import DATABASE_URL
 from app.models import Base
 
 # Import all models to ensure they're registered with Base.metadata
-from app.models import User, Game, Player, Move
+from app.models import User, Game, Player, Move, WordList
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -23,7 +23,10 @@ if config.config_file_name is not None:
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+
+# Use raw string to avoid interpolation issues with % character
+raw_url = DATABASE_URL.replace('%', '%%')
+config.set_main_option("sqlalchemy.url", raw_url)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
