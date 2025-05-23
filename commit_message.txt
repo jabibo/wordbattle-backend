@@ -1,0 +1,10 @@
+Add multi-language wordlist support
+
+- Added WordList model for storing words by language
+- Created database migration for wordlists table
+- Updated game state to include language information
+- Modified move validation to use the correct language dictionary
+- Added endpoints to get/set the language for a game
+- Added admin API for managing wordlists
+- Added documentation for multi-language support
+- Fixed tests to work with the new functionality

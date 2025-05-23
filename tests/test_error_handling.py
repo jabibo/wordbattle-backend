@@ -1,3 +1,4 @@
+from tests.test_utils import get_test_token
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
@@ -12,7 +13,7 @@ def test_invalid_game_id():
     password = "testpass"
     
     client.post("/users/register", json={"username": username, "password": password})
-    token = client.post("/auth/token", data={"username": username, "password": password}).json()["access_token"]
+    token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
     # Test with non-existent game ID
@@ -47,7 +48,7 @@ def test_invalid_move_data():
     password = "testpass"
     
     client.post("/users/register", json={"username": username, "password": password})
-    token = client.post("/auth/token", data={"username": username, "password": password}).json()["access_token"]
+    token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
     game_id = client.post("/games/").json()["id"]

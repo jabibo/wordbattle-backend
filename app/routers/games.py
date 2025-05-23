@@ -196,3 +196,62 @@ def complete_game(game_id: str,
         "message": "Spiel beendet",
         "completion_data": completion_data
     }
+
+@router.get("/{game_id}/language")
+def get_game_language(
+    game_id: str,
+    db: Session = Depends(get_db)
+):
+    """Get the language used for a game."""
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    
+    # Get language from game state
+    state = json.loads(game.state)
+    language = state.get("language", "de")  # Default to German if not specified
+    
+    return {"language": language}
+
+@router.post("/{game_id}/language")
+def set_game_language(
+    game_id: str,
+    language: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """Set the language for a game."""
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    
+    # Check if user is a participant
+    player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
+    if not player:
+        raise HTTPException(403, "Du bist kein Teilnehmer dieses Spiels")
+    
+    # Check if game has already started
+    if game.current_player_id:
+        raise HTTPException(400, "Spiel bereits gestartet")
+    
+    # Check if language exists in the database
+    from app.models import WordList
+    count = db.query(WordList).filter(WordList.language == language).count()
+    if count == 0:
+        raise HTTPException(404, f"Sprache '{language}' nicht gefunden")
+    
+    # Update game state with language
+    state = json.loads(game.state)
+    if isinstance(state, list):
+        # Convert old format to new format
+        state = {
+            "board": state,
+            "language": language
+        }
+    else:
+        state["language"] = language
+    
+    game.state = json.dumps(state)
+    db.commit()
+    
+    return {"language": language}

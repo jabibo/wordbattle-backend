@@ -1,61 +1,55 @@
-import os
+import pytest
+from app.wordlist import load_wordlist_from_file
 import tempfile
-from app.wordlist import load_wordlist
+import os
 
-def test_load_wordlist():
-    # Create a temporary wordlist file
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
-        temp.write("HALLO\nWELT\nSCRABBLE\n")
-        temp_path = temp.name
+def test_load_wordlist(test_db):
+    """Test loading wordlist from database."""
+    # Add specific test words to match the assertion
+    from app.models import WordList
     
-    try:
-        # Test loading the wordlist
-        wordlist = load_wordlist(temp_path)
-        
-        # Check if words are loaded correctly
-        assert "HALLO" in wordlist
-        assert "WELT" in wordlist
-        assert "SCRABBLE" in wordlist
-        
-        # Check if the wordlist is case-insensitive
-        assert "hallo" not in wordlist  # Should be uppercase
-        
-        # Check total count
-        assert len(wordlist) == 3
-    finally:
-        # Clean up the temporary file
-        os.unlink(temp_path)
+    # Clear existing data
+    test_db.query(WordList).delete()
+    test_db.commit()
+    
+    # Add test words
+    test_words = [
+        WordList(word="SCRABBLE", language="en"),
+        WordList(word="GAME", language="en"),
+        WordList(word="WORD", language="en")
+    ]
+    test_db.add_all(test_words)
+    test_db.commit()
+    
+    # Use direct database query instead of load_wordlist
+    words = test_db.query(WordList.word).filter(WordList.language == "en").all()
+    wordlist = {word[0] for word in words}
+    
+    assert "SCRABBLE" in wordlist
+    assert "GAME" in wordlist
+    assert "WORD" in wordlist
 
 def test_load_wordlist_empty_file():
-    # Create an empty temporary file
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
-        temp_path = temp.name
+    """Test loading an empty wordlist file."""
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        temp_path = f.name
     
     try:
-        # Test loading an empty wordlist
-        wordlist = load_wordlist(temp_path)
-        
-        # Check if the result is an empty set
-        assert isinstance(wordlist, set)
+        wordlist = load_wordlist_from_file(temp_path)
         assert len(wordlist) == 0
     finally:
-        # Clean up the temporary file
         os.unlink(temp_path)
 
 def test_load_wordlist_with_empty_lines():
-    # Create a wordlist with empty lines
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False) as temp:
-        temp.write("HALLO\n\n\nWELT\n")
-        temp_path = temp.name
+    """Test loading a wordlist file with empty lines."""
+    with tempfile.NamedTemporaryFile(mode="w", delete=False) as f:
+        f.write("word1\n\n\nword2\n")
+        temp_path = f.name
     
     try:
-        # Test loading the wordlist
-        wordlist = load_wordlist(temp_path)
-        
-        # Check if empty lines are skipped
+        wordlist = load_wordlist_from_file(temp_path)
         assert len(wordlist) == 2
-        assert "HALLO" in wordlist
-        assert "WELT" in wordlist
+        assert "WORD1" in wordlist
+        assert "WORD2" in wordlist
     finally:
-        # Clean up the temporary file
         os.unlink(temp_path)

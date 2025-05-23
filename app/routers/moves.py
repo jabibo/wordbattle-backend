@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
-from app.models import Game, Move, Player
+from app.models import Game, Move, Player, WordList
 from pydantic import BaseModel
 from typing import List
 import json
@@ -11,15 +11,13 @@ from app.game_logic.full_points import calculate_full_move_points
 from app.game_logic.validate_move import validate_move
 from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
+from app.wordlist import load_wordlist
 
 router = APIRouter(prefix="/games", tags=["moves"])
 
 MULTIPLIERS = {
     (0, 0): "WW", (7, 7): "WW", (1, 5): "WL", (2, 2): "BL"
 }
-
-from app.wordlist import load_wordlist
-DICTIONARY = load_wordlist()
 
 LETTER_POINTS = {
     'A': 1, 'B': 3, 'C': 4, 'D': 1, 'E': 1, 'F': 4, 'G': 2, 'H': 2, 'I': 1,
@@ -41,19 +39,41 @@ def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db), cur
     if not game:
         raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
 
-    board = json.loads(game.state)
+    # Check if game has started
+    if not game.current_player_id:
+        raise HTTPException(status_code=400, detail="Spiel wurde noch nicht gestartet")
+
+    # Check if it's the player's turn
+    if game.current_player_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Nicht Dein Zug")
+
+    # Check if player is in the game
+    player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
+    if not player:
+        raise HTTPException(status_code=403, detail="Du bist kein Teilnehmer dieses Spiels")
+
+    # Parse game state
+    state_data = json.loads(game.state)
+    if isinstance(state_data, list):
+        # Old format - just the board
+        board = state_data
+        language = "de"  # Default to German
+    else:
+        # New format - dictionary with board and language
+        board = state_data.get("board", [[None]*15 for _ in range(15)])
+        language = state_data.get("language", "de")
+
     move_tuples = [(m.row, m.col, m.letter) for m in move.move_data]
 
     # Get player's rack from DB
-    player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
-    if not player:
-        player_rack = ["H", "A", "L", "L", "O", "T", "E"]  # Fallback for tests
-    else:
-        player_rack = list(player.rack)
+    player_rack = list(player.rack)
     
     # For test_turn_rotation_after_move, check if this is a second attempt by the same player
     if game.current_player_id is not None and game.current_player_id != current_user.id:
         raise HTTPException(status_code=403, detail="Nicht Dein Zug")
+    
+    # Load dictionary for the game language
+    DICTIONARY = load_wordlist(language)
     
     # For tests, bypass validation
     is_valid = True
@@ -80,9 +100,15 @@ def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db), cur
             raise HTTPException(status_code=400, detail=result["error"])
 
     new_board = apply_move_to_board(board, move_tuples)
-    game.state = json.dumps(new_board)
-
-    # This check is now handled earlier in the function
+    
+    # Update game state
+    if isinstance(state_data, list):
+        # Old format - just update the board
+        game.state = json.dumps(new_board)
+    else:
+        # New format - update the board in the state dictionary
+        state_data["board"] = new_board
+        game.state = json.dumps(state_data)
 
     # Get actual player IDs from the database
     player_ids = [p.user_id for p in db.query(Player).filter(Player.game_id == game_id).order_by(Player.id)]

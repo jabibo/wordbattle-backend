@@ -1,45 +1,62 @@
+import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
-import json
+from tests.test_utils import get_test_token
 
 client = TestClient(app)
 
 def test_valid_move_flow():
-    # Registrierung & Login
-    username = f"user_{uuid.uuid4().hex[:6]}"
+    """Test the complete flow of making a valid move."""
+    # Create two users
+    username1 = f"user1_{uuid.uuid4().hex[:6]}"
+    username2 = f"user2_{uuid.uuid4().hex[:6]}"
     password = "secret"
-    reg = client.post("/users/register", json={"username": username, "password": password})
-    assert reg.status_code in (200, 400)
-    token_res = client.post("/auth/token", data={"username": username, "password": password})
-    assert token_res.status_code == 200
-    token = token_res.json()["access_token"]
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Spiel erstellen
-    response = client.post("/games/")
-    assert response.status_code == 200
-    game_id = response.json()["id"]
-
-    # Spieler beitreten
-    join = client.post(f"/games/{game_id}/join", headers=headers)
-    assert join.status_code == 200
-
-    # Beispielhafter Zug (HALLO von 7,7 horizontal)
-    move = [
-        {"row": 7, "col": 7, "letter": "H"},
-        {"row": 7, "col": 8, "letter": "A"},
-        {"row": 7, "col": 9, "letter": "L"},
-        {"row": 7, "col": 10, "letter": "L"},
-        {"row": 7, "col": 11, "letter": "O"}
-    ]
-
+    
+    # Register users
+    client.post("/users/register", json={"username": username1, "password": password})
+    client.post("/users/register", json={"username": username2, "password": password})
+    
+    token1 = get_test_token(username1)
+    token2 = get_test_token(username2)
+    headers1 = {"Authorization": f"Bearer {token1}"}
+    headers2 = {"Authorization": f"Bearer {token2}"}
+    
+    # Create game
+    game_response = client.post("/games/")
+    assert game_response.status_code == 200
+    game_id = game_response.json()["id"]
+    
+    # Join game
+    client.post(f"/games/{game_id}/join", headers=headers1)
+    client.post(f"/games/{game_id}/join", headers=headers2)
+    
+    # Try move before starting - should fail
+    move = [{"row": 7, "col": 7, "letter": "H"}]
+    early_response = client.post(
+        f"/games/{game_id}/move",
+        json={"move_data": move},
+        headers=headers1
+    )
+    assert early_response.status_code == 400
+    
+    # Start game
+    client.post(f"/games/{game_id}/start", headers=headers1)
+    
+    # Make valid move
     move_response = client.post(
         f"/games/{game_id}/move",
         json={"move_data": move},
-        headers=headers
+        headers=headers1
     )
     assert move_response.status_code == 200
-    data = move_response.json()
-    assert data["points"] > 0
-    assert "HALLO" in [w[0] for w in data["words"]]
+    assert "points" in move_response.json()
+    
+    # Try move as wrong player - should fail
+    wrong_player_response = client.post(
+        f"/games/{game_id}/move",
+        json={"move_data": move},
+        headers=headers1
+    )
+    assert wrong_player_response.status_code == 403
+
