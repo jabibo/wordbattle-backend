@@ -93,7 +93,7 @@ python -m pytest
 
 ## Database Management
 
-For database management, see [MIGRATIONS.md](MIGRATIONS.md).
+For database management, see [docs/MIGRATIONS.md](MIGRATIONS.md).
 
 ## Game Rules
 
