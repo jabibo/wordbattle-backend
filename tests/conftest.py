@@ -1,4 +1,4 @@
-import pytest
+﻿import tests.docker_test_config\nimport tests.docker_test_config\nimport tests.docker_test_config\nimport tests.docker_test_config\nimport pytest
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -72,3 +72,7 @@ def client(test_db, test_user):
         yield client
     
     app.dependency_overrides.clear()
+
+
+
+

@@ -1,25 +1,20 @@
-FROM python:3.11-slim
+﻿FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    postgresql-client \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
 COPY . .
 
-# Create data directory
-RUN mkdir -p /app/data
+# Ensure data directory exists
+RUN mkdir -p data
 
-# Expose port
-EXPOSE 8000
+# Create minimal wordlist files if they don't exist
+RUN echo -e "HALLO\nWELT\nTEST\nSPIEL\nWORT\nTAG\nTAGE\nBAUM" > data/de_words.txt
+RUN echo -e "HELLO\nWORLD\nTEST\nGAME\nWORD\nDAY\nDAYS\nTREE" > data/en_words.txt
 
-# Make sure DATABASE_URL is set correctly
-ENV DATABASE_URL=postgresql://postgres:postgres@db:5432/wordbattle
+# Set database host for Docker
+ENV DB_HOST=host.docker.internal
+
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
