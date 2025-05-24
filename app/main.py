@@ -1,9 +1,15 @@
+# app/main.py
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, games, moves, rack, profile, admin
 from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="WordBattle API")
 
@@ -15,6 +21,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Startup event to initialize database
+@app.on_event("startup")
+async def startup_event():
+    from app.initialize import initialize_database
+    if initialize_database():
+        logger.info("Database initialized successfully")
+    else:
+        logger.error("Database initialization failed")
 
 # Simple rate limiting middleware
 @app.middleware("http")

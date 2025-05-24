@@ -1,4 +1,4 @@
-# app/routers/games.py
+﻿# app/routers/games.py
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
 from app.game_logic.game_completion import check_game_completion, finalize_game
 from app.config import LETTER_POOL_SIZE
+from app.utils.wordlist_utils import ensure_wordlist_available
 import uuid, json, random
 
 from app.game_logic.letter_bag import create_rack, LETTER_DISTRIBUTION
@@ -35,7 +36,14 @@ def create_game(
         new_id, state = game_data["id"], game_data["state"]
     else:
         new_id = str(uuid.uuid4())
-        state  = json.dumps([[None]*15 for _ in range(15)])
+        state = json.dumps({
+            "board": [[None]*15 for _ in range(15)],
+            "language": "de"  # Default language
+        })
+    
+    # Ensure default German wordlist is available
+    ensure_wordlist_available("de", db)
+    
     game = Game(id=new_id, state=state)
     db.add(game); db.commit()
     return {"id": new_id, "state": state}
@@ -234,11 +242,9 @@ def set_game_language(
     if game.current_player_id:
         raise HTTPException(400, "Spiel bereits gestartet")
     
-    # Check if language exists in the database
-    from app.models import WordList
-    count = db.query(WordList).filter(WordList.language == language).count()
-    if count == 0:
-        raise HTTPException(404, f"Sprache '{language}' nicht gefunden")
+    # Ensure wordlist is available for this language
+    if not ensure_wordlist_available(language, db):
+        raise HTTPException(404, f"Sprache '{language}' nicht verfügbar")
     
     # Update game state with language
     state = json.loads(game.state)
