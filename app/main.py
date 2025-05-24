@@ -1,7 +1,8 @@
 # app/main.py
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, games, moves, rack, profile, admin
+from app.routers import users, games, moves, rack, profile, admin, auth
+from app.auth import router as auth_router
 from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
@@ -72,6 +73,8 @@ app.include_router(moves.router)
 app.include_router(rack.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
+app.include_router(auth.router)
+app.include_router(auth_router)
 
 @app.get("/")
 def read_root():
@@ -80,3 +83,5 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+

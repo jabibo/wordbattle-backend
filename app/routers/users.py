@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.models import User
@@ -24,3 +24,4 @@ def register(user: RegisterUser, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     return {"message": "Benutzer erfolgreich registriert", "id": new_user.id}
+
