@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+﻿from datetime import datetime, timedelta
 import os
 
 # Determine if we're in testing mode
@@ -50,7 +50,7 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
         return db.query(User).first()
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token ungültig oder abgelaufen",
+        detail="Token ungÃ¼ltig oder abgelaufen",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -64,4 +64,6 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
     if not user:
         raise credentials_exception
     return user
+
+
 

@@ -7,8 +7,8 @@ load_dotenv()
 
 # Database settings
 # Get database host from environment or use default
-#DB_HOST = os.environ.get("DB_HOST", "localhost")  # Default to localhost for local development
-DB_HOST = os.environ.get("DB_HOST", "host.docker.internal")  # Default to localhost for local development
+DB_HOST = os.environ.get("DB_HOST", "localhost")  # Default to localhost for local development
+#DB_HOST = os.environ.get("DB_HOST", "host.docker.internal")  # Default to localhost for local development
 
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "postgres")
