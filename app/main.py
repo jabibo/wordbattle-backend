@@ -1,12 +1,11 @@
-# app/main.py
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, games, moves, rack, profile, admin, auth
-from app.auth import router as auth_router
 from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
 import logging
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -74,7 +73,6 @@ app.include_router(rack.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
-app.include_router(auth_router)
 
 @app.get("/")
 def read_root():
@@ -84,4 +82,48 @@ def read_root():
 def health_check():
     return {"status": "ok"}
 
-
+@app.websocket("/ws/games/{game_id}")
+async def websocket_endpoint(
+    websocket: WebSocket, 
+    game_id: str, 
+    token: str = Query(None)
+):
+    from app.websocket import manager
+    from app.auth import get_user_from_token
+    from app.database import SessionLocal
+    from app.models import Game
+    
+    if not token:
+        await websocket.close(code=1008)
+        return
+    
+    try:
+        # Validate token
+        user = get_user_from_token(token)
+        
+        # Connect to the game
+        await manager.connect(websocket, game_id)
+        
+        # Send initial game state
+        db = SessionLocal()
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game:
+            await websocket.send_json({
+                "type": "game_state",
+                "game_id": game_id,
+                "state": json.loads(game.state),
+                "current_player_id": game.current_player_id
+            })
+        db.close()
+        
+        # Keep connection open
+        try:
+            while True:
+                # Wait for any messages from the client
+                data = await websocket.receive_text()
+                # Process client messages if needed
+        except WebSocketDisconnect:
+            manager.disconnect(websocket, game_id)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        await websocket.close(code=1008)

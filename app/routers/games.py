@@ -10,6 +10,7 @@ from app.game_logic.game_completion import check_game_completion, finalize_game
 from app.config import LETTER_POOL_SIZE
 from app.utils.wordlist_utils import ensure_wordlist_available
 import uuid, json, random
+from app.websocket import manager
 
 from app.game_logic.letter_bag import create_rack, LETTER_DISTRIBUTION
 
@@ -147,7 +148,7 @@ def exchange_letters(game_id: str,
 
 
 @router.post("/{game_id}/pass")
-def pass_turn(game_id: str,
+async def pass_turn(game_id: str,
               db: Session = Depends(get_db),
               current_user=Depends(get_current_user)):
     game = db.query(Game).filter(Game.id == game_id).first()
@@ -181,7 +182,21 @@ def pass_turn(game_id: str,
         result["game_complete"] = True
         result["completion_data"] = completion_data
     
+    # Broadcast game update via WebSocket
+    try:
+        await manager.broadcast(game_id, {
+            "type": "game_update",
+            "game_id": game_id,
+            "state": json.loads(game.state),
+            "current_player_id": nxt,
+            "last_action": "pass",
+            "player_id": current_user.id
+        })
+    except Exception as e:
+        print(f"WebSocket broadcast error: {e}")
+    
     return result
+
 
 @router.post("/{game_id}/complete")
 def complete_game(game_id: str,

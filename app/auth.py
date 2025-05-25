@@ -1,4 +1,4 @@
-﻿from datetime import datetime, timedelta
+from datetime import datetime, timedelta
 import os
 
 # Determine if we're in testing mode
@@ -67,3 +67,43 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
 
 
 
+
+def get_user_from_token(token: str):
+    """Get user from token for WebSocket authentication."""
+    from app.auth import get_current_user
+    from app.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        # Create a fake request with the token
+        class FakeRequest:
+            headers = {"Authorization": f"Bearer {token}"}
+        
+        # Use the existing get_current_user function
+        user = get_current_user(db, token)
+        return user
+    except Exception as e:
+        print(f"Error getting user from token: {e}")
+        raise
+    finally:
+        db.close()
+
+def get_user_from_token(token: str):
+    """Get user from token for WebSocket authentication."""
+    from app.auth import get_current_user
+    from app.database import SessionLocal
+    
+    db = SessionLocal()
+    try:
+        # Create a fake request with the token
+        class FakeRequest:
+            headers = {"Authorization": f"Bearer {token}"}
+        
+        # Use the existing get_current_user function
+        user = get_current_user(db, token)
+        return user
+    except Exception as e:
+        print(f"Error getting user from token: {e}")
+        raise
+    finally:
+        db.close()
