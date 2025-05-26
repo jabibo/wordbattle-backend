@@ -133,6 +133,28 @@ async def rate_limit_middleware(request: Request, call_next):
     response = await call_next(request)
     return response
 
+# Health check endpoint for AWS load balancers
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for load balancers and monitoring"""
+    try:
+        # Test database connection
+        from app.database import get_db
+        db = next(get_db())
+        db.execute("SELECT 1")
+        db_status = "healthy"
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        db_status = "unhealthy"
+    
+    return {
+        "status": "healthy" if db_status == "healthy" else "unhealthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "database": db_status,
+        "environment": os.getenv("ENVIRONMENT", "development")
+    }
+
 # Include routers
 app.include_router(users.router)
 app.include_router(games.router)
@@ -157,20 +179,6 @@ def read_root():
         "documentation": "/docs",
         "openapi": "/openapi.json",
         "health": "/health"
-    }
-
-@app.get("/health", tags=["health"])
-def health_check():
-    """
-    Health check endpoint to verify API status.
-    
-    Returns:
-        dict: The current status of the API
-    """
-    return {
-        "status": "ok",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "version": "1.0.0"
     }
 
 @app.websocket("/ws/games/{game_id}")
