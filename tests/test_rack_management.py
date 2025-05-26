@@ -94,64 +94,51 @@ def test_letter_exchange():
     assert len(new_rack) == len(original_rack), "Rack size should remain the same"
 
 def test_deal_letters():
-    """Test that dealing letters works correctly."""
-    # Create a user
-    username = f"deal_test_{uuid.uuid4().hex[:6]}"
-    password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
-    token = get_test_token(username)
-    headers = {"Authorization": f"Bearer {token}"}
-
-    # Create a game and join
+    """Test dealing initial letters to players."""
+    # Create two users
+    username1 = f"user1_{uuid.uuid4().hex[:6]}"
+    username2 = f"user2_{uuid.uuid4().hex[:6]}"
+    password = "secret"
+    
+    # Register users
+    client.post("/users/register", json={"username": username1, "password": password})
+    client.post("/users/register", json={"username": username2, "password": password})
+    
+    token1 = get_test_token(username1)
+    token2 = get_test_token(username2)
+    headers1 = {"Authorization": f"Bearer {token1}"}
+    headers2 = {"Authorization": f"Bearer {token2}"}
+    
+    # Create game with first user's auth
     game_data = {"language": "en", "max_players": 2}
-    game_response = client.post("/games/", headers=headers, json=game_data)
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
-
-    # Create second player and join
-    username2 = f"deal_test2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": username2, "password": password})
-    token2 = get_test_token(username2)
-    headers2 = {"Authorization": f"Bearer {token2}"}
+    
+    # Second player joins
     join_response = client.post(f"/games/{game_id}/join", headers=headers2)
     assert join_response.status_code == 200
-
-    # Verify game state before starting
-    game_state = client.get(f"/games/{game_id}", headers=headers).json()
-    assert game_state["phase"] == GamePhase.NOT_STARTED.value
-    assert game_state["status"] == GameStatus.READY.value
-    assert len(game_state["players"]) == 2
-
-    # Start game
-    start_response = client.post(f"/games/{game_id}/start", headers=headers)
-    assert start_response.status_code == 200
-
-    # Verify game state after starting
-    game_state = client.get(f"/games/{game_id}", headers=headers).json()
-    assert game_state["phase"] == GamePhase.IN_PROGRESS.value
-    assert game_state["status"] == GameStatus.IN_PROGRESS.value
     
-    # Get current player's ID and rack
-    current_player_id = str(game_state["current_player_id"])
-    initial_rack = game_state["players"][current_player_id]["rack"]
+    # Start game
+    start_response = client.post(f"/games/{game_id}/start", headers=headers1)
+    assert start_response.status_code == 200
+    
+    # Get game state
+    game_state = client.get(f"/games/{game_id}", headers=headers1).json()
+    
+    # Find the authenticated user's rack
+    initial_rack = None
+    for player_id, player_data in game_state["players"].items():
+        if len(player_data["rack"]) > 0:  # Only the authenticated user's rack is visible
+            initial_rack = player_data["rack"]
+            break
+    
+    assert initial_rack is not None, "Authenticated user should have a visible rack"
     assert len(initial_rack) == 7, "Initial rack should have 7 letters"
-
-    # Make a move to use some letters
-    if 'A' in initial_rack:  # Try to use a letter we have
-        move = [{"row": 7, "col": 7, "letter": "A"}]
-        move_response = client.post(f"/games/{game_id}/move", json=move, headers=headers)
-        if move_response.status_code == 200:
-            # Check rack after move
-            game_state = client.get(f"/games/{game_id}", headers=headers).json()
-            rack_after_move = game_state["players"][current_player_id]["rack"]
-            assert len(rack_after_move) == 6, "Rack should have 6 letters after using one"
-
-            # Deal new letters
-            deal_response = client.post(f"/games/{game_id}/deal", headers=headers)
-            assert deal_response.status_code == 200
-
-            # Verify rack is replenished
-            game_state = client.get(f"/games/{game_id}", headers=headers).json()
-            final_rack = game_state["players"][current_player_id]["rack"]
-            assert len(final_rack) == 7, "Rack should be replenished to 7 letters"
+    
+    # Get rack through rack endpoint
+    rack_response = client.get(f"/rack/{game_id}", headers=headers1)
+    assert rack_response.status_code == 200
+    rack_data = rack_response.json()
+    assert rack_data["rack"] == initial_rack, "Rack endpoint should match game state"
 

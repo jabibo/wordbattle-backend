@@ -66,7 +66,7 @@ def test_refill_full_rack(authenticated_client, db_session, test_game_with_playe
 
     response = authenticated_client.post(f"/rack/{game.id}/refill")
     assert response.status_code == 200
-    assert response.json()["new_rack"] == "ABCDEFG"  # Should remain unchanged
+    assert response.json()["new_rack"] == list("ABCDEFG")  # Should remain unchanged
 
 def test_refill_multiple_letters(authenticated_client, db_session, test_game_with_player):
     """Test refilling multiple letters."""

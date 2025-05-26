@@ -18,7 +18,7 @@ def get_rack(db: Session = Depends(get_db), current_user = Depends(get_current_u
     
     return {
         "racks": [
-            {"game_id": player.game_id, "rack": player.rack}
+            {"game_id": player.game_id, "rack": list(player.rack)}
             for player in players
         ]
     }
@@ -31,7 +31,7 @@ def get_game_rack(game_id: str, db: Session = Depends(get_db), current_user = De
     if not player:
         raise HTTPException(status_code=404, detail="Spieler nicht gefunden")
     
-    return {"rack": player.rack}
+    return {"rack": list(player.rack)}
 
 @router.post("/{game_id}/refill")
 def refill_rack(game_id: str, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
@@ -47,7 +47,7 @@ def refill_rack(game_id: str, db: Session = Depends(get_db), current_user = Depe
     
     needed = 7 - len(player.rack)
     if needed <= 0:
-        return {"new_rack": player.rack}
+        return {"new_rack": list(player.rack)}
     
     # Create pool of available letters based on language-specific distribution
     pool = []
@@ -60,4 +60,4 @@ def refill_rack(game_id: str, db: Session = Depends(get_db), current_user = Depe
     player.rack = new_rack
     db.commit()
     
-    return {"new_rack": new_rack}
+    return {"new_rack": list(new_rack)}

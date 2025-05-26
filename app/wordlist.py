@@ -40,7 +40,10 @@ def load_wordlist_from_file(path: str = None) -> Set[str]:
 
 def load_wordlist(language="de") -> set[str]:
     """
-    Load a wordlist from the database. Falls back to file if database is empty.
+    Load a wordlist for the specified language.
+    
+    This function redirects to the unified load_wordlist in utils.wordlist_utils
+    for consistency across the application.
     
     Args:
         language: Language code (e.g., "de", "en")
@@ -48,27 +51,8 @@ def load_wordlist(language="de") -> set[str]:
     Returns:
         A set of uppercase words.
     """
-    # Only use file-based wordlist in tests if explicitly requested
-    if os.environ.get("WORDLIST_TEST_MODE") == "1":
-        return load_wordlist_from_file()
-    
-    # Import here to avoid circular imports
-    from app.models.wordlist import WordList
-    
-    db = SessionLocal()
-    try:
-        # Check if words exist in the database for this language
-        count = db.query(WordList).filter(WordList.language == language).count()
-        
-        if count > 0:
-            # Get words from database
-            words = db.query(WordList.word).filter(WordList.language == language).all()
-            return {word[0] for word in words}
-        else:
-            # Fall back to file-based wordlist
-            return load_wordlist_from_file()
-    finally:
-        db.close()
+    from app.utils.wordlist_utils import load_wordlist as unified_load_wordlist
+    return unified_load_wordlist(language)
 
 def import_wordlist(language: str = "de", path: str = None) -> None:
     """

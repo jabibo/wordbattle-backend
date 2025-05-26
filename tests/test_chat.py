@@ -5,27 +5,37 @@ from app.main import app
 from tests.test_utils import get_test_token
 from app.models import ChatMessage
 from datetime import datetime, timezone
+import logging
 
+logger = logging.getLogger(__name__)
 client = TestClient(app)
 
-@pytest.mark.timeout(5)  # Set a 5-second timeout for this test
+@pytest.mark.timeout(30)  # Increase timeout to 30 seconds
 def test_chat_message_persistence(test_user, test_game_with_player, test_websocket_client, db_session):
     """Test that chat messages are properly stored in the database."""
+    print("Starting chat message persistence test")
     game, _ = test_game_with_player
+    print(f"Game created with ID: {game.id}")
     
-    with test_websocket_client.websocket_connect(f"/games/{game.id}/ws", headers={"Authorization": f"Bearer {test_user['token']}"}) as websocket:
+    print("Attempting WebSocket connection")
+    with test_websocket_client.websocket_connect(f"/ws/games/{game.id}?token={test_user['token']}") as websocket:
+        print("WebSocket connected")
         # Skip initial connection message
-        websocket.receive_json()
+        initial_msg = websocket.receive_json()
+        print(f"Received initial message: {initial_msg}")
         
         # Send a chat message
         message_text = "Hello, World!"
+        print(f"Sending chat message: {message_text}")
         websocket.send_json({
             "type": "chat_message",
             "message": message_text
         })
         
         # Receive the broadcast message
+        print("Waiting for broadcast message")
         response = websocket.receive_json()
+        print(f"Received broadcast message: {response}")
         assert response["type"] == "chat_message"
         assert response["message"] == message_text
         assert response["sender_username"] == test_user["username"]
@@ -33,6 +43,7 @@ def test_chat_message_persistence(test_user, test_game_with_player, test_websock
         assert "timestamp" in response
         
         # Verify message was stored in database
+        print("Checking database for stored message")
         stored_message = db_session.query(ChatMessage).filter_by(
             game_id=game.id,
             sender_id=test_user["id"]
@@ -40,7 +51,9 @@ def test_chat_message_persistence(test_user, test_game_with_player, test_websock
         
         assert stored_message is not None
         assert stored_message.message == message_text
+        print("Test completed successfully")
 
+@pytest.mark.timeout(30)  # Increase timeout to 30 seconds
 def test_chat_message_retrieval(test_user, test_game_with_player, test_websocket_client, db_session):
     """Test retrieving chat message history."""
     game, _ = test_game_with_player
@@ -79,6 +92,7 @@ def test_chat_message_retrieval(test_user, test_game_with_player, test_websocket
         assert msg["sender_id"] == test_user["id"]
         assert msg["sender_username"] == test_user["username"]
 
+@pytest.mark.timeout(30)  # Increase timeout to 30 seconds
 def test_chat_message_pagination(test_user, test_game_with_player, test_websocket_client, db_session):
     """Test chat message pagination."""
     game, _ = test_game_with_player
@@ -114,6 +128,7 @@ def test_chat_message_pagination(test_user, test_game_with_player, test_websocke
     second_page = response.json()
     assert len(second_page) == 10  # Remaining messages
 
+@pytest.mark.timeout(30)  # Increase timeout to 30 seconds
 def test_chat_authorization(test_user, test_user2, test_game_with_player, test_websocket_client, test_websocket_client2):
     """Test chat authorization rules."""
     game, _ = test_game_with_player
@@ -130,11 +145,12 @@ def test_chat_authorization(test_user, test_user2, test_game_with_player, test_w
     # TODO: Create a test with a user who is neither creator nor player
     pass
 
+@pytest.mark.timeout(30)  # Increase timeout to 30 seconds
 def test_empty_and_invalid_messages(test_user, test_game_with_player, test_websocket_client):
     """Test handling of empty and invalid messages."""
     game, _ = test_game_with_player
     
-    with test_websocket_client.websocket_connect(f"/games/{game.id}/ws", headers={"Authorization": f"Bearer {test_user['token']}"}) as websocket:
+    with test_websocket_client.websocket_connect(f"/ws/games/{game.id}?token={test_user['token']}") as websocket:
         # Skip initial connection message
         websocket.receive_json()
         

@@ -1,17 +1,30 @@
 from typing import List, Dict, Set, Tuple, Optional
 from dataclasses import dataclass
 from enum import Enum
-from .letter_bag import LetterBag, LETTER_DISTRIBUTION
+from .letter_bag import create_letter_bag, draw_letters, return_letters, create_rack, LETTER_DISTRIBUTION
+from app.game_logic.board_utils import BOARD_MULTIPLIERS
+from app.game_logic.full_points import calculate_full_move_points
+import logging
+import json
+import random
+
+logger = logging.getLogger(__name__)
 
 class GamePhase(Enum):
+    """Game phase states.
+    
+    NOT_STARTED: Initial state when game is created but not yet started
+    IN_PROGRESS: Game is actively being played
+    COMPLETED: Game has finished
+    """
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
 
 class MoveType(Enum):
-    PLACE = "place"
-    EXCHANGE = "exchange"
-    PASS = "pass"
+    PLACE = "PLACE"
+    EXCHANGE = "EXCHANGE"
+    PASS = "PASS"
 
 @dataclass(frozen=True)
 class Position:
@@ -32,58 +45,28 @@ class PlacedTile:
     is_blank: bool = False
 
 class GameState:
-    def __init__(self, language: str = "de"):
-        # Initialize 15x15 board
-        self.board: List[List[Optional[PlacedTile]]] = [[None] * 15 for _ in range(15)]
-        self.letter_bag = LetterBag()
-        self.players: Dict[int, str] = {}  # player_id -> rack
-        self.scores: Dict[int, int] = {}   # player_id -> score
-        self.current_player_id: Optional[int] = None
+    def __init__(self, language: str = "en"):
+        self.board = [[None]*15 for _ in range(15)]  # 15x15 board
         self.phase = GamePhase.NOT_STARTED
         self.language = language
-        self.last_moves: List[Tuple[int, MoveType, List[Tuple[Position, PlacedTile]]]] = []  # [(player_id, move_type, move_data)]
-        self.center_used = False
+        self.letter_bag = create_letter_bag(language)
+        self.players = {}  # Dict[player_id, List[str]] for racks
+        self.scores = {}   # Dict[player_id, int]
+        self.bonus_points = {}  # Dict[player_id, int] for end-game bonuses
+        self.current_player_id = None
         self.turn_number = 0
         self.consecutive_passes = 0
-        
-        # Initialize board multipliers
-        self.multipliers: Dict[Position, str] = {
-            # Triple Word Score
-            Position(0, 0): "WW", Position(0, 7): "WW", Position(0, 14): "WW",
-            Position(7, 0): "WW", Position(7, 14): "WW",
-            Position(14, 0): "WW", Position(14, 7): "WW", Position(14, 14): "WW",
-            # Double Word Score
-            Position(1, 1): "WL", Position(1, 13): "WL",
-            Position(2, 2): "WL", Position(2, 12): "WL",
-            Position(3, 3): "WL", Position(3, 11): "WL",
-            Position(4, 4): "WL", Position(4, 10): "WL",
-            Position(10, 4): "WL", Position(10, 10): "WL",
-            Position(11, 3): "WL", Position(11, 11): "WL",
-            Position(12, 2): "WL", Position(12, 12): "WL",
-            Position(13, 1): "WL", Position(13, 13): "WL",
-            # Triple Letter Score
-            Position(1, 5): "BL", Position(1, 9): "BL",
-            Position(5, 1): "BL", Position(5, 5): "BL", Position(5, 9): "BL", Position(5, 13): "BL",
-            Position(9, 1): "BL", Position(9, 5): "BL", Position(9, 9): "BL", Position(9, 13): "BL",
-            Position(13, 5): "BL", Position(13, 9): "BL",
-            # Double Letter Score
-            Position(0, 3): "BW", Position(0, 11): "BW",
-            Position(2, 6): "BW", Position(2, 8): "BW",
-            Position(3, 0): "BW", Position(3, 7): "BW", Position(3, 14): "BW",
-            Position(6, 2): "BW", Position(6, 6): "BW", Position(6, 8): "BW", Position(6, 12): "BW",
-            Position(7, 3): "BW", Position(7, 11): "BW",
-            Position(8, 2): "BW", Position(8, 6): "BW", Position(8, 8): "BW", Position(8, 12): "BW",
-            Position(11, 0): "BW", Position(11, 7): "BW", Position(11, 14): "BW",
-            Position(12, 6): "BW", Position(12, 8): "BW",
-            Position(14, 3): "BW", Position(14, 11): "BW",
-        }
+        # Initialize board multipliers from centralized definition
+        self.multipliers = BOARD_MULTIPLIERS
+        self.last_moves: List[Tuple[int, MoveType, List[Tuple[Position, PlacedTile]]]] = []  # [(player_id, move_type, move_data)]
+        self.center_used = False
 
     def add_player(self, player_id: int) -> str:
         """Add a player to the game and return their initial rack."""
         if player_id in self.players:
             raise ValueError("Player already in game")
         
-        initial_rack = "".join(self.letter_bag.draw(7))
+        initial_rack = create_rack(self.letter_bag)
         self.players[player_id] = initial_rack
         self.scores[player_id] = 0
         return initial_rack
@@ -152,7 +135,7 @@ class GameState:
             return True, "Pass successful", 0
         
         elif move_type == MoveType.EXCHANGE:
-            if len(self.letter_bag.letters) < 7:
+            if len(self.letter_bag) < 7:
                 return False, "Not enough letters in bag for exchange", []
             success, msg, new_rack = self._handle_exchange(player_id, move_data)
             if success:
@@ -194,29 +177,23 @@ class GameState:
         letters = letters_to_exchange
         rack = self.players[player_id]
         
-        # Convert rack to list if it's a string, or copy if it's already a list
-        if isinstance(rack, str):
-            rack_copy = list(rack)
-        else:
-            rack_copy = rack.copy()
-        
         # Verify player has these letters and remove them
         for letter in letters:
-            if letter not in rack_copy:
+            if letter not in rack:
                 return False, "Cannot exchange letters you don't have", []
-            rack_copy.remove(letter)
+            rack = rack.replace(letter, "", 1)
         
         # Perform exchange
-        self.letter_bag.return_letters(letters)
-        new_letters = self.letter_bag.draw(len(letters))
+        return_letters(self.letter_bag, letters)
+        new_letters = draw_letters(self.letter_bag, len(letters))
         
         # Update rack
-        rack_copy.extend(new_letters)
-        self.players[player_id] = rack_copy
+        rack += "".join(new_letters)
+        self.players[player_id] = rack
         
         self.last_moves.append((player_id, MoveType.EXCHANGE, letters_to_exchange))
         self._advance_turn()
-        return True, "Exchange successful", rack_copy
+        return True, "Exchange successful", rack
 
     def _advance_turn(self) -> None:
         """Advance to the next player's turn."""
@@ -260,7 +237,7 @@ class GameState:
             rack = rack.replace(letter, "", 1)
         
         # Draw new letters
-        new_letters = self.letter_bag.draw(7 - len(rack))
+        new_letters = draw_letters(self.letter_bag, 7 - len(rack))
         self.players[player_id] = rack + "".join(new_letters)
 
     def _is_connected_to_existing(self, word_positions: List[Tuple[Position, PlacedTile]]) -> bool:
@@ -407,10 +384,10 @@ class GameState:
             return False, None
             
         # Check end conditions
-        if len(self.letter_bag.letters) == 0 or len(self.last_moves) >= 6:
+        if len(self.letter_bag) == 0 or len(self.last_moves) >= 6:
             # Game ends if bag is empty or 6 consecutive non-place moves
             recent_moves = self.last_moves[-6:]
-            if len(self.letter_bag.letters) == 0 or all(move[1] != MoveType.PLACE for move in recent_moves):
+            if len(self.letter_bag) == 0 or all(move[1] != MoveType.PLACE for move in recent_moves):
                 self.phase = GamePhase.COMPLETED
                 final_scores = self._get_final_scores()
                 winner_id = max(final_scores.items(), key=lambda x: x[1])[0]

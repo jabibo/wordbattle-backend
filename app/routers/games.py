@@ -1,4 +1,4 @@
-﻿# app/routers/games.py
+# app/routers/games.py
 
 from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from app.models import Game, Player, Move, User, ChatMessage
 from app.models.game import GameStatus
 from app.auth import get_current_user, get_token_from_header, get_user_from_token
 from app.game_logic.game_state import GameState, GamePhase, MoveType, Position, PlacedTile
-from app.game_logic.letter_bag import LETTER_DISTRIBUTION, LetterBag
+from app.game_logic.letter_bag import LETTER_DISTRIBUTION, LetterBag, create_letter_bag, draw_letters, return_letters, create_rack
 from app.utils.wordlist_utils import ensure_wordlist_available, load_wordlist
 import uuid
 import json
@@ -20,6 +20,8 @@ import random
 import logging
 from app.game_logic.board_utils import find_word_placements
 from pydantic import BaseModel
+from app.game_logic.rules import get_next_player
+from app.game_logic.board_utils import BOARD_MULTIPLIERS
 
 logger = logging.getLogger(__name__)
 
@@ -29,15 +31,16 @@ class CreateGameRequest(BaseModel):
 
 class GameStateEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, PlacedTile):
-            return {"letter": obj.letter, "is_blank": obj.is_blank}
-        elif isinstance(obj, LetterBag):
-            return {
-                "letters": obj.letters,
-                "remaining": obj.remaining()
-            }
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, (GamePhase, MoveType)):
+            return obj.value
         elif isinstance(obj, Position):
             return {"row": obj.row, "col": obj.col}
+        elif isinstance(obj, PlacedTile):
+            return {"letter": obj.letter, "is_blank": obj.is_blank}
+        elif isinstance(obj, set):
+            return list(obj)
         return super().default(obj)
 
 router = APIRouter(prefix="/games", tags=["games"])
@@ -77,7 +80,7 @@ def create_game(
         "board": game_state.board,
         "phase": game_state.phase.value,
         "language": game_data.language,
-        "multipliers": {f"{pos.row},{pos.col}": value for pos, value in game_state.multipliers.items()},
+        "multipliers": {f"{pos[0]},{pos[1]}": value for pos, value in game_state.multipliers.items()},
         "letter_bag": game_state.letter_bag,
         "turn_number": 0,
         "consecutive_passes": 0
@@ -159,106 +162,6 @@ def join_game(
         "game_status": game.status.value
     }
 
-@router.websocket("/{game_id}/ws")
-async def websocket_endpoint(websocket: WebSocket, game_id: str, db: Session = Depends(get_db)):
-    """WebSocket endpoint for game updates."""
-    try:
-        # Get token from header
-        auth_header = websocket.headers.get("authorization", "")
-        token = get_token_from_header(auth_header)
-        if not token:
-            logger.error("No token provided")
-            await websocket.close(code=4001)
-            return
-
-        # Get user from token
-        user = get_user_from_token(token, db)
-        if not user:
-            logger.error("Invalid token")
-            await websocket.close(code=4001)
-            return
-
-        # Check if game exists and user is a player
-        game = db.query(Game).filter(Game.id == game_id).first()
-        if not game:
-            logger.error(f"Game {game_id} not found")
-            await websocket.close(code=4004)
-            return
-
-        player = db.query(Player).filter_by(game_id=game_id, user_id=user.id).first()
-        # Allow creator to connect even if not in Player table yet (e.g. during setup before joining)
-        # Also allow players who are part of the game (status IN_PROGRESS or READY)
-        is_player_or_creator = player is not None or game.creator_id == user.id
-        
-        if not is_player_or_creator:
-            logger.error(f"User {user.id} not authorized for game {game_id}")
-            await websocket.close(code=4003)
-            return
-
-        # Accept the connection
-        await websocket.accept()
-
-        # Add to active connections
-        await manager.connect(websocket, game_id, user)
-
-        # Send initial connection confirmation
-        await websocket.send_json({
-            "type": "connected",
-            "game_id": game_id,
-            "user_id": user.id,
-            "username": user.username
-        })
-
-        try:
-            while True:
-                data = await websocket.receive_json()
-                logger.debug(f"Received WebSocket message on game {game_id} from {user.username}: {data}")
-                
-                if data.get("type") == "chat_message":
-                    message_text = data.get("message", "").strip()
-                    if message_text:  # Only process non-empty messages
-                        # Store message in database
-                        chat_message = ChatMessage(
-                            game_id=game_id,
-                            sender_id=user.id,
-                            message=message_text,
-                            timestamp=datetime.now(timezone.utc)
-                        )
-                        db.add(chat_message)
-                        db.commit()
-                        db.refresh(chat_message)
-                        
-                        # Broadcast to all connected players
-                        await manager.broadcast_to_game(
-                            game_id,
-                            {
-                                "type": "chat_message",
-                                "message_id": chat_message.id,
-                                "sender_id": user.id,
-                                "sender_username": user.username,
-                                "message": message_text,
-                                "timestamp": chat_message.timestamp.isoformat()
-                            }
-                        )
-
-        except WebSocketDisconnect:
-            logger.info(f"WebSocket disconnected for user {user.username} from game {game_id}")
-            manager.disconnect(websocket, game_id)
-        except Exception as e:
-            logger.error(f"WebSocket error in game {game_id} for user {user.username}: {e}")
-            try:
-                await websocket.close(code=4000)
-            except Exception as close_exc:
-                logger.error(f"Error closing websocket for user {user.username} in game {game_id}: {close_exc}")
-        finally:
-            manager.disconnect(websocket, game_id)
-    except Exception as e:
-        logger.error(f"Error in websocket setup for game {game_id}: {e}")
-        try:
-            await websocket.close(code=4000)
-        except Exception as close_exc:
-            logger.error(f"Error closing websocket during setup error: {close_exc}")
-
 @router.get("/{game_id}")
 def get_game(
     game_id: str,
@@ -318,104 +221,83 @@ def get_game(
     }
 
 @router.post("/{game_id}/start")
-async def start_game( # Made async to allow await for broadcast
+async def start_game(
     game_id: str,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Start a game that is in READY state. Only the creator can start."""
+    """Start a game."""
+    # Get game from database
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
-        raise HTTPException(404, "Game not found")
-    
-    if game.status != GameStatus.READY:
-        raise HTTPException(400, f"Game is not ready to start. Current status: {game.status.value}")
-    
-    if game.creator_id != current_user.id:
-        raise HTTPException(403, "Only the game creator can start the game")
-    
-    db_players = db.query(Player).filter(Player.game_id == game_id).all()
-    if not (2 <= len(db_players) <= game.max_players): # Game rules usually 2-4 players
-        raise HTTPException(400, f"Invalid number of players ({len(db_players)}). Expected 2-{game.max_players}.")
-
-    # Initialize GameState object
-    game_state = GameState(language=game.language)
-    
-    # Add players to game state and deal initial tiles
-    for p_record in db_players:
-        initial_rack = game_state.add_player(p_record.user_id)
-        p_record.rack = initial_rack
-        p_record.score = 0 # Scores are 0 at start
-
-    # Randomly select starting player
-    starting_player_record = random.choice(db_players)
-    game_state.start_game(starting_player_record.user_id)
-    
-    # Update Game record in DB
-    game.status = GameStatus.IN_PROGRESS
-    game.started_at = datetime.now(timezone.utc)
-    game.current_player_id = starting_player_record.user_id
-    
-    # Persist initial GameState to game.state JSON
-    # Multipliers should be part of the initial state_data in game_setup.py
-    # If not, they are initialized by GameState()
-    initial_state_json = {
-        "board": game_state.board,
-        "phase": game_state.phase.value,
-        "language": game.language,
-        "multipliers": {f"{pos.row},{pos.col}": value for pos, value in game_state.multipliers.items()},
-        "letter_bag": game_state.letter_bag, # Persist the initial letter bag
-        "turn_number": game_state.turn_number,
-        "consecutive_passes": game_state.consecutive_passes,
-        # Player racks and scores are primarily from Player table, but can be snapshot here
-        "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()},
-        "player_scores_snapshot": game_state.scores.copy()
-    }
-    game.state = json.dumps(initial_state_json, cls=GameStateEncoder)
-    
-    db.commit() 
-    # db.refresh(game) # Refresh game
-    # for p_record in db_players: db.refresh(p_record) # Refresh players to get racks
-
-    # Broadcast game started event
-    try:
-        # Construct player data for broadcast, including usernames
-        players_data_for_broadcast = {}
-        for p_rec in db_players:
-            user_for_player = db.query(User).filter(User.id == p_rec.user_id).first() # Get user for username
-            players_data_for_broadcast[p_rec.user_id] = {
-                "username": user_for_player.username if user_for_player else "Unknown",
-                "score": p_rec.score
-                # Rack is not broadcasted openly at start, each player gets their own later if needed
-            }
-
-        await manager.broadcast_to_game(
-            game.id,
-            {
-                "type": "game_started",
-                "game_id": game_id,
-                "board": game_state.board,
-                "current_player_id": game.current_player_id,
-                "starting_player_username": starting_player_record.user.username, # Add username
-                "players": players_data_for_broadcast, # Send player scores and usernames
-                "letter_bag_count": len(game_state.letter_bag),
-                "turn_number": game_state.turn_number
-            }
+        raise HTTPException(
+            status_code=404,
+            detail="Game not found"
         )
-    except Exception as e: # pragma: no cover
-        logger.error(f"WebSocket broadcast error on game start for game {game_id}: {e}")
-
-    # Creator (current_user) needs their rack
-    creator_player_record = next(p for p in db_players if p.user_id == current_user.id)
-
-    return {
-        "message": "Game started successfully.",
-        "game_id": game.id,
-        "current_player_id": game.current_player_id,
-        "your_rack": list(creator_player_record.rack), # Return initial rack to the creator
-        "board": game_state.board,
-        "players": players_data_for_broadcast # Also return player info in HTTP response
-    }
+    
+    # Check if user is in game
+    player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == current_user.id
+    ).first()
+    if not player:
+        raise HTTPException(
+            status_code=403,
+            detail="You are not part of this game"
+        )
+    
+    # Check if game can be started
+    if game.status != GameStatus.READY:
+        raise HTTPException(
+            status_code=400,
+            detail="Game cannot be started"
+        )
+    
+    # Get all players
+    players = db.query(Player).filter(Player.game_id == game_id).all()
+    if len(players) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough players to start game"
+        )
+    
+    # Create letter bag
+    letter_bag = create_letter_bag(game.language)
+    
+    # Deal initial letters to players
+    for player in players:
+        player.rack = create_rack(letter_bag)
+    
+    # Set game status and first player
+    game.status = GameStatus.IN_PROGRESS
+    game.current_player_id = players[0].user_id
+    game.started_at = datetime.now(timezone.utc)
+    
+    # Update the game state JSON to reflect the started game
+    state_data = json.loads(game.state) if game.state else {}
+    state_data.update({
+        "phase": GamePhase.IN_PROGRESS.value,
+        "letter_bag": letter_bag,
+        "turn_number": 0,
+        "consecutive_passes": 0
+    })
+    game.state = json.dumps(state_data, cls=GameStateEncoder)
+    
+    # Save changes
+    db.commit()
+    
+    # Notify websocket clients about game start
+    try:
+        await manager.broadcast_to_game(game_id, {
+            "type": "game_started",
+            "game_id": game_id,
+            "current_player_id": game.current_player_id,
+            "message": "Game has started!"
+        })
+    except Exception as e:
+        logger.error(f"WebSocket broadcast error after game start {game_id}: {e}")
+    
+    return {"success": True}
 
 @router.post("/{game_id}/move")
 async def make_move(
@@ -445,10 +327,10 @@ async def make_move(
     letter_bag_data = persisted_state_data.get("letter_bag", [])
     if isinstance(letter_bag_data, dict) and "letters" in letter_bag_data:
         # If it was serialized as a LetterBag object with letters attribute
-        game_state.letter_bag.letters = letter_bag_data["letters"]
+        game_state.letter_bag = letter_bag_data["letters"]
     else:
         # If it was serialized as a simple list
-        game_state.letter_bag.letters = letter_bag_data
+        game_state.letter_bag = letter_bag_data
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
@@ -456,7 +338,7 @@ async def make_move(
     # Load player racks and scores from Player table into GameState
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     for p_rec in db_players:
-        game_state.players[p_rec.user_id] = list(p_rec.rack) 
+        game_state.players[p_rec.user_id] = p_rec.rack 
         game_state.scores[p_rec.user_id] = p_rec.score      
     
     # Convert move_data from API (list of dicts) to GameState format (list of tuples)
@@ -598,17 +480,17 @@ async def pass_turn(
     letter_bag_data = persisted_state_data.get("letter_bag", [])
     if isinstance(letter_bag_data, dict) and "letters" in letter_bag_data:
         # If it was serialized as a LetterBag object with letters attribute
-        game_state.letter_bag.letters = letter_bag_data["letters"]
+        game_state.letter_bag = letter_bag_data["letters"]
     else:
         # If it was serialized as a simple list
-        game_state.letter_bag.letters = letter_bag_data
+        game_state.letter_bag = letter_bag_data
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
 
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     for p_rec in db_players:
-        game_state.players[p_rec.user_id] = list(p_rec.rack)
+        game_state.players[p_rec.user_id] = p_rec.rack
         game_state.scores[p_rec.user_id] = p_rec.score
     
     # Make pass move
@@ -726,10 +608,10 @@ async def exchange_letters(
     letter_bag_data = persisted_state_data.get("letter_bag", [])
     if isinstance(letter_bag_data, dict) and "letters" in letter_bag_data:
         # If it was serialized as a LetterBag object with letters attribute
-        game_state.letter_bag.letters = letter_bag_data["letters"]
+        game_state.letter_bag = letter_bag_data["letters"]
     else:
         # If it was serialized as a simple list
-        game_state.letter_bag.letters = letter_bag_data
+        game_state.letter_bag = letter_bag_data
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
@@ -737,7 +619,7 @@ async def exchange_letters(
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     current_player_record = None
     for p_rec in db_players:
-        game_state.players[p_rec.user_id] = list(p_rec.rack)
+        game_state.players[p_rec.user_id] = p_rec.rack
         game_state.scores[p_rec.user_id] = p_rec.score # Scores don't change on exchange
         if p_rec.user_id == current_user.id:
             current_player_record = p_rec

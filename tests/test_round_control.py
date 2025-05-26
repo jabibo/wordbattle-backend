@@ -33,96 +33,102 @@ def test_turn_rotation_after_move():
     game_state = client.get(f"/games/{gid}", headers=h1).json()
     current_player_id = str(game_state["current_player_id"])
     
-    # Find the authenticated user's rack (only their own rack is visible)
-    authenticated_user_rack = None
+    # Find the authenticated user's ID (only their own rack is visible)
+    authenticated_user_id = None
     for player_id, player_data in game_state["players"].items():
         if len(player_data["rack"]) > 0:  # Only the authenticated user's rack is visible
-            authenticated_user_rack = player_data["rack"]
+            authenticated_user_id = player_id
             break
     
-    assert authenticated_user_rack is not None, "Authenticated user should have a visible rack"
-    assert len(authenticated_user_rack) == 7, "Initial rack should have 7 letters"
+    assert authenticated_user_id is not None, "Authenticated user should be found"
     
-    # Try to form a valid word from the rack
-    # Common German words that might be possible with our letters
+    # Set a predetermined rack that can form the word "DOG" (D, O, G + extra letters)
+    # Update the player's rack directly in the database to ensure we can make a valid move
+    from app.database import SessionLocal
+    from app.models import Player
+    
+    db = SessionLocal()
+    try:
+        player = db.query(Player).filter_by(game_id=gid, user_id=int(authenticated_user_id)).first()
+        if player:
+            player.rack = "DOGXYZW"  # DOG + 4 extra letters to make 7 total
+            db.commit()
+    finally:
+        db.close()
+    
+    # Now test word validation with our predetermined rack
+    # Get the updated game state to see the rack we just set
+    updated_game_state = client.get(f"/games/{gid}", headers=h1).json()
+    
+    # Find the current player's rack
+    current_player_rack = None
+    if str(current_player_id) == str(authenticated_user_id):
+        # Current player is the authenticated user, we can see their rack
+        for pid, pdata in updated_game_state["players"].items():
+            if len(pdata["rack"]) > 0:  # This is the authenticated user's rack
+                current_player_rack = pdata["rack"]
+                break
+        headers_to_use = h1
+    else:
+        # Current player is the other user, need to set their rack too
+        db = SessionLocal()
+        try:
+            other_player = db.query(Player).filter_by(game_id=gid, user_id=int(current_player_id)).first()
+            if other_player:
+                other_player.rack = "CATXYZW"  # CAT + 4 extra letters
+                db.commit()
+        finally:
+            db.close()
+        
+        # Get their game state
+        current_player_game_state = client.get(f"/games/{gid}", headers=h2).json()
+        for pid, pdata in current_player_game_state["players"].items():
+            if len(pdata["rack"]) > 0:  # This is the current player's rack
+                current_player_rack = pdata["rack"]
+                break
+        headers_to_use = h2
+    
+    # Test word validation - try to find a valid word from available letters
     possible_words = [
-        ("JA", ["J", "A"]),
-        ("AN", ["A", "N"]),
-        ("AB", ["A", "B"]),
-        ("DA", ["D", "A"]),
-        ("EI", ["E", "I"])
+        ("DOG", ["D", "O", "G"]),
+        ("CAT", ["C", "A", "T"]),
+        ("GO", ["G", "O"]),
+        ("AT", ["A", "T"]),
+        ("TO", ["T", "O"])
     ]
-
+    
     word_to_play = None
     letters_needed = None
     
     for word, letters in possible_words:
-        if all(letter in authenticated_user_rack for letter in letters):
+        if current_player_rack and all(letter in current_player_rack for letter in letters):
             word_to_play = word
             letters_needed = letters
+            print(f"Found valid word '{word}' from rack {current_player_rack}")
             break
-
-    if word_to_play:
-        # Determine which user is the current player and get their rack
-        # Find the authenticated user's ID (the one with visible rack)
-        authenticated_user_id = None
-        for pid, pdata in game_state["players"].items():
-            if len(pdata["rack"]) > 0:  # This is the authenticated user
-                authenticated_user_id = pid
-                break
-        
-        # If it's not the authenticated user's turn, get game state from current player's perspective
-        if str(current_player_id) != str(authenticated_user_id):
-            # Get game state from the current player's perspective
-            current_player_game_state = client.get(f"/games/{gid}", headers=h2).json()
-            # Find the current player's rack
-            current_player_rack = None
-            for pid, pdata in current_player_game_state["players"].items():
-                if len(pdata["rack"]) > 0:  # This is the current player's rack
-                    current_player_rack = pdata["rack"]
-                    break
-            
-            # Check if we can form a word with the current player's rack
-            word_to_play = None
-            letters_needed = None
-            for word, letters in possible_words:
-                if current_player_rack and all(letter in current_player_rack for letter in letters):
-                    word_to_play = word
-                    letters_needed = letters
-                    break
-            
-            headers_to_use = h2
-        else:
-            headers_to_use = h1
-        
-        if word_to_play and letters_needed:
-            # Place the word horizontally starting at center
-            move = [
-                {"row": 7, "col": 7 + i, "letter": letter}
-                for i, letter in enumerate(letters_needed)
-            ]
-            resp1 = client.post(f"/games/{gid}/move", json=move, headers=headers_to_use)
-            assert resp1.status_code == 200
-            
-            # Check that the turn rotated
-            updated_game_state = client.get(f"/games/{gid}", headers=h1).json()
-            assert updated_game_state["current_player_id"] != current_player_id, "Turn should rotate after move"
-            
-            # If the move was made by the authenticated user, check their rack was replenished
-            if headers_to_use == h1:
-                # Find the authenticated user's rack again
-                updated_user_rack = None
-                for pid, pdata in updated_game_state["players"].items():
-                    if len(pdata["rack"]) > 0:  # Only the authenticated user's rack is visible
-                        updated_user_rack = pdata["rack"]
-                        break
-                
-                assert updated_user_rack is not None, "Authenticated user should still have a visible rack"
-                assert len(updated_user_rack) == 7 or len(updated_user_rack) == len(authenticated_user_rack) - len(letters_needed), "Rack should be replenished to 7 letters or have used letters removed"
-    else:
-        # Skip test if we can't form any valid word
-        print("Skipping test - could not form a valid word from rack")
-        assert True
+    
+    # Verify we found a valid word (this tests our word validation logic)
+    assert word_to_play is not None, f"Should be able to form a word from rack: {current_player_rack}"
+    assert letters_needed is not None, "Should have letters needed for the word"
+    
+    # Place the word horizontally starting at center
+    move = [
+        {"row": 7, "col": 7 + i, "letter": letter}
+        for i, letter in enumerate(letters_needed)
+    ]
+    
+    # Make the move (this tests the move validation and word checking)
+    resp1 = client.post(f"/games/{gid}/move", json=move, headers=headers_to_use)
+    assert resp1.status_code == 200, f"Move should succeed for word '{word_to_play}', got {resp1.status_code}: {resp1.json()}"
+    
+    # Check that the turn rotated (this tests turn management)
+    final_game_state = client.get(f"/games/{gid}", headers=h1).json()
+    assert final_game_state["current_player_id"] != current_player_id, "Turn should rotate after move"
+    
+    # Verify the move was recorded and scored properly
+    move_response_data = resp1.json()
+    assert "points_gained" in move_response_data, "Move response should include points"
+    assert move_response_data["points_gained"] > 0, "Should gain points for valid word"
 
 def test_pass_turn():
     pw = "pw"
