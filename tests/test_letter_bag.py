@@ -5,12 +5,12 @@ def test_letter_bag_initialization():
     bag = LetterBag()
     
     # Check that the bag has the correct number of letters
-    total_letters = sum(LETTER_DISTRIBUTION.values())
+    total_letters = sum(LETTER_DISTRIBUTION["en"]["frequency"].values())
     assert bag.remaining() == total_letters
     
     # Check that the distribution is correct
     distribution = bag.get_distribution()
-    for letter, count in LETTER_DISTRIBUTION.items():
+    for letter, count in LETTER_DISTRIBUTION["en"]["frequency"].items():
         assert distribution.get(letter, 0) == count
 
 def test_letter_bag_draw():

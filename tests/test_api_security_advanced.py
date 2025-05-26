@@ -11,9 +11,21 @@ client = TestClient(app)
 
 def test_sql_injection_prevention():
     """Test that SQL injection attempts are prevented."""
-    # SQL injection attempt in username
-    sql_injection_username = "admin' OR 1=1--"
+    # Create a legitimate user first for authentication
+    legitimate_username = f"legit_user_{uuid.uuid4().hex[:6]}"
     password = "testpass"
+    
+    register_response = client.post(
+        "/users/register", 
+        json={"username": legitimate_username, "password": password}
+    )
+    assert register_response.status_code == 200
+    
+    token = get_test_token(legitimate_username)
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # SQL injection attempt in username during registration
+    sql_injection_username = "admin' OR 1=1--"
     
     # Try to register with SQL injection username
     register_response = client.post(
@@ -30,8 +42,8 @@ def test_sql_injection_prevention():
     # This should fail with 401 (Unauthorized) or 400 (Bad Request) or 404 (Not Found)
     assert login_response.status_code in (400, 401, 404)
     
-    # Try SQL injection in game ID
+    # Try SQL injection in game ID with proper authentication
     game_id = "' OR 1=1--"
-    response = client.get(f"/games/{game_id}")
+    response = client.get(f"/games/{game_id}", headers=headers)
     assert response.status_code in (404, 422)  # Should return not found, not all games
 

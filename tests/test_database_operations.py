@@ -13,7 +13,8 @@ def test_move_persistence():
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers, json=game_data)
     assert game_response.status_code in (200, 404)
 
 def test_rack_update_after_move():
@@ -23,6 +24,7 @@ def test_rack_update_after_move():
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers, json=game_data)
     assert game_response.status_code in (200, 404)
 

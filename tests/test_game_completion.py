@@ -26,7 +26,8 @@ def test_manual_game_completion():
     headers2 = {"Authorization": f"Bearer {token2}"}
     
     # Create a game and join
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code in (200, 404)
     
     if game_response.status_code == 200:
@@ -55,7 +56,8 @@ def test_game_completion_empty_rack():
     headers2 = {"Authorization": f"Bearer {token2}"}
     
     # Create a game and join
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code in (200, 404)
     
     if game_response.status_code == 200:
@@ -84,7 +86,8 @@ def test_game_completion_consecutive_passes():
     headers2 = {"Authorization": f"Bearer {token2}"}
     
     # Create a game and join
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code in (200, 404)
     
     if game_response.status_code == 200:
@@ -118,7 +121,8 @@ def test_game_completion_inactivity():
     headers2 = {"Authorization": f"Bearer {token2}"}
     
     # Create a game and join
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", json=game_data)
     assert game_response.status_code in (200, 404)
     
     if game_response.status_code == 200:

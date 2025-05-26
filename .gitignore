@@ -39,3 +39,8 @@ coverage.xml
 # Keep scripts folder
 scripts/*
 !scripts/*.py
+
+# Environment files
+.env
+.env.*
+!.env.example

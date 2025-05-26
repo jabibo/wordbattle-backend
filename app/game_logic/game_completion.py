@@ -4,67 +4,27 @@ from app.models import Game, Player, Move
 from app.config import GAME_INACTIVE_DAYS
 import json
 from datetime import datetime, timezone, timedelta
+from app.models.game import GameStatus
+from app.game_logic.game_state import GameState, GamePhase
+from app.routers.games import GameStateEncoder
 
-def check_game_completion(game_id: str, db: Session) -> Tuple[bool, Optional[Dict]]:
-    """
-    Check if a game is complete based on various conditions.
+def check_game_completion(game: Game, game_state: GameState) -> bool:
+    """Check if the game should be completed and update its status if so."""
+    is_complete, completion_data = game_state.check_game_end()
     
-    Conditions for game completion:
-    1. Three consecutive passes by all players
-    2. No more letters in the bag and one player has used all their letters
-    3. Game has been inactive for more than the configured number of days
-    
-    Returns:
-        Tuple of (is_complete, completion_data)
-        where completion_data contains details about the completion
-    """
-    game = db.query(Game).filter(Game.id == game_id).first()
-    if not game:
-        return False, None
-    
-    players = db.query(Player).filter(Player.game_id == game_id).all()
-    if not players:
-        return False, None
-    
-    # Check for empty rack (player has used all letters)
-    for player in players:
-        if player.rack == "":
-            return True, {
-                "reason": "player_empty_rack",
-                "winner_id": player.user_id,
-                "scores": {p.user_id: p.score for p in players}
-            }
-    
-    # Check for consecutive passes
-    moves = db.query(Move).filter(Move.game_id == game_id).order_by(Move.timestamp.desc()).limit(len(players) * 3).all()
-    if len(moves) >= len(players) * 3:
-        # Check if the last N*3 moves are all passes
-        pass_count = 0
-        for move in moves:
-            move_data = json.loads(move.move_data)
-            if not move_data:  # Empty move data indicates a pass
-                pass_count += 1
-            else:
-                break
+    if is_complete:
+        # Update game status
+        game.status = GameStatus.COMPLETED
         
-        if pass_count >= len(players) * 3:
-            # All players have passed three times in a row
-            return True, {
-                "reason": "consecutive_passes",
-                "scores": {p.user_id: p.score for p in players},
-                "winner_id": max(players, key=lambda p: p.score).user_id
-            }
+        # Update game state
+        state_data = json.loads(game.state)
+        state_data["phase"] = GamePhase.COMPLETED.value
+        state_data["completion_data"] = completion_data
+        game.state = json.dumps(state_data, cls=GameStateEncoder)
+        
+        return True
     
-    # Check for inactivity
-    last_move = db.query(Move).filter(Move.game_id == game_id).order_by(Move.timestamp.desc()).first()
-    if last_move and (datetime.now(timezone.utc) - last_move.timestamp) > timedelta(days=GAME_INACTIVE_DAYS):
-        return True, {
-            "reason": "inactivity",
-            "scores": {p.user_id: p.score for p in players},
-            "winner_id": max(players, key=lambda p: p.score).user_id
-        }
-    
-    return False, None
+    return False
 
 def finalize_game(game_id: str, db: Session) -> Dict:
     """

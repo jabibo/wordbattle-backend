@@ -6,34 +6,33 @@ import urllib.parse
 load_dotenv()
 
 # Database settings
-# Get database host from environment or use default
-DB_HOST = os.environ.get("DB_HOST", "localhost")  # Default to localhost for local development
-#DB_HOST = os.environ.get("DB_HOST", "host.docker.internal")  # Default to localhost for local development
-
+DB_HOST = os.environ.get("DB_HOST", "db")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "delta42%")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
 DB_NAME = os.environ.get("DB_NAME", "wordbattle")
 
-# URL encode the password to handle special characters
-encoded_password = urllib.parse.quote_plus(DB_PASSWORD)
+# Test database settings
+TEST_DB_NAME = os.environ.get("TEST_DB_NAME", "wordbattle_test")
 
-# Construct database URL
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL", 
-    f"postgresql://{DB_USER}:{encoded_password}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
+def get_database_url(is_test=False):
+    """Get database URL with proper encoding."""
+    db_name = TEST_DB_NAME if is_test else DB_NAME
+    return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{db_name}"
+
+# Use the function to get the main database URL
+DATABASE_URL = os.environ.get("DATABASE_URL", get_database_url())
 
 # Security settings
-SECRET_KEY = os.environ.get("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
-ALGORITHM = os.environ.get("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+SECRET_KEY = os.getenv("SECRET_KEY", "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 # Game settings
-DEFAULT_WORDLIST_PATH = os.environ.get("DEFAULT_WORDLIST_PATH", "data/de_words.txt")
-LETTER_POOL_SIZE = int(os.environ.get("LETTER_POOL_SIZE", "7"))
-GAME_INACTIVE_DAYS = int(os.environ.get("GAME_INACTIVE_DAYS", "7"))
+DEFAULT_WORDLIST_PATH = os.getenv("DEFAULT_WORDLIST_PATH", "data/de_words.txt")
+LETTER_POOL_SIZE = int(os.getenv("LETTER_POOL_SIZE", "7"))
+GAME_INACTIVE_DAYS = int(os.getenv("GAME_INACTIVE_DAYS", "7"))
 
 # API settings
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
-RATE_LIMIT = int(os.environ.get("RATE_LIMIT", "60"))  # Requests per minute
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+RATE_LIMIT = int(os.getenv("RATE_LIMIT", "60"))  # Requests per minute

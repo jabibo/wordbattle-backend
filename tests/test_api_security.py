@@ -56,7 +56,8 @@ def test_authorization_separation():
     headers1 = {"Authorization": f"Bearer {token1}"}
     
     # Create a game as user1
-    game_response = client.post("/games/", headers=headers1)
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
     
