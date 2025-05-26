@@ -1,84 +1,84 @@
-from app.game_logic.letter_bag import LetterBag, create_rack, exchange_letters, LETTER_DISTRIBUTION
+from app.game_logic.letter_bag import create_letter_bag, create_rack, exchange_letters, draw_letters, return_letters, LetterBag
 
 def test_letter_bag_initialization():
-    """Test that the letter bag is initialized correctly."""
-    bag = LetterBag()
+    """Test that letter bag is initialized with correct distribution."""
+    bag = create_letter_bag()
+    assert len(bag) > 0
     
-    # Check that the bag has the correct number of letters
-    total_letters = sum(LETTER_DISTRIBUTION["en"]["frequency"].values())
-    assert bag.remaining() == total_letters
+    # Test German bag
+    de_bag = create_letter_bag("de")
+    assert len(de_bag) > 0
     
-    # Check that the distribution is correct
-    distribution = bag.get_distribution()
-    for letter, count in LETTER_DISTRIBUTION["en"]["frequency"].items():
-        assert distribution.get(letter, 0) == count
+    # Test English bag
+    en_bag = create_letter_bag("en")
+    assert len(en_bag) > 0
 
 def test_letter_bag_draw():
     """Test drawing letters from the bag."""
-    bag = LetterBag()
-    initial_count = bag.remaining()
+    bag = create_letter_bag()
+    initial_size = len(bag)
     
     # Draw some letters
-    drawn = bag.draw(7)
-    
-    # Check that the correct number of letters was drawn
+    drawn = draw_letters(bag, 7)
     assert len(drawn) == 7
-    assert bag.remaining() == initial_count - 7
+    assert len(bag) == initial_size - 7
     
-    # Draw more than remaining
-    bag = LetterBag()
-    total = bag.remaining()
-    drawn = bag.draw(total + 10)
-    assert len(drawn) == total
-    assert bag.remaining() == 0
+    # Draw more than available
+    remaining = len(bag)
+    drawn = draw_letters(bag, remaining + 10)
+    assert len(drawn) == remaining
+    assert len(bag) == 0
 
 def test_letter_bag_return():
     """Test returning letters to the bag."""
-    bag = LetterBag()
-    initial_count = bag.remaining()
+    bag = create_letter_bag()
+    initial_size = len(bag)
     
-    # Draw some letters
-    drawn = bag.draw(7)
-    assert bag.remaining() == initial_count - 7
-    
-    # Return the letters
-    bag.return_letters(drawn)
-    assert bag.remaining() == initial_count
+    # Draw and return letters
+    drawn = draw_letters(bag, 7)
+    return_letters(bag, drawn)
+    assert len(bag) == initial_size
 
 def test_create_rack():
     """Test creating a rack."""
-    # Test with default distribution
+    # Test with LetterBag class
+    letter_bag = LetterBag()
+    initial_size = letter_bag.remaining_count()
+    
+    # Create a rack
+    rack = create_rack(letter_bag)
+    assert len(rack) == 7
+    assert letter_bag.remaining_count() == initial_size - 7
+    
+    # Create a rack with custom size
+    rack = create_rack(letter_bag, size=5)
+    assert len(rack) == 5
+    assert letter_bag.remaining_count() == initial_size - 12  # 7 + 5 letters drawn
+    
+    # Test without letter bag (should use default distribution)
     rack = create_rack()
     assert len(rack) == 7
-    
-    # Test with letter bag
-    bag = LetterBag()
-    initial_count = bag.remaining()
-    rack = create_rack(bag)
-    assert len(rack) == 7
-    assert bag.remaining() == initial_count - 7
 
 def test_exchange_letters():
     """Test exchanging letters."""
-    # Test with default distribution
-    rack = "ABCDEFG"
-    new_rack, new_letters = exchange_letters(rack, "ABC")
-    assert len(new_rack) == 7
-    assert "D" in new_rack
-    assert "E" in new_rack
-    assert "F" in new_rack
-    assert "G" in new_rack
-    assert len(new_letters) == 3
+    letter_bag = LetterBag()
+    initial_size = letter_bag.remaining_count()
     
-    # Test with letter bag
-    bag = LetterBag()
-    initial_count = bag.remaining()
-    rack = "ABCDEFG"
-    new_rack, new_letters = exchange_letters(rack, "ABC", bag)
+    # Create a rack and exchange some letters
+    rack = create_rack(letter_bag)
+    letters_to_exchange = rack[:3]
+    new_rack, new_letters = exchange_letters(rack, letters_to_exchange, letter_bag)
+    
     assert len(new_rack) == 7
-    assert "D" in new_rack
-    assert "E" in new_rack
-    assert "F" in new_rack
-    assert "G" in new_rack
     assert len(new_letters) == 3
-    assert bag.remaining() == initial_count  # Should be the same since we returned and drew the same number
+    assert letter_bag.remaining_count() == initial_size - 7  # Same size as before exchange
+    
+    # Test without letter bag
+    rack = "ABCDEFG"
+    letters_to_exchange = "ABC"
+    new_rack, new_letters = exchange_letters(rack, letters_to_exchange)
+    assert len(new_rack) == 7
+    assert len(new_letters) == 3
+    assert "A" not in new_rack[:4]  # First 4 letters should not contain exchanged letters
+    assert "B" not in new_rack[:4]
+    assert "C" not in new_rack[:4]

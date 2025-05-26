@@ -48,4 +48,64 @@ def validate_move(
         if not adjacent:
             return False, "Zug muss an bestehendem Wort angrenzen."
 
+    # Prüfe: Wörter sind gültig
+    temp_board = [row[:] for row in board]
+    for r, c, l in move_letters:
+        temp_board[r][c] = l
+
+    # Finde alle Wörter
+    words = []
+    if len(rows) == 1:  # Horizontal
+        row = list(rows)[0]
+        start = min(c for _, c, _ in move_letters)
+        end = max(c for _, c, _ in move_letters)
+        while start > 0 and temp_board[row][start-1] not in (None, "", " "):
+            start -= 1
+        while end < board_size-1 and temp_board[row][end+1] not in (None, "", " "):
+            end += 1
+        word = "".join(temp_board[row][c] for c in range(start, end+1) if temp_board[row][c] not in (None, "", " "))
+        if len(word) > 1:
+            words.append(word)
+    else:  # Vertikal
+        col = list(cols)[0]
+        start = min(r for r, _, _ in move_letters)
+        end = max(r for r, _, _ in move_letters)
+        while start > 0 and temp_board[start-1][col] not in (None, "", " "):
+            start -= 1
+        while end < board_size-1 and temp_board[end+1][col] not in (None, "", " "):
+            end += 1
+        word = "".join(temp_board[r][col] for r in range(start, end+1) if temp_board[r][col] not in (None, "", " "))
+        if len(word) > 1:
+            words.append(word)
+
+    # Prüfe Kreuzwörter
+    for r, c, _ in move_letters:
+        # Horizontal
+        if len(rows) != 1:  # Nur wenn Hauptwort vertikal
+            start = c
+            end = c
+            while start > 0 and temp_board[r][start-1] not in (None, "", " "):
+                start -= 1
+            while end < board_size-1 and temp_board[r][end+1] not in (None, "", " "):
+                end += 1
+            word = "".join(temp_board[r][c] for c in range(start, end+1) if temp_board[r][c] not in (None, "", " "))
+            if len(word) > 1:
+                words.append(word)
+        # Vertikal
+        if len(cols) != 1:  # Nur wenn Hauptwort horizontal
+            start = r
+            end = r
+            while start > 0 and temp_board[start-1][c] not in (None, "", " "):
+                start -= 1
+            while end < board_size-1 and temp_board[end+1][c] not in (None, "", " "):
+                end += 1
+            word = "".join(temp_board[r][c] for r in range(start, end+1) if temp_board[r][c] not in (None, "", " "))
+            if len(word) > 1:
+                words.append(word)
+
+    # Prüfe ob alle Wörter im Wörterbuch sind
+    for word in words:
+        if word not in dictionary:
+            return False, f"Wort '{word}' nicht im Wörterbuch."
+
     return True, "Zug ist gültig."

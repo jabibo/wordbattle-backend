@@ -1,5 +1,5 @@
 import random
-from typing import List, Dict, Tuple
+from typing import List, Dict, Optional, Tuple
 
 # Letter distribution with frequencies and points for each language
 LETTER_DISTRIBUTION = {
@@ -35,60 +35,79 @@ class LetterBag:
     """A class to manage the letter bag for the game."""
     
     def __init__(self, language: str = "en"):
-        """Initialize the letter bag with the standard distribution."""
-        self.letters = []
-        distribution = LETTER_DISTRIBUTION[language]["frequency"]
-        for letter, count in distribution.items():
-            self.letters.extend([letter] * count)
-        random.shuffle(self.letters)
+        self.language = language
+        self.letters = create_letter_bag(language)
     
     def draw(self, count: int) -> List[str]:
-        """Draw a specified number of letters from the bag."""
-        if count > len(self.letters):
-            count = len(self.letters)  # Can't draw more than what's available
-        
-        drawn = []
-        for _ in range(count):
-            if self.letters:
-                drawn.append(self.letters.pop())
-        
-        return drawn
+        """Draw letters from the bag."""
+        return draw_letters(self.letters, count)
     
     def return_letters(self, letters: List[str]) -> None:
-        """Return letters to the bag and shuffle."""
-        self.letters.extend(letters)
-        random.shuffle(self.letters)
+        """Return letters to the bag."""
+        return_letters(self.letters, letters)
     
-    def remaining(self) -> int:
-        """Return the number of letters remaining in the bag."""
+    def remaining_count(self) -> int:
+        """Get the number of letters remaining in the bag."""
         return len(self.letters)
-    
-    def __len__(self) -> int:
-        """Return the number of letters remaining in the bag (for len() function)."""
-        return len(self.letters)
-    
-    def get_distribution(self) -> Dict[str, int]:
-        """Return the current distribution of letters in the bag."""
-        distribution = {}
-        for letter in self.letters:
-            distribution[letter] = distribution.get(letter, 0) + 1
-        return distribution
 
-def create_rack(letter_bag: LetterBag = None, language: str = "en") -> str:
-    """Create a new rack with 7 letters."""
+def create_letter_bag(language: str = "en") -> List[str]:
+    """Create a new letter bag with the correct distribution of letters."""
+    if language == "de":
+        letter_distribution = {
+            'A': 5, 'B': 2, 'C': 2, 'D': 4, 'E': 15, 'F': 2, 'G': 3, 'H': 4, 'I': 6,
+            'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 9, 'O': 3, 'P': 1, 'Q': 1, 'R': 6,
+            'S': 7, 'T': 6, 'U': 6, 'V': 1, 'W': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
+        }
+    else:  # English
+        letter_distribution = {
+            'A': 9, 'B': 2, 'C': 2, 'D': 4, 'E': 12, 'F': 2, 'G': 3, 'H': 2, 'I': 9,
+            'J': 1, 'K': 1, 'L': 4, 'M': 2, 'N': 6, 'O': 8, 'P': 2, 'Q': 1, 'R': 6,
+            'S': 4, 'T': 6, 'U': 4, 'V': 2, 'W': 2, 'X': 1, 'Y': 2, 'Z': 1, '?': 2
+        }
+    
+    # Create list with correct distribution
+    letters = []
+    for letter, count in letter_distribution.items():
+        letters.extend([letter] * count)
+    
+    # Shuffle the letters
+    random.shuffle(letters)
+    return letters
+
+def draw_letters(letter_bag: List[str], count: int) -> List[str]:
+    """Draw a specified number of letters from the bag."""
+    if count > len(letter_bag):
+        count = len(letter_bag)
+    drawn = []
+    for _ in range(count):
+        if letter_bag:
+            drawn.append(letter_bag.pop())
+    return drawn
+
+def return_letters(letter_bag: List[str], letters: List[str]) -> None:
+    """Return letters to the bag and shuffle."""
+    letter_bag.extend(letters)
+    random.shuffle(letter_bag)
+
+def create_rack(letter_bag: Optional[LetterBag] = None, language: str = "en", size: int = 7) -> str:
+    """Create a new rack with the specified number of letters."""
     if letter_bag is None:
         # If no letter bag is provided, use the default distribution
         all_letters = []
         distribution = LETTER_DISTRIBUTION[language]["frequency"]
         for letter, count in distribution.items():
             all_letters.extend([letter] * count)
-        return "".join(random.sample(all_letters, 7))
+        return "".join(random.sample(all_letters, min(size, len(all_letters))))
     
     # Draw from the provided letter bag
-    drawn = letter_bag.draw(7)
+    if isinstance(letter_bag, LetterBag):
+        drawn = letter_bag.draw(size)
+    else:
+        # Handle case where letter_bag is a List[str]
+        drawn = draw_letters(letter_bag, size)
     return "".join(drawn)
 
-def exchange_letters(rack: str, letters_to_exchange: str, letter_bag: LetterBag = None, language: str = "en") -> Tuple[str, List[str]]:
+def exchange_letters(rack: str, letters_to_exchange: str, letter_bag: Optional[LetterBag] = None, language: str = "en") -> Tuple[str, List[str]]:
     """
     Exchange letters in a rack.
     
@@ -123,3 +142,11 @@ def exchange_letters(rack: str, letters_to_exchange: str, letter_bag: LetterBag 
     new_rack += "".join(new_letters)
     
     return new_rack, new_letters
+
+def refill_rack(letter_bag: List[str], rack: str, target_size: int = 7) -> str:
+    """Refill a rack to the target size."""
+    needed = target_size - len(rack)
+    if needed > 0:
+        new_letters = draw_letters(letter_bag, needed)
+        rack += "".join(new_letters)
+    return rack

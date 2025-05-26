@@ -93,29 +93,29 @@ def test_invalid_move_data():
         json=[],
         headers=current_headers
     )
-    assert response.status_code in [400, 403], "Empty move data should be rejected or forbidden if not current player"
+    assert response.status_code == 400, "Empty move data should be rejected with validation error"
     
     # Test with invalid coordinates
     response = client.post(
         f"/games/{game_id}/move",
         json=[{"row": -1, "col": 7, "letter": "A"}],
-        headers=headers
+        headers=current_headers
     )
-    assert response.status_code in [400, 403], "Invalid coordinates should be rejected or forbidden if not current player"
+    assert response.status_code == 400, "Invalid coordinates should be rejected"
     
     # Test with missing required field
     response = client.post(
         f"/games/{game_id}/move",
         json=[{"row": 7, "letter": "A"}],  # Missing 'col'
-        headers=headers
+        headers=current_headers
     )
-    assert response.status_code in [400, 422], "Missing required field should cause validation error"
+    assert response.status_code == 400, "Missing required field should cause validation error"
     
     # Test with invalid move format (non-list)
     response = client.post(
         f"/games/{game_id}/move",
         json="not a list",
-        headers=headers
+        headers=current_headers
     )
     assert response.status_code == 422, "Non-list move data should cause validation error"
 

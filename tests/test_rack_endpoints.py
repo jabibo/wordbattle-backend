@@ -108,102 +108,82 @@ def test_refill_rack_after_use():
     game_state = client.get(f"/games/{game_id}", headers=headers).json()
     current_player_id = str(game_state["current_player_id"])
     
-    # Find the authenticated user's rack (only their own rack is visible)
-    initial_rack = None
+    # Find the authenticated user's ID (only their own rack is visible)
+    authenticated_user_id = None
     for player_id, player_data in game_state["players"].items():
         if len(player_data["rack"]) > 0:  # Only the authenticated user's rack is visible
-            initial_rack = player_data["rack"]
+            authenticated_user_id = player_id
             break
     
-    assert initial_rack is not None, "Authenticated user should have a visible rack"
-    assert len(initial_rack) == 7, "Initial rack should have 7 letters"
+    assert authenticated_user_id is not None, "Authenticated user should be found"
+    
+    # Set a predetermined rack that can form the word "ICE" (I, C, E + extra letters)
+    # Update the player's rack directly in the database to ensure we can make a valid move
+    from app.database import SessionLocal
+    from app.models import Player
+    
+    db = SessionLocal()
+    try:
+        player = db.query(Player).filter_by(game_id=game_id, user_id=int(authenticated_user_id)).first()
+        if player:
+            player.rack = "ICEXYZW"  # ICE + 4 extra letters to make 7 total
+            db.commit()
+    finally:
+        db.close()
+    
+    # Define the word we'll play and the letters needed
+    word_to_play = "ICE"
+    letters_needed = ["I", "C", "E"]
 
-    # Try to form a valid word from the rack
-    possible_words = [
-        ("JA", ["J", "A"]),
-        ("AN", ["A", "N"]),
-        ("AB", ["A", "B"]),
-        ("DA", ["D", "A"]),
-        ("EI", ["E", "I"])
+    # Determine which headers to use based on current player
+    if str(current_player_id) != str(authenticated_user_id):
+        # Current player is the other user, need to set their rack too
+        db = SessionLocal()
+        try:
+            other_player = db.query(Player).filter_by(game_id=game_id, user_id=int(current_player_id)).first()
+            if other_player:
+                other_player.rack = "FIREXYZ"  # FIRE + 3 extra letters
+                db.commit()
+        finally:
+            db.close()
+        headers_to_use = headers2
+        word_to_play = "FIRE"
+        letters_needed = ["F", "I", "R", "E"]
+    else:
+        headers_to_use = headers
+    
+    # Place the word horizontally starting at center
+    move = [
+        {"row": 7, "col": 7 + i, "letter": letter}
+        for i, letter in enumerate(letters_needed)
     ]
 
-    word_to_play = None
-    letters_needed = None
+    # Make move
+    move_response = client.post(
+        f"/games/{game_id}/move",
+        json=move,
+        headers=headers_to_use
+    )
+    
+    assert move_response.status_code == 200, f"Move should succeed for word '{word_to_play}', got {move_response.status_code}: {move_response.json()}"
 
-    for word, letters in possible_words:
-        if all(letter in initial_rack for letter in letters):
-            word_to_play = word
-            letters_needed = letters
-            break
-
-    if word_to_play:
-        # Determine which user is the current player and get their rack
-        # Find the authenticated user's ID (the one with visible rack)
-        authenticated_user_id = None
-        for pid, pdata in game_state["players"].items():
-            if len(pdata["rack"]) > 0:  # This is the authenticated user
-                authenticated_user_id = pid
+    # Get updated game state
+    updated_state = client.get(f"/games/{game_id}", headers=headers).json()
+    
+    # If the move was made by the authenticated user, check their rack was replenished
+    if headers_to_use == headers:
+        # Find the authenticated user's rack again
+        new_rack = None
+        for player_id, player_data in updated_state["players"].items():
+            if len(player_data["rack"]) > 0:  # Only the authenticated user's rack is visible
+                new_rack = player_data["rack"]
                 break
         
-        # If it's not the authenticated user's turn, get game state from current player's perspective
-        if str(current_player_id) != str(authenticated_user_id):
-            # Get game state from the current player's perspective
-            current_player_game_state = client.get(f"/games/{game_id}", headers=headers2).json()
-            # Find the current player's rack
-            current_player_rack = None
-            for pid, pdata in current_player_game_state["players"].items():
-                if len(pdata["rack"]) > 0:  # This is the current player's rack
-                    current_player_rack = pdata["rack"]
-                    break
-            
-            # Check if we can form a word with the current player's rack
-            word_to_play = None
-            letters_needed = None
-            for word, letters in possible_words:
-                if current_player_rack and all(letter in current_player_rack for letter in letters):
-                    word_to_play = word
-                    letters_needed = letters
-                    break
-            
-            headers_to_use = headers2
-        else:
-            headers_to_use = headers
+        assert new_rack is not None, "Authenticated user should still have a visible rack"
+        # Verify rack was refilled to 7 letters
+        assert len(new_rack) == 7, "Rack should be refilled to 7 letters"
         
-        if word_to_play and letters_needed:
-            # Place the word horizontally starting at center
-            move = [
-                {"row": 7, "col": 7 + i, "letter": letter}
-                for i, letter in enumerate(letters_needed)
-            ]
-
-            # Make move
-            move_response = client.post(
-                f"/games/{game_id}/move",
-                json=move,
-                headers=headers_to_use
-            )
-            assert move_response.status_code == 200
-
-            # Get updated game state
-            updated_state = client.get(f"/games/{game_id}", headers=headers).json()
-            
-            # If the move was made by the authenticated user, check their rack was replenished
-            if headers_to_use == headers:
-                # Find the authenticated user's rack again
-                new_rack = None
-                for player_id, player_data in updated_state["players"].items():
-                    if len(player_data["rack"]) > 0:  # Only the authenticated user's rack is visible
-                        new_rack = player_data["rack"]
-                        break
-                
-                assert new_rack is not None, "Authenticated user should still have a visible rack"
-                # Verify rack was refilled
-                assert len(new_rack) == 7, "Rack should be refilled to 7 letters"
-                # Verify the used letters are no longer in the rack
-                for letter in letters_needed:
-                    assert new_rack.count(letter) <= initial_rack.count(letter) - 1, f"Letter {letter} should have been used"
-    else:
-        # Skip test if we can't form any valid word
-        print("Skipping test - could not form a valid word from rack")
-        assert True
+        # Verify the used letters are no longer in the rack (at least some were used)
+        remaining_ice_letters = sum(1 for letter in new_rack if letter in ["I", "C", "E"])
+        assert remaining_ice_letters < 3, "Some ICE letters should have been used"
 

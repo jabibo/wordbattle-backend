@@ -122,7 +122,7 @@ def test_game_completion_inactivity():
     
     # Create a game and join
     game_data = {"language": "en", "max_players": 2}
-    game_response = client.post("/games/", json=game_data)
+    game_response = client.post("/games/", headers=headers1, json=game_data)
     assert game_response.status_code in (200, 404)
     
     if game_response.status_code == 200:

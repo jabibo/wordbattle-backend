@@ -189,29 +189,12 @@ async def websocket_endpoint(
     * Game events (start, end, etc.)
     
     The connection requires authentication via a JWT token and the user must be a participant in the game.
-    
-    Parameters:
-        websocket (WebSocket): The WebSocket connection
-        game_id (str): The ID of the game to connect to
-        token (str): JWT access token for authentication
-    
-    Messages:
-        The WebSocket connection handles these message types:
-        * connection_established: Initial connection confirmation with game state
-        * game_update: Updates to game state (moves, scores, etc.)
-        * chat_message: Chat messages between players
-        * error: Error messages
-    
-    Close Codes:
-        * 1008: Authentication failure
-        * 4001: Invalid or missing token
-        * 4003: User not authorized for this game
-        * 4004: Game not found
     """
     from app.websocket import manager
     from app.auth import get_user_from_token
     from app.database import SessionLocal
-    from app.models import Game
+    from app.models import Game, ChatMessage
+    from datetime import datetime, timezone
     
     if not token:
         await websocket.close(code=1008)
@@ -249,8 +232,35 @@ async def websocket_endpoint(
             # Keep connection open and handle messages
             try:
                 while True:
-                    data = await websocket.receive_text()
-                    # Process messages if needed
+                    data = await websocket.receive_json()
+                    logger.debug(f"Received WebSocket message on game {game_id} from {user.username}: {data}")
+                    
+                    if data.get("type") == "chat_message":
+                        message_text = data.get("message", "").strip()
+                        if message_text:  # Only process non-empty messages
+                            # Store message in database
+                            chat_message = ChatMessage(
+                                game_id=game_id,
+                                sender_id=user.id,
+                                message=message_text,
+                                timestamp=datetime.now(timezone.utc)
+                            )
+                            db.add(chat_message)
+                            db.commit()
+                            db.refresh(chat_message)
+                            
+                            # Broadcast to all connected players
+                            await manager.broadcast_to_game(
+                                game_id,
+                                {
+                                    "type": "chat_message",
+                                    "message_id": chat_message.id,
+                                    "sender_id": user.id,
+                                    "sender_username": user.username,
+                                    "message": message_text,
+                                    "timestamp": chat_message.timestamp.isoformat()
+                                }
+                            )
             except WebSocketDisconnect:
                 manager.disconnect(websocket, game_id)
         except Exception as e:
