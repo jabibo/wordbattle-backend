@@ -4,9 +4,11 @@ import uuid
 
 def test_user_registration(client):
     """Test user registration endpoint."""
-    # User data with unique username
+    # User data with unique username and email
+    username = f"user_{uuid.uuid4().hex[:6]}"
     user_data = {
-        "username": f"user_{uuid.uuid4().hex[:6]}",
+        "username": username,
+        "email": f"{username}@example.com",
         "password": "testpassword"
     }
 
@@ -18,4 +20,4 @@ def test_user_registration(client):
     response_data = response.json()
     assert "message" in response_data
     assert "id" in response_data
-    assert response_data["message"] == "Benutzer erfolgreich registriert" 
+    assert "User successfully registered" in response_data["message"] 

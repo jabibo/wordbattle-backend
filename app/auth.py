@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta
 import os
+import secrets
+import string
 
 # Determine if we're in testing mode
 TESTING = os.environ.get("TESTING") == "1"
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
 import jwt
 from jwt.exceptions import PyJWTError as JWTError
 from passlib.context import CryptContext
@@ -14,9 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.models import User
 from app.dependencies import get_db
-from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
-
-router = APIRouter(tags=["auth"])
+from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, PERSISTENT_TOKEN_EXPIRE_DAYS
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
@@ -36,13 +36,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
 
-@router.post("/auth/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = get_user_by_username(db, form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(status_code=400, detail="Falscher Benutzername oder Passwort")
-    access_token = create_access_token(data={"sub": user.username})
-    return {"access_token": access_token, "token_type": "bearer"}
+def get_user_by_email(db: Session, email: str):
+    return db.query(User).filter(User.email == email).first()
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
     """Get current user from token."""
@@ -92,3 +87,18 @@ def get_user_from_token(token: str, db: Session = None) -> Optional[User]:
         return None
     except JWTError:
         return None
+
+def generate_verification_code() -> str:
+    """Generate a 6-digit verification code."""
+    return ''.join(secrets.choice(string.digits) for _ in range(6))
+
+def generate_persistent_token() -> str:
+    """Generate a secure persistent token."""
+    return secrets.token_urlsafe(32)
+
+def create_persistent_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    """Create a persistent token for 'remember me' functionality."""
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=PERSISTENT_TOKEN_EXPIRE_DAYS))
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
