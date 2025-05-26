@@ -22,24 +22,39 @@ def test_score_update_after_move():
     headers2 = {"Authorization": f"Bearer {token2}"}
     
     # Create game
-    game_response = client.post("/games/")
+    game_data = {"language": "en", "max_players": 2}
+    game_response = client.post("/games/", headers=headers, json=game_data)
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
     
-    # Join game
-    client.post(f"/games/{game_id}/join", headers=headers)
-    client.post(f"/games/{game_id}/join", headers=headers2)
+    # Player 2 joins
+    join_response = client.post(f"/games/{game_id}/join", headers=headers2)
+    assert join_response.status_code == 200
+    
+    # Verify game state before starting
+    game_state = client.get(f"/games/{game_id}", headers=headers).json()
+    assert game_state["status"] == "ready"
     
     # Start game
-    client.post(f"/games/{game_id}/start", headers=headers)
+    start_response = client.post(f"/games/{game_id}/start", headers=headers)
+    assert start_response.status_code == 200
     
-    # Make move
-    move = [{"row": 7, "col": 7, "letter": "H"}]
-    move_response = client.post(
-        f"/games/{game_id}/move",
-        json={"move_data": move},
-        headers=headers
-    )
+    # Verify game started
+    game_state = client.get(f"/games/{game_id}", headers=headers).json()
+    assert game_state["status"] == "in_progress"
+    
+    # Make a move
+    move_data = [
+        {"row": 7, "col": 7, "letter": "T"},
+        {"row": 7, "col": 8, "letter": "E"},
+        {"row": 7, "col": 9, "letter": "S"},
+        {"row": 7, "col": 10, "letter": "T"}
+    ]
+    move_response = client.post(f"/games/{game_id}/move", json=move_data, headers=headers)
     assert move_response.status_code == 200
-    assert "points" in move_response.json()
+    
+    # Check score update
+    game_state = client.get(f"/games/{game_id}", headers=headers).json()
+    player_id = str(game_state["current_player_id"])  # Convert to string since JSON keys are strings
+    assert game_state["players"][player_id]["score"] > 0
 

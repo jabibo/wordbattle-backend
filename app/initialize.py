@@ -26,7 +26,7 @@ def create_database():
     host = parsed_url.hostname
     port = parsed_url.port or 5432
     user = parsed_url.username
-    password = urllib.parse.unquote(parsed_url.password) if parsed_url.password else ""
+    password = urllib.parse.unquote_plus(parsed_url.password) if parsed_url.password else ""
     
     logger.info(f"Connecting to PostgreSQL at {host}:{port}")
     
@@ -59,7 +59,27 @@ def create_database():
 def create_tables():
     """Create all tables defined in the models."""
     try:
-        Base.metadata.create_all(bind=engine)
+        # Import all models to ensure they are registered with Base
+        from app.models import User, Game, Player, Move, WordList, GameInvitation
+        
+        # In test mode, don't drop tables, just create if they don't exist
+        if os.getenv("TESTING") == "1":
+            Base.metadata.create_all(bind=engine)
+        else:
+            # In non-test mode, drop and recreate tables
+            Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
+        
+        # Verify tables were created
+        inspector = inspect(engine)
+        expected_tables = {'users', 'games', 'players', 'moves', 'wordlists', 'game_invitations'}
+        actual_tables = set(inspector.get_table_names())
+        
+        if not expected_tables.issubset(actual_tables):
+            missing_tables = expected_tables - actual_tables
+            logger.error(f"Missing tables: {missing_tables}")
+            return False
+            
         logger.info("Database tables created successfully")
         return True
     except Exception as e:
@@ -82,7 +102,7 @@ def import_default_wordlists():
             else:
                 logger.warning(f"Default German wordlist not found at {DEFAULT_WORDLIST_PATH}")
                 # Create a minimal wordlist for testing
-                minimal_words = ["HALLO", "WELT", "TEST", "SPIEL", "WORT", "TAG", "TAGE", "BAUM"]
+                minimal_words = ["HALLO", "WELT", "TEST", "SPIEL", "WORT", "TAG", "TAGE", "BAUM", "HAUS", "AUTO", "TISCH", "STUHL", "ÜBER", "SCHÖN", "GRÜN"]
                 for word in minimal_words:
                     db.add(WordList(word=word, language="de"))
                 db.commit()
@@ -105,7 +125,7 @@ def import_default_wordlists():
             logger.warning(f"English wordlist not found at {en_path}")
             # Create a minimal English wordlist
             if db.query(WordList).filter(WordList.language == "en").count() == 0:
-                minimal_words = ["HELLO", "WORLD", "TEST", "GAME", "WORD", "DAY", "DAYS", "TREE"]
+                minimal_words = ["HELLO", "WORLD", "TEST", "GAME", "WORD", "DAY", "DAYS", "TREE", "HOUSE", "CAR", "TABLE", "CHAIR", "OVER", "NICE", "GREEN"]
                 for word in minimal_words:
                     db.add(WordList(word=word, language="en"))
                 db.commit()

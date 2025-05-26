@@ -13,6 +13,9 @@ from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
 from app.wordlist import load_wordlist
 from app.websocket import manager
+from app.game_logic.game_state import GameState
+from app.routers.games import GameStateEncoder
+from app.utils.logger import logger
 
 router = APIRouter(prefix="/games", tags=["moves"])
 
@@ -135,19 +138,55 @@ async def make_move(game_id: str, move: MoveCreate, db: Session = Depends(get_db
     
     # Broadcast game update via WebSocket
     try:
-        await manager.broadcast(game_id, {
-            "type": "game_update",
-            "game_id": game_id,
-            "state": new_board,
-            "current_player_id": next_player_id,
-            "last_move": {
-                "player_id": current_user.id,
-                "move_data": [m.model_dump() for m in move.move_data],
-                "points": result["total"],
-                "words": result["words"]
+        await manager.broadcast_to_game(
+            game_id,
+            {
+                "type": "game_update",
+                "game_id": game_id,
+                "state": new_board,
+                "current_player_id": next_player_id,
+                "last_move": {
+                    "player_id": current_user.id,
+                    "move_data": [m.model_dump() for m in move.move_data],
+                    "points": result["total"],
+                    "words": result["words"]
+                }
             }
-        })
+        )
     except Exception as e:
-        print(f"WebSocket broadcast error: {e}")
+        logger.error(f"WebSocket broadcast error: {e}")
     
     return response
+
+@router.post("/{game_id}")
+async def record_move(
+    game_id: str,
+    move_data: dict,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Record a move in the game."""
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Load game state
+    state_data = json.loads(game.state)
+    game_state = GameState()
+    game_state.board = state_data.get("board", [[None]*15 for _ in range(15)])
+    
+    # Update game state
+    state_data["board"] = game_state.board
+    game.state = json.dumps(state_data, cls=GameStateEncoder)
+    
+    # Record move
+    move = Move(
+        game_id=game_id,
+        player_id=current_user.id,
+        move_data=json.dumps(move_data),
+        timestamp=datetime.now(timezone.utc)
+    )
+    db.add(move)
+    db.commit()
+    
+    return {"message": "Move recorded"}

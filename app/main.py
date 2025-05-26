@@ -1,17 +1,82 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, games, moves, rack, profile, admin, auth
+from app.routers import users, games, moves, rack, profile, admin, auth, chat
 from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
 import logging
 import json
+from datetime import datetime, timezone
+from app.database import engine, Base
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="WordBattle API")
+app = FastAPI(
+    title="WordBattle API",
+    description="""
+    WordBattle is a multiplayer word game API that allows users to play Scrabble-like games online.
+    
+    ## Features
+    * User authentication and registration
+    * Game creation and management
+    * Real-time gameplay with WebSocket support
+    * Move validation and scoring
+    * Player statistics and profiles
+    * Multiple language support
+    
+    ## Authentication
+    Most endpoints require authentication using a Bearer token. To get a token:
+    1. Register a new user at `/users/register`
+    2. Login at `/auth/token` to get your access token
+    3. Include the token in the Authorization header: `Bearer <your_token>`
+    """,
+    version="1.0.0",
+    contact={
+        "name": "WordBattle Support",
+        "url": "https://github.com/yourusername/wordbattle-backend",
+        "email": "support@wordbattle.com",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    openapi_tags=[
+        {
+            "name": "auth",
+            "description": "Authentication and token operations",
+        },
+        {
+            "name": "users",
+            "description": "User registration and management",
+        },
+        {
+            "name": "games",
+            "description": "Game creation, joining, and state management",
+        },
+        {
+            "name": "moves",
+            "description": "Game moves and actions",
+        },
+        {
+            "name": "rack",
+            "description": "Letter rack management",
+        },
+        {
+            "name": "profile",
+            "description": "User profile and statistics",
+        },
+        {
+            "name": "admin",
+            "description": "Administrative operations",
+        },
+        {
+            "name": "chat",
+            "description": "Chat operations",
+        },
+    ]
+)
 
 # Add CORS middleware
 app.add_middleware(
@@ -21,6 +86,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 # Startup event to initialize database
 @app.on_event("startup")
@@ -73,21 +141,73 @@ app.include_router(rack.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
+app.include_router(chat.router)
 
-@app.get("/")
+@app.get("/", tags=["root"])
 def read_root():
-    return {"message": "Welcome to WordBattle API"}
+    """
+    Root endpoint that provides basic API information.
+    
+    Returns:
+        dict: A welcome message and basic API information
+    """
+    return {
+        "message": "Welcome to WordBattle API",
+        "version": "1.0.0",
+        "documentation": "/docs",
+        "openapi": "/openapi.json",
+        "health": "/health"
+    }
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 def health_check():
-    return {"status": "ok"}
+    """
+    Health check endpoint to verify API status.
+    
+    Returns:
+        dict: The current status of the API
+    """
+    return {
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": "1.0.0"
+    }
 
 @app.websocket("/ws/games/{game_id}")
 async def websocket_endpoint(
     websocket: WebSocket, 
     game_id: str, 
-    token: str = Query(None)
+    token: str = Query(None, description="JWT access token for authentication")
 ):
+    """
+    WebSocket endpoint for real-time game updates and chat.
+    
+    This endpoint establishes a WebSocket connection for a specific game, enabling:
+    * Real-time game state updates
+    * Chat messages between players
+    * Move notifications
+    * Game events (start, end, etc.)
+    
+    The connection requires authentication via a JWT token and the user must be a participant in the game.
+    
+    Parameters:
+        websocket (WebSocket): The WebSocket connection
+        game_id (str): The ID of the game to connect to
+        token (str): JWT access token for authentication
+    
+    Messages:
+        The WebSocket connection handles these message types:
+        * connection_established: Initial connection confirmation with game state
+        * game_update: Updates to game state (moves, scores, etc.)
+        * chat_message: Chat messages between players
+        * error: Error messages
+    
+    Close Codes:
+        * 1008: Authentication failure
+        * 4001: Invalid or missing token
+        * 4003: User not authorized for this game
+        * 4004: Game not found
+    """
     from app.websocket import manager
     from app.auth import get_user_from_token
     from app.database import SessionLocal
@@ -97,33 +217,48 @@ async def websocket_endpoint(
         await websocket.close(code=1008)
         return
     
+    # Get database session
+    db = SessionLocal()
+    
     try:
-        # Validate token
-        user = get_user_from_token(token)
+        # Validate token and get user
+        user = get_user_from_token(token, db)
+        if not user:
+            await websocket.close(code=1008)
+            return
         
-        # Connect to the game
-        await manager.connect(websocket, game_id)
+        # Accept the connection before any database operations
+        await websocket.accept()
         
-        # Send initial game state
-        db = SessionLocal()
-        game = db.query(Game).filter(Game.id == game_id).first()
-        if game:
-            await websocket.send_json({
-                "type": "game_state",
-                "game_id": game_id,
-                "state": json.loads(game.state),
-                "current_player_id": game.current_player_id
-            })
-        db.close()
-        
-        # Keep connection open
         try:
-            while True:
-                # Wait for any messages from the client
-                data = await websocket.receive_text()
-                # Process client messages if needed
-        except WebSocketDisconnect:
+            # Connect to the game
+            await manager.connect(websocket, game_id, user)
+            
+            # Send initial game state
+            game = db.query(Game).filter(Game.id == game_id).first()
+            if game:
+                await websocket.send_json({
+                    "type": "connection_established",
+                    "game_state": {
+                        "game_id": game_id,
+                        "state": json.loads(game.state),
+                        "current_player_id": game.current_player_id
+                    }
+                })
+            
+            # Keep connection open and handle messages
+            try:
+                while True:
+                    data = await websocket.receive_text()
+                    # Process messages if needed
+            except WebSocketDisconnect:
+                manager.disconnect(websocket, game_id)
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}")
+            await websocket.close(code=1008)
             manager.disconnect(websocket, game_id)
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket setup error: {e}")
         await websocket.close(code=1008)
+    finally:
+        db.close()

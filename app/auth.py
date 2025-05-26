@@ -44,13 +44,15 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
     access_token = create_access_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer"}
 
-def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_scheme)) -> User:
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+    """Get current user from token."""
     # For testing, accept dummy token
     if TESTING and token == 'dummy_token_for_tests':
         return db.query(User).first()
+    
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token ungÃ¼ltig oder abgelaufen",
+        detail="Token ungültig oder abgelaufen",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -60,50 +62,33 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(oauth2_
             raise credentials_exception
     except JWTError:
         raise credentials_exception
+    
     user = get_user_by_username(db, username)
     if not user:
         raise credentials_exception
     return user
 
-
-
-
-def get_user_from_token(token: str):
-    """Get user from token for WebSocket authentication."""
-    from app.auth import get_current_user
-    from app.database import SessionLocal
-    
-    db = SessionLocal()
+def get_token_from_header(authorization: str) -> Optional[str]:
+    """Extract token from authorization header."""
+    if not authorization:
+        return None
     try:
-        # Create a fake request with the token
-        class FakeRequest:
-            headers = {"Authorization": f"Bearer {token}"}
-        
-        # Use the existing get_current_user function
-        user = get_current_user(db, token)
-        return user
-    except Exception as e:
-        print(f"Error getting user from token: {e}")
-        raise
-    finally:
-        db.close()
+        scheme, token = authorization.split()
+        if scheme.lower() != 'bearer':
+            return None
+        return token
+    except ValueError:
+        return None
 
-def get_user_from_token(token: str):
-    """Get user from token for WebSocket authentication."""
-    from app.auth import get_current_user
-    from app.database import SessionLocal
-    
-    db = SessionLocal()
+def get_user_from_token(token: str, db: Session = None) -> Optional[User]:
+    """Get user from token."""
     try:
-        # Create a fake request with the token
-        class FakeRequest:
-            headers = {"Authorization": f"Bearer {token}"}
-        
-        # Use the existing get_current_user function
-        user = get_current_user(db, token)
-        return user
-    except Exception as e:
-        print(f"Error getting user from token: {e}")
-        raise
-    finally:
-        db.close()
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if username is None:
+            return None
+        if db:
+            return db.query(User).filter(User.username == username).first()
+        return None
+    except JWTError:
+        return None

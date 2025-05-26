@@ -1,10 +1,13 @@
 import requests
 import json
 import uuid
+from fastapi.testclient import TestClient
+from app.main import app
 
 def test_registration_and_authentication():
     """Test the complete registration and authentication flow."""
-    base_url = "http://localhost:8000"
+    # Use TestClient instead of real HTTP requests
+    client = TestClient(app)
     
     # Generate a unique username
     username = f"user_{uuid.uuid4().hex[:8]}"
@@ -13,65 +16,63 @@ def test_registration_and_authentication():
     print(f"Testing with username: {username}")
     
     # Step 1: Register a new user
-    register_url = f"{base_url}/users/register"
     register_data = {"username": username, "password": password}
-    register_headers = {"Content-Type": "application/json"}
-    
-    register_response = requests.post(
-        register_url, 
-        data=json.dumps(register_data), 
-        headers=register_headers
-    )
+    register_response = client.post("/users/register", json=register_data)
     
     print(f"\n1. Registration Status: {register_response.status_code}")
     print(f"Registration Response: {register_response.text}")
     
-    if register_response.status_code != 200:
-        print("Registration failed, exiting test")
-        return
+    assert register_response.status_code == 200, "Registration failed"
     
     # Step 2: Get authentication token
-    token_url = f"{base_url}/auth/token"
     token_data = {"username": username, "password": password}
-    
-    token_response = requests.post(token_url, data=token_data)
+    token_response = client.post("/auth/token", data=token_data)
     
     print(f"\n2. Token Status: {token_response.status_code}")
     print(f"Token Response: {token_response.text}")
     
-    if token_response.status_code != 200 or "access_token" not in token_response.json():
-        print("Token acquisition failed, exiting test")
-        return
+    assert token_response.status_code == 200, "Token acquisition failed"
+    assert "access_token" in token_response.json(), "No access token in response"
     
     token = token_response.json()["access_token"]
     auth_headers = {"Authorization": f"Bearer {token}"}
     
     # Step 3: Access protected endpoint
-    me_url = f"{base_url}/me"
-    me_response = requests.get(me_url, headers=auth_headers)
+    me_response = client.get("/me", headers=auth_headers)
     
     print(f"\n3. Protected Endpoint Status: {me_response.status_code}")
     print(f"Protected Endpoint Response: {me_response.text}")
     
+    assert me_response.status_code == 200, "Protected endpoint access failed"
+    
     # Step 4: Create a game
-    game_url = f"{base_url}/games/"
-    game_response = requests.post(game_url, headers=auth_headers)
+    game_data = {
+        "language": "en",
+        "max_players": 2
+    }
+    game_response = client.post("/games/", headers=auth_headers, json=game_data)
     
     print(f"\n4. Create Game Status: {game_response.status_code}")
     print(f"Create Game Response: {game_response.text}")
     
-    if game_response.status_code != 200 or "id" not in game_response.json():
-        print("Game creation failed, exiting test")
-        return
+    assert game_response.status_code == 200, "Game creation failed"
+    game_json = game_response.json()
+    assert "id" in game_json, "No game ID in response"
+    assert game_json["language"] == "en", "Wrong game language"
+    assert game_json["max_players"] == 2, "Wrong max players"
     
-    game_id = game_response.json()["id"]
+    game_id = game_json["id"]
     
-    # Step 5: Join the game
-    join_url = f"{base_url}/games/{game_id}/join"
-    join_response = requests.post(join_url, headers=auth_headers)
+    # Step 5: Verify the creator is already a player (no need to join)
+    # The creator is automatically added as a player when creating the game
+    get_game_response = client.get(f"/games/{game_id}", headers=auth_headers)
     
-    print(f"\n5. Join Game Status: {join_response.status_code}")
-    print(f"Join Game Response: {join_response.text}")
+    print(f"\n5. Get Game Status: {get_game_response.status_code}")
+    print(f"Get Game Response: {get_game_response.text}")
+    
+    assert get_game_response.status_code == 200, "Get game failed"
+    game_details = get_game_response.json()
+    assert "players" in game_details, "No players info in game response"
     
     print("\nTest completed successfully!")
 
