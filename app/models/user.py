@@ -1,13 +1,28 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+from datetime import datetime, timezone
 
 class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    email = Column(String, unique=True, index=True)
+    hashed_password = Column(String, nullable=True)  # Make nullable for email-only auth
     is_admin = Column(Boolean, default=False)
+    
+    # Email verification fields
+    verification_code = Column(String, nullable=True)
+    verification_code_expires = Column(DateTime, nullable=True)
+    is_email_verified = Column(Boolean, default=False)
+    
+    # Persistent authentication
+    persistent_token = Column(String, nullable=True)  # For "remember me" functionality
+    persistent_token_expires = Column(DateTime, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_login = Column(DateTime, nullable=True)
     
     # Relationships
     moves = relationship("Move", back_populates="player")

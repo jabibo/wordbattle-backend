@@ -12,7 +12,7 @@ def test_root():
 def test_register_user():
     response = client.post(
         "/users/register",
-        json={"username": "testuser", "password": "testpass"}
+        json={"username": "testuser", "email": "testuser@example.com", "password": "testpass"}
     )
     assert response.status_code in (200, 400, 404)
 
