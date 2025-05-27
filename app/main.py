@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, games, moves, rack, profile, admin, auth, chat
+from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup
 from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
@@ -81,10 +81,29 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=["*"],  # Allow all origins for maximum compatibility
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+    allow_headers=[
+        "Accept",
+        "Accept-Language",
+        "Content-Language", 
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Origin",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Cache-Control",
+        "Pragma",
+    ],
+    expose_headers=[
+        "Access-Control-Allow-Origin",
+        "Access-Control-Allow-Credentials",
+        "Access-Control-Allow-Methods",
+        "Access-Control-Allow-Headers",
+    ],
+    max_age=600,
 )
 
 # Create database tables
@@ -96,8 +115,36 @@ async def startup_event():
     from app.initialize import initialize_database
     if initialize_database():
         logger.info("Database initialized successfully")
+        # Schedule background word import after startup
+        import asyncio
+        asyncio.create_task(schedule_background_word_import())
     else:
         logger.error("Database initialization failed")
+
+async def schedule_background_word_import():
+    """Schedule background import of remaining words after startup delay."""
+    try:
+        import asyncio
+        await asyncio.sleep(60)  # Wait 60 seconds after startup
+        logger.info("Starting background import of remaining German words...")
+        
+        # Check if we need to continue word import
+        from app.database import SessionLocal
+        from app.models import WordList
+        db = SessionLocal()
+        try:
+            de_count = db.query(WordList).filter(WordList.language == "de").count()
+            if de_count < 100000:  # If we have less than 100k words, continue importing
+                from app.wordlist import import_wordlist_continue
+                from app.config import DEFAULT_WORDLIST_PATH
+                import_wordlist_continue("de", DEFAULT_WORDLIST_PATH, skip=de_count)
+                logger.info("Background import of remaining words completed")
+            else:
+                logger.info("Word import already complete, skipping background import")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Error in background word import: {e}")
 
 # Simple rate limiting middleware
 @app.middleware("http")
@@ -139,11 +186,14 @@ async def health_check():
     """Health check endpoint for load balancers and monitoring"""
     try:
         # Test database connection
-        from app.dependencies import get_db
+        from app.database import SessionLocal
         from sqlalchemy import text
-        db = next(get_db())
-        db.execute(text("SELECT 1"))
-        db_status = "healthy"
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+            db_status = "healthy"
+        finally:
+            db.close()
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         db_status = "unhealthy"
@@ -159,6 +209,7 @@ async def health_check():
 # Include routers
 app.include_router(users.router)
 app.include_router(games.router)
+app.include_router(game_setup.router)
 app.include_router(moves.router)
 app.include_router(rack.router)
 app.include_router(profile.router)

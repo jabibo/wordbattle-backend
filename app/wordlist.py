@@ -93,6 +93,119 @@ def import_wordlist(language: str = "de", path: str = None) -> None:
     finally:
         db.close()
 
+def import_wordlist_with_limit(language: str, path: str, limit: int = 50000) -> None:
+    """
+    Import a limited number of words from a wordlist file for fast startup.
+    
+    Args:
+        language: Language code (e.g., "de", "en")
+        path: Path to the wordlist file
+        limit: Maximum number of words to import
+    """
+    # Load words from file (limited)
+    encodings = ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']
+    words = []
+    
+    for encoding in encodings:
+        try:
+            with codecs.open(path, 'r', encoding=encoding) as f:
+                for i, line in enumerate(f):
+                    if i >= limit:
+                        break
+                    word = line.strip().upper()
+                    if word:
+                        words.append(word)
+            break
+        except UnicodeDecodeError:
+            continue
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Wordlist file not found: {path}")
+    
+    # Import to database
+    db = SessionLocal()
+    try:
+        # Clear existing words for this language
+        db.query(WordList).filter(WordList.language == language).delete()
+        
+        # Batch insert for better performance
+        batch_size = 1000
+        total_words = len(words)
+        
+        for i in range(0, total_words, batch_size):
+            batch = [WordList(word=word, language=language) 
+                    for word in words[i:i+batch_size]]
+            db.add_all(batch)
+            db.commit()
+            print(f"Imported {min(i+batch_size, total_words)}/{total_words} words")
+        
+        print(f"Successfully imported {total_words} words for language '{language}' (limited import)")
+    except Exception as e:
+        db.rollback()
+        raise RuntimeError(f"Failed to import limited wordlist: {str(e)}")
+    finally:
+        db.close()
+
+def import_wordlist_continue(language: str, path: str, skip: int = 0) -> None:
+    """
+    Continue importing words from where a previous limited import left off.
+    
+    Args:
+        language: Language code (e.g., "de", "en")
+        path: Path to the wordlist file
+        skip: Number of words to skip (from previous import)
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Starting background import for {language}, skipping first {skip} words")
+    
+    # Load remaining words from file
+    encodings = ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']
+    words = []
+    
+    for encoding in encodings:
+        try:
+            with codecs.open(path, 'r', encoding=encoding) as f:
+                for i, line in enumerate(f):
+                    if i < skip:
+                        continue
+                    word = line.strip().upper()
+                    if word:
+                        words.append(word)
+            break
+        except UnicodeDecodeError:
+            continue
+        except FileNotFoundError:
+            logger.error(f"Wordlist file not found: {path}")
+            return
+    
+    if not words:
+        logger.info("No additional words to import")
+        return
+    
+    # Import to database (append mode)
+    db = SessionLocal()
+    try:
+        # Batch insert for better performance
+        batch_size = 1000
+        total_words = len(words)
+        
+        for i in range(0, total_words, batch_size):
+            batch = [WordList(word=word, language=language) 
+                    for word in words[i:i+batch_size]]
+            db.add_all(batch)
+            db.commit()
+            
+            if i % 10000 == 0:  # Log every 10k words
+                logger.info(f"Background import: {skip + i + batch_size}/{skip + total_words} total words")
+        
+        logger.info(f"Background import completed: {total_words} additional words imported for language '{language}'")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to continue wordlist import: {str(e)}")
+    finally:
+        db.close()
+
 def get_wordlist(language: str = "de") -> Set[str]:
     """
     Get all words for a given language from the database.

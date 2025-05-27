@@ -90,6 +90,11 @@ def request_email_login(request: EmailLoginRequest, db: Session = Depends(get_db
         "expires_in_minutes": VERIFICATION_CODE_EXPIRE_MINUTES
     }
 
+@router.options("/email-login")
+def email_login_options():
+    """Handle OPTIONS preflight for email-login endpoint."""
+    return {"message": "OK"}
+
 @router.post("/verify-code")
 def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db)):
     """Verify the email login code and return access token."""
@@ -101,10 +106,21 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         )
     
     # Check if verification code is valid and not expired
+    now = datetime.now(timezone.utc)
+    expires_at = user.verification_code_expires
+    
+    # Simple timezone-safe comparison
+    if expires_at:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        is_expired = expires_at < now
+    else:
+        is_expired = True
+    
     if (not user.verification_code or 
         user.verification_code != request.verification_code or
         not user.verification_code_expires or
-        user.verification_code_expires < datetime.now(timezone.utc)):
+        is_expired):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired verification code",
@@ -147,6 +163,11 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
     db.commit()
     
     return response_data
+
+@router.options("/verify-code")
+def verify_code_options():
+    """Handle OPTIONS preflight for verify-code endpoint."""
+    return {"message": "OK"}
 
 @router.post("/persistent-login")
 def login_with_persistent_token(request: PersistentLoginRequest, db: Session = Depends(get_db)):
