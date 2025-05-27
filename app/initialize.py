@@ -87,7 +87,7 @@ def create_tables():
         return False
 
 def import_default_wordlists():
-    """Import default wordlists if they don't exist."""
+    """Import default wordlists if they don't exist. For large files, import a subset initially."""
     db = SessionLocal()
     try:
         # Check if German wordlist exists
@@ -95,10 +95,12 @@ def import_default_wordlists():
         if de_count == 0:
             logger.info(f"Checking for default German wordlist at {DEFAULT_WORDLIST_PATH}")
             if os.path.exists(DEFAULT_WORDLIST_PATH):
-                logger.info("Importing default German wordlist")
-                import_wordlist("de", DEFAULT_WORDLIST_PATH)
+                logger.info("Importing German wordlist (limited to first 50,000 words for fast startup)")
+                # Import only first 50,000 words for fast startup
+                import_wordlist_limited("de", DEFAULT_WORDLIST_PATH, limit=50000)
                 de_count = db.query(WordList).filter(WordList.language == "de").count()
-                logger.info(f"Imported {de_count} German words")
+                logger.info(f"Imported {de_count} German words (initial batch)")
+                logger.info("Full word import will continue in background after startup")
             else:
                 logger.warning(f"Default German wordlist not found at {DEFAULT_WORDLIST_PATH}")
                 # Create a minimal wordlist for testing
@@ -137,6 +139,23 @@ def import_default_wordlists():
         return False
     finally:
         db.close()
+
+def import_wordlist_limited(language: str, file_path: str, limit: int = 50000):
+    """Import a limited number of words from a wordlist file for fast startup."""
+    from app.wordlist import import_wordlist_with_limit
+    return import_wordlist_with_limit(language, file_path, limit)
+
+async def background_import_remaining_words():
+    """Background task to import remaining words after startup."""
+    try:
+        import asyncio
+        await asyncio.sleep(30)  # Wait 30 seconds after startup
+        logger.info("Starting background import of remaining German words...")
+        from app.wordlist import import_wordlist_continue
+        import_wordlist_continue("de", DEFAULT_WORDLIST_PATH, skip=50000)
+        logger.info("Background import of remaining words completed")
+    except Exception as e:
+        logger.error(f"Error in background word import: {e}")
 
 def initialize_database():
     """Initialize the database and import default wordlists."""

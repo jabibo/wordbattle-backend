@@ -52,13 +52,17 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username = payload.get("sub")
-        if not username:
+        subject = payload.get("sub")
+        if not subject:
             raise credentials_exception
     except JWTError:
         raise credentials_exception
     
-    user = get_user_by_username(db, username)
+    # Try to find user by email first (for email-based tokens), then by username
+    user = get_user_by_email(db, subject)
+    if not user:
+        user = get_user_by_username(db, subject)
+    
     if not user:
         raise credentials_exception
     return user
@@ -79,11 +83,15 @@ def get_user_from_token(token: str, db: Session = None) -> Optional[User]:
     """Get user from token."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
+        subject: str = payload.get("sub")
+        if subject is None:
             return None
         if db:
-            return db.query(User).filter(User.username == username).first()
+            # Try to find user by email first, then by username
+            user = get_user_by_email(db, subject)
+            if not user:
+                user = get_user_by_username(db, subject)
+            return user
         return None
     except JWTError:
         return None
