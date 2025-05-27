@@ -1,10 +1,13 @@
 ﻿from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from app.config import get_database_url
+from app.config import DATABASE_URL, get_database_url
 import os
 
 # Get database URL based on environment
-DATABASE_URL = get_database_url(is_test=os.getenv("TESTING") == "1")
+# Use DATABASE_URL directly if not testing, otherwise use get_database_url for test database
+if os.getenv("TESTING") == "1":
+    DATABASE_URL = get_database_url(is_test=True)
+# DATABASE_URL is already set from config.py which respects environment variables
 
 # Create database engine with URL from config
 engine = create_engine(

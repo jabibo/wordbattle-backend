@@ -116,9 +116,23 @@ try {
     Write-Host "   • Database: $DbEndpoint" -ForegroundColor White
     Write-Host "   • IAM Role: $RoleArn" -ForegroundColor White
     
-    $CreateResult = aws apprunner create-service --cli-input-json "file://$ConfigFile" --region $Region | ConvertFrom-Json
+    $CreateOutput = aws apprunner create-service --cli-input-json "file://$ConfigFile" --region $Region 2>&1
     Remove-Item $ConfigFile
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "${Red}❌ Failed to create service:${NC}" -ForegroundColor Red
+        Write-Host "${Red}$CreateOutput${NC}" -ForegroundColor Red
+        exit 1
+    }
+    
+    $CreateResult = $CreateOutput | ConvertFrom-Json
     $ServiceArn = $CreateResult.Service.ServiceArn
+    
+    if ([string]::IsNullOrWhiteSpace($ServiceArn)) {
+        Write-Host "${Red}❌ Service creation failed - no ARN returned${NC}" -ForegroundColor Red
+        exit 1
+    }
+    
     Write-Host "${Green}✅ Service creation initiated${NC}" -ForegroundColor Green
     Write-Host "${Green}   Service ARN: $ServiceArn${NC}" -ForegroundColor Green
 } catch {
