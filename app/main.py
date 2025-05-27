@@ -112,14 +112,19 @@ Base.metadata.create_all(bind=engine)
 # Startup event to initialize database
 @app.on_event("startup")
 async def startup_event():
-    from app.initialize import initialize_database
-    if initialize_database():
-        logger.info("Database initialized successfully")
-        # Schedule background word import after startup
-        import asyncio
-        asyncio.create_task(schedule_background_word_import())
+    from app.database_manager import initialize_database_if_needed
+    result = initialize_database_if_needed()
+    
+    if result["success"]:
+        if result["action"] == "skipped":
+            logger.info("Database already initialized - skipping word loading")
+        else:
+            logger.info("Database initialized successfully")
+            # Schedule background word import only if we just initialized
+            import asyncio
+            asyncio.create_task(schedule_background_word_import())
     else:
-        logger.error("Database initialization failed")
+        logger.error(f"Database initialization failed: {result.get('error', 'Unknown error')}")
 
 async def schedule_background_word_import():
     """Schedule background import of remaining words after startup delay."""
@@ -128,21 +133,23 @@ async def schedule_background_word_import():
         await asyncio.sleep(60)  # Wait 60 seconds after startup
         logger.info("Starting background import of remaining German words...")
         
-        # Check if we need to continue word import
-        from app.database import SessionLocal
-        from app.models import WordList
-        db = SessionLocal()
-        try:
-            de_count = db.query(WordList).filter(WordList.language == "de").count()
-            if de_count < 100000:  # If we have less than 100k words, continue importing
-                from app.wordlist import import_wordlist_continue
-                from app.config import DEFAULT_WORDLIST_PATH
-                import_wordlist_continue("de", DEFAULT_WORDLIST_PATH, skip=de_count)
-                logger.info("Background import of remaining words completed")
+        # Use the database manager to check and load words
+        from app.database_manager import check_database_status, load_wordlist
+        
+        status = check_database_status()
+        de_count = status["word_counts"].get("de", 0)
+        
+        if de_count < 100000:  # If we have less than 100k words, continue importing
+            logger.info(f"Current German word count: {de_count}, loading more...")
+            result = load_wordlist(language="de", skip=de_count, limit=100000)
+            
+            if result["success"]:
+                logger.info(f"Background import completed: {result['words_loaded']} words loaded")
             else:
-                logger.info("Word import already complete, skipping background import")
-        finally:
-            db.close()
+                logger.error(f"Background import failed: {result.get('error', 'Unknown error')}")
+        else:
+            logger.info("Word import already complete, skipping background import")
+            
     except Exception as e:
         logger.error(f"Error in background word import: {e}")
 
@@ -205,6 +212,12 @@ async def health_check():
         "database": db_status,
         "environment": os.getenv("ENVIRONMENT", "development")
     }
+
+@app.get("/database/status")
+async def database_status():
+    """Get detailed database status information"""
+    from app.database_manager import get_database_info
+    return get_database_info()
 
 # Include routers
 app.include_router(users.router)
