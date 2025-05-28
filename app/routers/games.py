@@ -3,12 +3,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
-from app.models import Game, Player, Move, User, ChatMessage
+from app.models import Game, Player, Move, User, ChatMessage, GameInvitation, Friend
 from app.models.game import GameStatus
+from app.models.game_invitation import InvitationStatus
 from app.auth import get_current_user, get_token_from_header, get_user_from_token
 from app.game_logic.game_state import GameState, GamePhase, MoveType, Position, PlacedTile
 from app.game_logic.letter_bag import LETTER_DISTRIBUTION, LetterBag, create_letter_bag, draw_letters, return_letters, create_rack
 from app.utils.wordlist_utils import ensure_wordlist_available, load_wordlist
+from app.utils.email_service import email_service
+from app.config import FRONTEND_URL
 import uuid
 import json
 from datetime import datetime, timezone
@@ -22,12 +25,19 @@ from app.game_logic.board_utils import find_word_placements
 from pydantic import BaseModel
 from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
+import secrets
 
 logger = logging.getLogger(__name__)
 
 class CreateGameRequest(BaseModel):
     language: str = "en"
     max_players: int = 2
+
+class CreateGameWithInvitationsRequest(BaseModel):
+    language: str = "en"
+    max_players: int = 2
+    invitees: List[str]  # List of usernames or email addresses to invite
+    base_url: str = "http://localhost:3000"  # Default to frontend port
 
 class GameStateEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -110,6 +120,157 @@ def create_game(
         "created_at": game.created_at.isoformat()
     }
 
+@router.post("/create-with-invitations")
+def create_game_with_invitations(
+    game_data: CreateGameWithInvitationsRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Create a new game with automatic invitations and email notifications."""
+    # Validate language
+    if game_data.language not in ["en", "de"]:
+        raise HTTPException(400, "Invalid language. Supported languages: en, de")
+    
+    # Validate max_players
+    if not (2 <= game_data.max_players <= 4):
+        raise HTTPException(400, "Max players must be between 2 and 4")
+    
+    # Validate invitees count
+    if len(game_data.invitees) == 0:
+        raise HTTPException(400, "At least one invitee is required")
+    
+    if len(game_data.invitees) >= game_data.max_players:
+        raise HTTPException(400, f"Too many invitees. Maximum {game_data.max_players - 1} invitees for {game_data.max_players} player game")
+    
+    # Ensure wordlist exists for the chosen language
+    if not ensure_wordlist_available(game_data.language, db):
+        raise HTTPException(500, f"Wordlist for language '{game_data.language}' not available")
+    
+    # Create game record
+    game = Game(
+        id=str(uuid.uuid4()),
+        creator_id=current_user.id,
+        status=GameStatus.SETUP,
+        language=game_data.language,
+        max_players=game_data.max_players,
+        created_at=datetime.now(timezone.utc)
+    )
+    
+    # Initialize game state
+    game_state = GameState(language=game_data.language)
+    initial_state = {
+        "board": game_state.board,
+        "phase": game_state.phase.value,
+        "language": game_data.language,
+        "multipliers": {f"{pos[0]},{pos[1]}": value for pos, value in game_state.multipliers.items()},
+        "letter_bag": game_state.letter_bag,
+        "turn_number": 0,
+        "consecutive_passes": 0
+    }
+    game.state = json.dumps(initial_state, cls=GameStateEncoder)
+    
+    # Add creator as first player
+    creator_player = Player(
+        game_id=game.id,
+        user_id=current_user.id,
+        score=0,
+        rack=""  # Will be dealt when game starts
+    )
+    
+    db.add(game)
+    db.add(creator_player)
+    
+    # Process invitations
+    invitations_created = []
+    invitations_sent = 0
+    failed_invitations = []
+    
+    for invitee_identifier in game_data.invitees:
+        # Try to find user by username first, then by email
+        invitee = db.query(User).filter(
+            (User.username == invitee_identifier) | (User.email == invitee_identifier)
+        ).first()
+        
+        if not invitee:
+            failed_invitations.append({
+                "identifier": invitee_identifier,
+                "reason": "User not found"
+            })
+            continue
+        
+        # Check if user is already the creator
+        if invitee.id == current_user.id:
+            failed_invitations.append({
+                "identifier": invitee_identifier,
+                "reason": "Cannot invite yourself"
+            })
+            continue
+        
+        # Generate secure join token
+        join_token = secrets.token_urlsafe(32)
+        
+        # Create invitation
+        invitation = GameInvitation(
+            game_id=game.id,
+            inviter_id=current_user.id,
+            invitee_id=invitee.id,
+            join_token=join_token,
+            status=InvitationStatus.PENDING
+        )
+        
+        db.add(invitation)
+        invitations_created.append(invitation)
+        
+        # Send email invitation
+        try:
+            email_sent = email_service.send_game_invitation(
+                to_email=invitee.email,
+                invitee_username=invitee.username,
+                inviter_username=current_user.username,
+                game_id=game.id,
+                join_token=join_token,
+                base_url=game_data.base_url
+            )
+            
+            if email_sent:
+                invitations_sent += 1
+            else:
+                failed_invitations.append({
+                    "identifier": invitee_identifier,
+                    "reason": "Failed to send email"
+                })
+        except Exception as e:
+            logger.error(f"Failed to send invitation email to {invitee.email}: {e}")
+            failed_invitations.append({
+                "identifier": invitee_identifier,
+                "reason": f"Email error: {str(e)}"
+            })
+    
+    # Check if we have any valid invitations
+    if len(invitations_created) == 0:
+        db.rollback()
+        raise HTTPException(400, f"No valid invitations could be created. Errors: {failed_invitations}")
+    
+    # Update game status to WAITING if we have invitations
+    if len(invitations_created) > 0:
+        game.status = GameStatus.SETUP  # Will change to READY when players accept
+    
+    db.commit()
+    db.refresh(game)
+    
+    return {
+        "id": game.id,
+        "creator_id": game.creator_id,
+        "status": game.status.value,
+        "language": game.language,
+        "max_players": game.max_players,
+        "created_at": game.created_at.isoformat(),
+        "invitations_created": len(invitations_created),
+        "invitations_sent": invitations_sent,
+        "failed_invitations": failed_invitations,
+        "message": f"Game created with {len(invitations_created)} invitations. {invitations_sent} email(s) sent successfully."
+    }
+
 @router.post("/{game_id}/join")
 def join_game(
     game_id: str,
@@ -160,6 +321,314 @@ def join_game(
         "game_id": game_id,
         "player_count": new_player_count,
         "game_status": game.status.value
+    }
+
+@router.post("/{game_id}/join-with-token")
+def join_game_with_token(
+    game_id: str,
+    token: str = Query(..., description="Join token from invitation email"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Join a game using a join token from an email invitation."""
+    # Find the invitation by game_id and join_token
+    invitation = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.join_token == token,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).first()
+    
+    if not invitation:
+        raise HTTPException(404, "Invalid or expired invitation token")
+    
+    # Check if the current user is the invited user
+    if invitation.invitee_id != current_user.id:
+        raise HTTPException(403, "This invitation is not for you")
+    
+    # Check if game exists and is in a joinable state
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.status not in [GameStatus.SETUP, GameStatus.READY]:
+        raise HTTPException(400, f"Cannot join game in {game.status.value} status")
+    
+    # Check if user is already a player
+    existing_player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
+    if existing_player:
+        # Update invitation status to accepted
+        invitation.status = InvitationStatus.ACCEPTED
+        invitation.responded_at = datetime.now(timezone.utc)
+        db.commit()
+        
+        return {
+            "message": "You are already a player in this game",
+            "game_id": game_id,
+            "game_status": game.status.value
+        }
+    
+    # Check if game is full
+    current_players = db.query(Player).filter_by(game_id=game_id).count()
+    if current_players >= game.max_players:
+        raise HTTPException(400, "Game is full")
+    
+    # Add user as a player
+    player = Player(
+        game_id=game_id,
+        user_id=current_user.id,
+        score=0,
+        rack=""  # Will be dealt when game starts
+    )
+    
+    db.add(player)
+    
+    # Update invitation status
+    invitation.status = InvitationStatus.ACCEPTED
+    invitation.responded_at = datetime.now(timezone.utc)
+    
+    # Add friend relationship between inviter and invitee (if not already friends)
+    inviter_id = invitation.inviter_id
+    invitee_id = current_user.id
+    
+    # Check if they're already friends (either direction)
+    existing_friendship = db.query(Friend).filter(
+        ((Friend.user_id == inviter_id) & (Friend.friend_id == invitee_id)) |
+        ((Friend.user_id == invitee_id) & (Friend.friend_id == inviter_id))
+    ).first()
+    
+    if not existing_friendship and inviter_id != invitee_id:
+        # Create bidirectional friendship
+        friendship1 = Friend(user_id=inviter_id, friend_id=invitee_id)
+        friendship2 = Friend(user_id=invitee_id, friend_id=inviter_id)
+        db.add(friendship1)
+        db.add(friendship2)
+        
+        logger.info(f"Created friendship between users {inviter_id} and {invitee_id}")
+    
+    # Check if game should transition to READY state
+    new_player_count = current_players + 1
+    
+    # Check if all invitations are responded to and we have enough players
+    pending_invitations = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).count()
+    
+    if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
+        game.status = GameStatus.READY
+        
+        # Notify via WebSocket that game is ready
+        try:
+            manager.broadcast_to_game(game_id, {
+                "type": "game_status_change",
+                "game_id": game_id,
+                "status": "ready",
+                "player_count": new_player_count,
+                "message": f"Game is ready to start! {new_player_count} players joined."
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
+    
+    db.commit()
+    db.refresh(player)
+    db.refresh(game)
+    
+    return {
+        "message": "Successfully joined the game via invitation",
+        "game_id": game_id,
+        "player_count": new_player_count,
+        "game_status": game.status.value,
+        "invitation_accepted": True
+    }
+
+@router.get("/my-games")
+def list_user_games(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """List all games the current user participates in with detailed information."""
+    
+    # Get all games where the user is a player
+    user_games = db.query(Game).join(Player).filter(
+        Player.user_id == current_user.id
+    ).all()
+    
+    games_info = []
+    
+    for game in user_games:
+        # Get all players in the game
+        players = db.query(Player).filter(Player.game_id == game.id).all()
+        
+        # Get the last move for this game
+        last_move = db.query(Move).filter(
+            Move.game_id == game.id
+        ).order_by(Move.timestamp.desc()).first()
+        
+        # Parse game state to get current player info
+        state_data = json.loads(game.state) if game.state else {}
+        
+        # Determine next player information
+        next_player_info = None
+        if game.status == GameStatus.IN_PROGRESS and game.current_player_id:
+            next_player = db.query(User).filter(User.id == game.current_player_id).first()
+            if next_player:
+                next_player_info = {
+                    "id": next_player.id,
+                    "username": next_player.username,
+                    "is_current_user": next_player.id == current_user.id
+                }
+        
+        # Get last move information
+        last_move_info = None
+        if last_move:
+            last_move_player = db.query(User).filter(User.id == last_move.player_id).first()
+            if last_move_player:
+                # Parse move data to get move type
+                try:
+                    move_data = json.loads(last_move.move_data)
+                    move_type = move_data.get("type", "unknown")
+                    
+                    # Format move description based on type
+                    if move_type == "word_placement":
+                        words = move_data.get("words_formed", [])
+                        move_description = f"Played word(s): {', '.join(words)}" if words else "Placed tiles"
+                    elif move_type == "pass":
+                        move_description = "Passed turn"
+                    elif move_type == "exchange":
+                        letters_count = len(move_data.get("letters_exchanged", []))
+                        move_description = f"Exchanged {letters_count} letter(s)"
+                    else:
+                        move_description = f"Made a {move_type} move"
+                        
+                except (json.JSONDecodeError, KeyError):
+                    move_description = "Made a move"
+                
+                last_move_info = {
+                    "player_id": last_move_player.id,
+                    "player_username": last_move_player.username,
+                    "timestamp": last_move.timestamp.isoformat(),
+                    "description": move_description,
+                    "was_current_user": last_move_player.id == current_user.id
+                }
+        
+        # Get player information with scores
+        players_info = []
+        for player in players:
+            player_user = db.query(User).filter(User.id == player.user_id).first()
+            if player_user:
+                players_info.append({
+                    "id": player_user.id,
+                    "username": player_user.username,
+                    "score": player.score,
+                    "is_current_user": player_user.id == current_user.id,
+                    "is_creator": player_user.id == game.creator_id
+                })
+        
+        # Calculate time since last activity
+        last_activity = last_move.timestamp if last_move else game.created_at
+        time_since_activity = datetime.now(timezone.utc) - last_activity.replace(tzinfo=timezone.utc)
+        
+        # Format time since activity
+        if time_since_activity.days > 0:
+            time_since_str = f"{time_since_activity.days} day(s) ago"
+        elif time_since_activity.seconds > 3600:
+            hours = time_since_activity.seconds // 3600
+            time_since_str = f"{hours} hour(s) ago"
+        elif time_since_activity.seconds > 60:
+            minutes = time_since_activity.seconds // 60
+            time_since_str = f"{minutes} minute(s) ago"
+        else:
+            time_since_str = "Just now"
+        
+        # Determine if it's the current user's turn
+        is_user_turn = (
+            game.status == GameStatus.IN_PROGRESS and 
+            game.current_player_id == current_user.id
+        )
+        
+        # Get turn number from game state
+        turn_number = state_data.get("turn_number", 0)
+        
+        game_info = {
+            "id": game.id,
+            "status": game.status.value,
+            "language": game.language,
+            "max_players": game.max_players,
+            "current_players": len(players),
+            "created_at": game.created_at.isoformat(),
+            "started_at": game.started_at.isoformat() if game.started_at else None,
+            "completed_at": game.completed_at.isoformat() if game.completed_at else None,
+            "turn_number": turn_number,
+            "is_user_turn": is_user_turn,
+            "time_since_last_activity": time_since_str,
+            "next_player": next_player_info,
+            "last_move": last_move_info,
+            "players": players_info,
+            "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0)
+        }
+        
+        games_info.append(game_info)
+    
+    # Sort games by priority: user's turn first, then by last activity
+    def sort_key(game):
+        if game["is_user_turn"]:
+            return (0, game["created_at"])  # User's turn games first
+        elif game["status"] == "in_progress":
+            return (1, game["created_at"])  # Other in-progress games
+        elif game["status"] == "ready":
+            return (2, game["created_at"])  # Ready games
+        elif game["status"] == "setup":
+            return (3, game["created_at"])  # Setup games
+        else:
+            return (4, game["created_at"])  # Completed games last
+    
+    games_info.sort(key=sort_key, reverse=True)
+    
+    return {
+        "games": games_info,
+        "total_games": len(games_info),
+        "games_waiting_for_user": sum(1 for g in games_info if g["is_user_turn"]),
+        "active_games": sum(1 for g in games_info if g["status"] == "in_progress"),
+        "completed_games": sum(1 for g in games_info if g["status"] == "completed")
+    }
+
+@router.get("/friends")
+def get_user_friends(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get list of user's friends for game invitations."""
+    
+    # Get all friends of the current user
+    friends = db.query(Friend).filter(Friend.user_id == current_user.id).all()
+    
+    friends_info = []
+    for friendship in friends:
+        friend_user = db.query(User).filter(User.id == friendship.friend_id).first()
+        if friend_user:
+            # Get stats about games played together
+            games_together = db.query(Game).join(Player).filter(
+                Player.user_id == current_user.id,
+                Game.id.in_(
+                    db.query(Player.game_id).filter(Player.user_id == friend_user.id)
+                )
+            ).count()
+            
+            friends_info.append({
+                "id": friend_user.id,
+                "username": friend_user.username,
+                "email": friend_user.email,
+                "friendship_created": friendship.created_at.isoformat(),
+                "games_played_together": games_together,
+                "last_seen": friend_user.last_login.isoformat() if friend_user.last_login else None
+            })
+    
+    # Sort by most recent friendship
+    friends_info.sort(key=lambda x: x["friendship_created"], reverse=True)
+    
+    return {
+        "friends": friends_info,
+        "total_friends": len(friends_info)
     }
 
 @router.get("/{game_id}")
@@ -268,10 +737,13 @@ async def start_game(
     for player in players:
         player.rack = create_rack(letter_bag)
     
-    # Set game status and first player
+    # Set game status and first player (randomly selected for fairness)
     game.status = GameStatus.IN_PROGRESS
-    game.current_player_id = players[0].user_id
+    first_player = random.choice(players)
+    game.current_player_id = first_player.user_id
     game.started_at = datetime.now(timezone.utc)
+    
+    logger.info(f"Game {game_id} started with {len(players)} players. First player randomly selected: {first_player.user.username} (ID: {first_player.user_id})")
     
     # Update the game state JSON to reflect the started game
     state_data = json.loads(game.state) if game.state else {}
@@ -805,3 +1277,221 @@ async def validate_words(
     except Exception as e:
         logger.error(f"Error validating words: {e}")
         raise HTTPException(500, "Error validating words")
+
+@router.get("/{game_id}/invitations")
+def get_game_invitations(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get all invitations for a game (only for game creator)."""
+    # Check if game exists
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Check if user is the creator
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can view invitations")
+    
+    # Get all invitations for this game
+    invitations = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id
+    ).all()
+    
+    invitation_list = []
+    for inv in invitations:
+        invitation_list.append({
+            "invitation_id": inv.id,
+            "invitee_username": inv.invitee.username,
+            "invitee_email": inv.invitee.email,
+            "status": inv.status.value,
+            "created_at": inv.created_at.isoformat(),
+            "responded_at": inv.responded_at.isoformat() if inv.responded_at else None,
+            "join_token": inv.join_token  # Include for debugging/resending
+        })
+    
+    return {
+        "game_id": game_id,
+        "invitations": invitation_list,
+        "total_invitations": len(invitation_list),
+        "pending_count": len([inv for inv in invitation_list if inv["status"] == "pending"]),
+        "accepted_count": len([inv for inv in invitation_list if inv["status"] == "accepted"]),
+        "declined_count": len([inv for inv in invitation_list if inv["status"] == "declined"])
+    }
+
+@router.post("/{game_id}/auto-start")
+async def auto_start_game(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Auto-start a game when enough players have joined."""
+    # Get game from database
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Check if user is the creator
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can auto-start the game")
+    
+    # Check if game is in READY state
+    if game.status != GameStatus.READY:
+        raise HTTPException(400, f"Game cannot be auto-started. Current status: {game.status.value}")
+    
+    # Get all players
+    players = db.query(Player).filter(Player.game_id == game_id).all()
+    if len(players) < 2:
+        raise HTTPException(400, "Not enough players to start game")
+    
+    # Create letter bag
+    letter_bag = create_letter_bag(game.language)
+    
+    # Deal initial letters to players
+    for player in players:
+        player.rack = create_rack(letter_bag)
+    
+    # Set game status and first player (randomly selected for fairness)
+    game.status = GameStatus.IN_PROGRESS
+    first_player = random.choice(players)
+    game.current_player_id = first_player.user_id
+    game.started_at = datetime.now(timezone.utc)
+    
+    logger.info(f"Game {game_id} auto-started with {len(players)} players. First player randomly selected: {first_player.user.username} (ID: {first_player.user_id})")
+    
+    # Update the game state JSON to reflect the started game
+    state_data = json.loads(game.state) if game.state else {}
+    state_data.update({
+        "phase": GamePhase.IN_PROGRESS.value,
+        "letter_bag": letter_bag,
+        "turn_number": 0,
+        "consecutive_passes": 0
+    })
+    game.state = json.dumps(state_data, cls=GameStateEncoder)
+    
+    # Save changes
+    db.commit()
+    
+    # Notify websocket clients about game start
+    try:
+        await manager.broadcast_to_game(game_id, {
+            "type": "game_auto_started",
+            "game_id": game_id,
+            "current_player_id": game.current_player_id,
+            "player_count": len(players),
+            "message": f"Game auto-started with {len(players)} players!"
+        })
+    except Exception as e:
+        logger.error(f"WebSocket broadcast error after auto-start {game_id}: {e}")
+    
+    return {
+        "success": True,
+        "message": f"Game auto-started with {len(players)} players",
+        "current_player_id": game.current_player_id,
+        "game_status": game.status.value
+    }
+
+@router.post("/{game_id}/invite-random-player")
+def invite_random_player(
+    game_id: str,
+    request_data: dict = Body(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Send an invitation to a random existing player."""
+    
+    base_url = request_data.get("base_url", FRONTEND_URL)
+    
+    # Check if game exists and user is the creator
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can send invitations")
+    
+    if game.status not in [GameStatus.SETUP, GameStatus.READY]:
+        raise HTTPException(400, f"Cannot send invitations for game in {game.status.value} status")
+    
+    # Get current players to exclude them
+    current_players = db.query(Player).filter(Player.game_id == game_id).all()
+    current_player_ids = [p.user_id for p in current_players]
+    
+    # Get users who already have pending invitations
+    existing_invitations = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).all()
+    invited_user_ids = [inv.invitee_id for inv in existing_invitations]
+    
+    # Exclude current user, current players, and already invited users
+    excluded_ids = set(current_player_ids + invited_user_ids + [current_user.id])
+    
+    # Get random users who are not excluded
+    # Prefer users who have been active recently (have played games)
+    potential_users = db.query(User).filter(
+        ~User.id.in_(excluded_ids),
+        User.is_email_verified == True  # Only verified users
+    ).all()
+    
+    if not potential_users:
+        raise HTTPException(400, "No available users to invite")
+    
+    # Prefer users who have played games recently
+    active_users = []
+    inactive_users = []
+    
+    for user in potential_users:
+        user_games = db.query(Player).filter(Player.user_id == user.id).count()
+        if user_games > 0:
+            active_users.append(user)
+        else:
+            inactive_users.append(user)
+    
+    # Select randomly from active users first, then inactive
+    if active_users:
+        selected_user = random.choice(active_users)
+    else:
+        selected_user = random.choice(inactive_users)
+    
+    # Generate join token
+    join_token = secrets.token_urlsafe(32)
+    
+    # Create invitation
+    invitation = GameInvitation(
+        game_id=game_id,
+        inviter_id=current_user.id,
+        invitee_id=selected_user.id,
+        join_token=join_token,
+        status=InvitationStatus.PENDING
+    )
+    
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    
+    # Send email invitation
+    email_sent = email_service.send_random_player_invitation(
+        to_email=selected_user.email,
+        invitee_username=selected_user.username,
+        inviter_username=current_user.username,
+        game_id=game_id,
+        join_token=join_token,
+        base_url=base_url
+    )
+    
+    logger.info(f"Random invitation sent to user {selected_user.id} for game {game_id}, email_sent: {email_sent}")
+    
+    return {
+        "message": f"Random invitation sent to {selected_user.username}",
+        "invitee": {
+            "id": selected_user.id,
+            "username": selected_user.username,
+            "email": selected_user.email
+        },
+        "invitation_id": invitation.id,
+        "join_token": join_token,
+        "email_sent": email_sent,
+        "game_id": game_id
+    }

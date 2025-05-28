@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup
-from app.config import CORS_ORIGINS, RATE_LIMIT
+from app.config import CORS_ORIGINS, RATE_LIMIT, BACKEND_URL, FRONTEND_URL
 import time
 import os
 import logging
@@ -74,6 +74,10 @@ app = FastAPI(
         {
             "name": "chat",
             "description": "Chat operations",
+        },
+        {
+            "name": "config",
+            "description": "Configuration operations",
         },
     ]
 )
@@ -229,6 +233,44 @@ app.include_router(profile.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
+
+@app.get("/config", tags=["config"])
+def get_frontend_config():
+    """
+    Get frontend configuration including backend URL and other settings.
+    
+    This endpoint provides configuration information that the frontend needs,
+    such as the correct backend URL, environment info, and feature flags.
+    
+    Returns:
+        dict: Configuration object with frontend-relevant settings
+    """
+    # Determine the actual backend URL from the request if possible
+    # For deployed environments, use the configured BACKEND_URL
+    backend_url = BACKEND_URL
+    
+    # If we're in production and have a specific URL, use it
+    environment = os.getenv("ENVIRONMENT", "development")
+    if environment == "production":
+        # Use the deployed backend URL
+        backend_url = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
+    
+    return {
+        "backend_url": backend_url,
+        "frontend_url": FRONTEND_URL,
+        "environment": environment,
+        "version": "1.0.0",
+        "features": {
+            "email_invitations": True,
+            "game_chat": True,
+            "real_time_updates": True,
+            "multi_language": True,
+            "push_notifications": os.getenv("ENABLE_PUSH_NOTIFICATIONS", "false").lower() == "true"
+        },
+        "supported_languages": ["en", "de"],
+        "api_docs": f"{backend_url}/docs" if backend_url else "/docs",
+        "websocket_url": f"{backend_url.replace('http', 'ws')}/ws" if backend_url else None
+    }
 
 @app.get("/", tags=["root"])
 def read_root():

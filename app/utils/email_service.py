@@ -6,7 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import Optional
 from app.config import (
     SMTP_SERVER, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, 
-    FROM_EMAIL, VERIFICATION_CODE_EXPIRE_MINUTES, SMTP_USE_SSL
+    FROM_EMAIL, VERIFICATION_CODE_EXPIRE_MINUTES, SMTP_USE_SSL, FRONTEND_URL
 )
 
 logger = logging.getLogger(__name__)
@@ -132,6 +132,154 @@ WordBattle Team
             
         except Exception as e:
             logger.error(f"Failed to send welcome email to {to_email}: {str(e)}")
+            return False
+
+    def send_game_invitation(self, to_email: str, invitee_username: str, inviter_username: str, 
+                           game_id: str, join_token: str, base_url: str = None) -> bool:
+        """Send game invitation email with join link."""
+        try:
+            # Use frontend URL if no base_url provided
+            if base_url is None:
+                base_url = FRONTEND_URL
+            
+            # For testing environment, just log instead of sending email
+            if os.getenv("TESTING") == "1" or not self.username:
+                logger.info(f"TESTING MODE: Game invitation for {to_email} - Game: {game_id}, Token: {join_token}")
+                return True
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.from_email
+            msg['To'] = to_email
+            msg['Subject'] = f"WordBattle Game Invitation from {inviter_username}"
+            
+            # Create join link - use frontend URL for user-facing links
+            join_link = f"{base_url}/games/{game_id}/join?token={join_token}"
+            
+            # Email body
+            body = f"""
+Hello {invitee_username},
+
+{inviter_username} has invited you to play WordBattle!
+
+Click the link below to join the game:
+{join_link}
+
+Or you can:
+1. Log in to WordBattle
+2. Go to your invitations
+3. Accept the invitation from {inviter_username}
+
+Game Details:
+- Game ID: {game_id}
+- Invited by: {inviter_username}
+
+Don't keep them waiting - start playing now!
+
+Best regards,
+WordBattle Team
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Send email
+            logger.info(f"Connecting to SMTP server: {self.smtp_server}:{self.smtp_port}, SSL: {self.use_ssl}")
+            
+            if self.use_ssl:
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+                logger.info("Using SMTP_SSL connection")
+            else:
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server.starttls()
+                logger.info("Using SMTP with STARTTLS")
+            
+            logger.info(f"Logging in with username: {self.username}")
+            server.login(self.username, self.password)
+            logger.info("Login successful")
+            
+            text = msg.as_string()
+            server.sendmail(self.from_email, to_email, text)
+            logger.info(f"Email sent from {self.from_email} to {to_email}")
+            server.quit()
+            
+            logger.info(f"Game invitation sent successfully to {to_email}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send game invitation to {to_email}: {str(e)}")
+            return False
+
+    def send_random_player_invitation(self, to_email: str, invitee_username: str, inviter_username: str, 
+                                    game_id: str, join_token: str, base_url: str = None) -> bool:
+        """Send game invitation email to a random existing player."""
+        try:
+            # Use frontend URL if no base_url provided
+            if base_url is None:
+                base_url = FRONTEND_URL
+            
+            # For testing environment, just log instead of sending email
+            if os.getenv("TESTING") == "1" or not self.username:
+                logger.info(f"TESTING MODE: Random player invitation for {to_email} - Game: {game_id}, Token: {join_token}")
+                return True
+            
+            # Create message
+            msg = MIMEMultipart()
+            msg['From'] = self.from_email
+            msg['To'] = to_email
+            msg['Subject'] = f"WordBattle Game Invitation from {inviter_username}"
+            
+            # Create join link - use frontend URL for user-facing links
+            join_link = f"{base_url}/games/{game_id}/join?token={join_token}"
+            
+            # Email body for random invitation
+            body = f"""
+Hello {invitee_username},
+
+{inviter_username} is looking for players and has invited you to join a WordBattle game!
+
+We thought you might be interested in playing since you're an active WordBattle player.
+
+Click the link below to join the game:
+{join_link}
+
+Game Details:
+- Game ID: {game_id}
+- Invited by: {inviter_username}
+- This is a random invitation to an active player
+
+Join now and show off your word skills!
+
+Best regards,
+WordBattle Team
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Send email
+            logger.info(f"Connecting to SMTP server: {self.smtp_server}:{self.smtp_port}, SSL: {self.use_ssl}")
+            
+            if self.use_ssl:
+                server = smtplib.SMTP_SSL(self.smtp_server, self.smtp_port)
+                logger.info("Using SMTP_SSL connection")
+            else:
+                server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+                server.starttls()
+                logger.info("Using SMTP with STARTTLS")
+            
+            logger.info(f"Logging in with username: {self.username}")
+            server.login(self.username, self.password)
+            logger.info("Login successful")
+            
+            text = msg.as_string()
+            server.sendmail(self.from_email, to_email, text)
+            logger.info(f"Email sent from {self.from_email} to {to_email}")
+            server.quit()
+            
+            logger.info(f"Random player invitation sent successfully to {to_email}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send random player invitation to {to_email}: {str(e)}")
             return False
 
 # Global email service instance

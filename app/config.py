@@ -51,3 +51,7 @@ GAME_INACTIVE_DAYS = int(os.getenv("GAME_INACTIVE_DAYS", "7"))
 # API settings
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 RATE_LIMIT = int(os.getenv("RATE_LIMIT", "60"))  # Requests per minute
+
+# Frontend URL settings
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")  # Default to frontend port
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")   # Default to backend port

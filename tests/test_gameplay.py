@@ -12,7 +12,7 @@ def test_join_deal_exchange_authenticated(authenticated_client, test_user):
     username2 = f"player2_{uuid.uuid4().hex[:6]}"
     password = "testpassword"
     authenticated_response = create_test_user(client, username2, password)
-    assert authenticated_response.status_code == 200
+    assert response.status_code == 200
     token2 = get_test_token(username2)
     headers2 = {"Authorization": f"Bearer {token2}"}
 
