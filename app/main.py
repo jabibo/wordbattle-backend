@@ -223,6 +223,74 @@ async def database_status():
     from app.database_manager import get_database_info
     return get_database_info()
 
+@app.post("/debug-tokens")
+async def create_debug_tokens():
+    """
+    DEBUG ENDPOINT: Create tokens for test users player01 and player02.
+    This endpoint creates the users if they don't exist and returns their tokens.
+    
+    ⚠️ WARNING: This is for development/testing only!
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        from app.auth import create_access_token
+        from passlib.context import CryptContext
+        from datetime import timedelta
+        
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        db = SessionLocal()
+        
+        try:
+            test_users = []
+            
+            for username in ["player01", "player02"]:
+                # Check if user exists
+                user = db.query(User).filter(User.username == username).first()
+                
+                if not user:
+                    # Create the user
+                    hashed_password = pwd_context.hash("testpassword123")
+                    user = User(
+                        username=username,
+                        email=f"{username}@test.com",
+                        hashed_password=hashed_password,
+                        is_email_verified=True
+                    )
+                    db.add(user)
+                    db.commit()
+                    db.refresh(user)
+                
+                # Create token for the user
+                access_token = create_access_token(
+                    data={"sub": str(user.id)},
+                    expires_delta=timedelta(days=30)  # Long-lived token for testing
+                )
+                
+                test_users.append({
+                    "user_id": user.id,
+                    "username": username,
+                    "email": user.email,
+                    "access_token": access_token,
+                    "token_type": "bearer"
+                })
+            
+            return {
+                "message": "Test tokens created successfully",
+                "users": test_users,
+                "usage": {
+                    "description": "Use these tokens in the Authorization header",
+                    "format": "Bearer <access_token>",
+                    "example": f"Authorization: Bearer {test_users[0]['access_token'][:50]}..."
+                }
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating test tokens: {str(e)}")
+
 # Include routers
 app.include_router(users.router)
 app.include_router(game_setup.router)  # Include game_setup before games to avoid route conflicts
