@@ -31,3 +31,7 @@ class User(Base):
     invitations_sent = relationship("GameInvitation", foreign_keys="[GameInvitation.inviter_id]", back_populates="inviter")
     invitations_received = relationship("GameInvitation", foreign_keys="[GameInvitation.invitee_id]", back_populates="invitee")
     sent_messages = relationship("ChatMessage", back_populates="sender")
+    
+    # Friendship relationships
+    friends = relationship("Friend", foreign_keys="[Friend.user_id]", back_populates="user")
+    friend_of = relationship("Friend", foreign_keys="[Friend.friend_id]", back_populates="friend")

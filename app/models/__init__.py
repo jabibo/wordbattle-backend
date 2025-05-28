@@ -6,5 +6,6 @@ from app.models.move import Move
 from app.models.wordlist import WordList
 from app.models.game_invitation import GameInvitation
 from app.models.chat_message import ChatMessage
+from app.models.friend import Friend
 
-__all__ = ['Base', 'User', 'Game', 'GameStatus', 'Player', 'Move', 'WordList', 'GameInvitation', 'ChatMessage']
+__all__ = ['Base', 'User', 'Game', 'GameStatus', 'Player', 'Move', 'WordList', 'GameInvitation', 'ChatMessage', 'Friend']
