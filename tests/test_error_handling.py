@@ -1,4 +1,4 @@
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
@@ -12,7 +12,8 @@ def test_invalid_game_id():
     username = f"error_test_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -47,7 +48,7 @@ def test_invalid_move_data():
     username = f"move_error_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    user1_response = client.post("/users/register", json={"username": username, "password": password})
+    user1_response = create_test_user(client, username, password)
     assert user1_response.status_code == 200
     test_user_id = user1_response.json()["id"]
     token = get_test_token(username)
@@ -61,7 +62,7 @@ def test_invalid_move_data():
 
     # Create second player
     username2 = f"move_error2_{uuid.uuid4().hex[:6]}"
-    user2_response = client.post("/users/register", json={"username": username2, "password": password})
+    user2_response = create_test_user(client, username2, password)
     assert user2_response.status_code == 200
     test_user2_id = user2_response.json()["id"]
     token2 = get_test_token(username2)
@@ -129,7 +130,8 @@ def test_unauthorized_access():
     # Create an authorized user to create a game
     username = f"auth_test_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
 

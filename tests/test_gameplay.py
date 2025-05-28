@@ -2,7 +2,7 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from app.main import app
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -11,7 +11,8 @@ def test_join_deal_exchange_authenticated(authenticated_client, test_user):
     # Create a second user
     username2 = f"player2_{uuid.uuid4().hex[:6]}"
     password = "testpassword"
-    authenticated_client.post("/users/register", json={"username": username2, "password": password})
+    authenticated_response = create_test_user(client, username2, password)
+    assert authenticated_response.status_code == 200
     token2 = get_test_token(username2)
     headers2 = {"Authorization": f"Bearer {token2}"}
 

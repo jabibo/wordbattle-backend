@@ -7,7 +7,7 @@ from app.websocket import manager
 from app.models.game import GameStatus
 import uuid
 from starlette.websockets import WebSocketDisconnect
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 import os
 import json
 

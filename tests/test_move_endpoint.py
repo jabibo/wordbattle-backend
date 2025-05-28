@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -12,12 +12,14 @@ def test_valid_move_flow():
     username1 = f"user1_{uuid.uuid4().hex[:6]}"
     username2 = f"user2_{uuid.uuid4().hex[:6]}"
     password = "secret"
+    email1 = f"{username1}@example.com"
+    email2 = f"{username2}@example.com"
     
-    # Register users
-    user1_response = client.post("/users/register", json={"username": username1, "password": password})
-    user2_response = client.post("/users/register", json={"username": username2, "password": password})
-    assert user1_response.status_code == 200
-    assert user2_response.status_code == 200
+    # Register users with email
+    user1_response = create_test_user(client, username1, password, email1)
+    user2_response = create_test_user(client, username2, password, email2)
+    assert user1_response.status_code == 200, f"User1 registration failed: {user1_response.json()}"
+    assert user2_response.status_code == 200, f"User2 registration failed: {user2_response.json()}"
     
     user1_id = user1_response.json()["id"]
     user2_id = user2_response.json()["id"]

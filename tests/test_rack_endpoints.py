@@ -2,7 +2,7 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from app.main import app
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -11,13 +11,15 @@ def test_get_rack_endpoints():
     # Create first user
     username = f"rack_test_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create second user
     username2 = f"rack_test2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     token2 = get_test_token(username2)
     headers2 = {"Authorization": f"Bearer {token2}"}
 
@@ -80,13 +82,15 @@ def test_refill_rack_after_use():
     # Create a user
     username = f"refill_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
 
     # Create second player
     username2 = f"refill2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     token2 = get_test_token(username2)
     headers2 = {"Authorization": f"Bearer {token2}"}
 

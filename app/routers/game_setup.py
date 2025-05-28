@@ -15,7 +15,7 @@ import json
 from typing import List
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/games", tags=["game_setup"])
+router = APIRouter(prefix="/game-setup", tags=["game_setup"])
 
 class GameSetup(BaseModel):
     max_players: int = 2

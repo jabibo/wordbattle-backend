@@ -2,7 +2,7 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from app.main import app
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -11,7 +11,8 @@ def test_join_deal_exchange_authenticated():
     password = "secret"
 
     # Register via API
-    register = client.post("/users/register", json={"username": username, "password": password})
+    register = response = create_test_user(client, username, password)
+    assert response.status_code == 200
     assert register.status_code in (200, 400)
 
     # Create token directly
