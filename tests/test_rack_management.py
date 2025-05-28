@@ -2,7 +2,7 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from app.main import app
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 from app.models.game import GameStatus
 from app.game_logic.game_state import GamePhase
 
@@ -13,7 +13,8 @@ def test_letter_exchange():
     # Create a user
     username = f"exchange_test_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -25,7 +26,8 @@ def test_letter_exchange():
 
     # Create second player and join
     username2 = f"exchange_test2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     token2 = get_test_token(username2)
     headers2 = {"Authorization": f"Bearer {token2}"}
     join_response = client.post(f"/games/{game_id}/join", headers=headers2)
@@ -101,8 +103,10 @@ def test_deal_letters():
     password = "secret"
     
     # Register users
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token1 = get_test_token(username1)
     token2 = get_test_token(username2)

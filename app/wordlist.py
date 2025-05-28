@@ -145,7 +145,7 @@ def import_wordlist_with_limit(language: str, path: str, limit: int = 50000) -> 
     finally:
         db.close()
 
-def import_wordlist_continue(language: str, path: str, skip: int = 0) -> None:
+def import_wordlist_continue(language: str, path: str, skip: int = 0, limit: int = None) -> None:
     """
     Continue importing words from where a previous limited import left off.
     
@@ -153,11 +153,12 @@ def import_wordlist_continue(language: str, path: str, skip: int = 0) -> None:
         language: Language code (e.g., "de", "en")
         path: Path to the wordlist file
         skip: Number of words to skip (from previous import)
+        limit: Maximum number of words to import (None for all remaining)
     """
     import logging
     logger = logging.getLogger(__name__)
     
-    logger.info(f"Starting background import for {language}, skipping first {skip} words")
+    logger.info(f"Starting background import for {language}, skipping first {skip} words, limit={limit}")
     
     # Load remaining words from file
     encodings = ['utf-8-sig', 'utf-8', 'latin1', 'cp1252']
@@ -169,6 +170,8 @@ def import_wordlist_continue(language: str, path: str, skip: int = 0) -> None:
                 for i, line in enumerate(f):
                     if i < skip:
                         continue
+                    if limit is not None and len(words) >= limit:
+                        break
                     word = line.strip().upper()
                     if word:
                         words.append(word)

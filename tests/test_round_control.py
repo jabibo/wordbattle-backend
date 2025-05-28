@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 from app.auth import create_access_token
 
 client = TestClient(app)
@@ -13,13 +13,15 @@ def test_turn_rotation_after_move():
     pw = "pw"
     # Spieler 1
     u1 = f"user1_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": u1, "password": pw})
+    response = create_test_user(client, u1, pw)
+    assert response.status_code == 200
     t1 = get_test_token(u1)
     h1 = {"Authorization": f"Bearer {t1}"}
 
     # Spieler 2
     u2 = f"user2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": u2, "password": pw})
+    response = create_test_user(client, u2, pw)
+    assert response.status_code == 200
     t2 = get_test_token(u2)
     h2 = {"Authorization": f"Bearer {t2}"}
 
@@ -134,13 +136,15 @@ def test_pass_turn():
     pw = "pw"
     # Spieler 1
     u1 = f"user1_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": u1, "password": pw})
+    response = create_test_user(client, u1, pw)
+    assert response.status_code == 200
     t1 = get_test_token(u1)
     h1 = {"Authorization": f"Bearer {t1}"}
 
     # Spieler 2
     u2 = f"user2_{uuid.uuid4().hex[:6]}"
-    client.post("/users/register", json={"username": u2, "password": pw})
+    response = create_test_user(client, u2, pw)
+    assert response.status_code == 200
     t2 = get_test_token(u2)
     h2 = {"Authorization": f"Bearer {t2}"}
 

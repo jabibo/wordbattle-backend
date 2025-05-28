@@ -6,7 +6,7 @@ from app.models import User, Game, Player, Move
 import uuid
 import json
 from datetime import datetime, timezone, timedelta
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -17,8 +17,10 @@ def test_manual_game_completion():
     username2 = f"complete_test2_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token1 = get_test_token(username1)
     token2 = get_test_token(username2)
@@ -47,8 +49,10 @@ def test_game_completion_empty_rack():
     username2 = f"empty_rack2_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token1 = get_test_token(username1)
     token2 = get_test_token(username2)
@@ -77,8 +81,10 @@ def test_game_completion_consecutive_passes():
     username2 = f"pass_test2_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token1 = get_test_token(username1)
     token2 = get_test_token(username2)
@@ -112,8 +118,10 @@ def test_game_completion_inactivity():
     username2 = f"inactive2_{uuid.uuid4().hex[:6]}"
     password = "testpass"
     
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token1 = get_test_token(username1)
     token2 = get_test_token(username2)

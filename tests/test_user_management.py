@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
+from tests.test_utils import create_test_user
 from app.auth import get_password_hash
 from app.models import User
 

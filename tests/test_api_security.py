@@ -4,7 +4,7 @@ from app.main import app
 import uuid
 import jwt
 from datetime import datetime, timedelta
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -14,7 +14,8 @@ def test_expired_token():
     password = "testpass"
     
     # Register user
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     
     # Use expired token
     token = get_test_token(username)
@@ -30,7 +31,8 @@ def test_tampered_token():
     password = "testpass"
     
     # Register user
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     
     # Use tampered token
     token = get_test_token(username)
@@ -48,8 +50,10 @@ def test_authorization_separation():
     password = "testpass"
     
     # Register users
-    client.post("/users/register", json={"username": username1, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username1, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     # Get token for user1
     token1 = get_test_token(username1)
@@ -79,7 +83,8 @@ def test_protected_endpoint_access():
     # Create user and get token
     username = f"protected_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     

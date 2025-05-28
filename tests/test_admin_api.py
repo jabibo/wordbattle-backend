@@ -2,14 +2,15 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
 def test_admin_list_wordlists():
     username = f"admin_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -19,7 +20,8 @@ def test_admin_list_wordlists():
 def test_admin_delete_wordlist():
     username = f"admin_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -29,7 +31,8 @@ def test_admin_delete_wordlist():
 def test_admin_import_wordlist():
     username = f"admin_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -39,7 +42,8 @@ def test_admin_import_wordlist():
 def test_non_admin_access():
     username = f"user_{uuid.uuid4().hex[:6]}"
     password = "testpass"
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     

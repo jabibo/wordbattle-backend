@@ -2,7 +2,7 @@ import pytest
 import uuid
 from fastapi.testclient import TestClient
 from app.main import app
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 from app.models.game import GameStatus
 
 client = TestClient(app)

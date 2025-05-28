@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -13,8 +13,10 @@ def test_score_update_after_move():
     password = "testpass"
     
     # Register users
-    client.post("/users/register", json={"username": username, "password": password})
-    client.post("/users/register", json={"username": username2, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
+    response = create_test_user(client, username2, password)
+    assert response.status_code == 200
     
     token = get_test_token(username)
     token2 = get_test_token(username2)

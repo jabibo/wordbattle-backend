@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 import uuid
+from tests.test_utils import create_test_user
 from datetime import datetime, timedelta
 from app.auth import create_access_token
 
@@ -19,7 +20,8 @@ def test_game_language_setting():
     password = "testpass"
     
     # Register and get token
-    client.post("/users/register", json={"username": username, "password": password})
+    response = create_test_user(client, username, password)
+    assert response.status_code == 200
     token = get_test_token(username)
     headers = {"Authorization": f"Bearer {token}"}
     

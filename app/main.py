@@ -221,8 +221,8 @@ async def database_status():
 
 # Include routers
 app.include_router(users.router)
+app.include_router(game_setup.router)  # Include game_setup before games to avoid route conflicts
 app.include_router(games.router)
-app.include_router(game_setup.router)
 app.include_router(moves.router)
 app.include_router(rack.router)
 app.include_router(profile.router)

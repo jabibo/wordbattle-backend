@@ -5,7 +5,7 @@ import pytest
 import jwt
 import json
 from datetime import datetime, timedelta
-from tests.test_utils import get_test_token
+from tests.test_utils import get_test_token, create_test_user
 
 client = TestClient(app)
 
@@ -14,11 +14,9 @@ def test_sql_injection_prevention():
     # Create a legitimate user first for authentication
     legitimate_username = f"legit_user_{uuid.uuid4().hex[:6]}"
     password = "testpass"
+    email = f"{legitimate_username}@example.com"
     
-    register_response = client.post(
-        "/users/register", 
-        json={"username": legitimate_username, "password": password}
-    )
+    register_response = create_test_user(client, legitimate_username, password, email)
     assert register_response.status_code == 200
     
     token = get_test_token(legitimate_username)
@@ -26,11 +24,12 @@ def test_sql_injection_prevention():
     
     # SQL injection attempt in username during registration
     sql_injection_username = "admin' OR 1=1--"
+    sql_injection_email = f"injection@example.com"
     
     # Try to register with SQL injection username
     register_response = client.post(
         "/users/register", 
-        json={"username": sql_injection_username, "password": password}
+        json={"username": sql_injection_username, "email": sql_injection_email, "password": password}
     )
     assert register_response.status_code in (200, 400, 404, 422)
     
