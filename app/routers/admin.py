@@ -1,13 +1,77 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 from app.dependencies import get_db
-from app.auth import get_current_user
+from app.auth import get_current_user, create_access_token
 from app.models import User, WordList
 from app.wordlist import import_wordlist, load_wordlist_from_file
+from passlib.context import CryptContext
+from datetime import timedelta
 import os
 import tempfile
 
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+@router.post("/debug/create-test-tokens")
+async def create_test_tokens(
+    db: Session = Depends(get_db)
+):
+    """
+    DEBUG ENDPOINT: Create tokens for test users player01 and player02.
+    This endpoint creates the users if they don't exist and returns their tokens.
+    
+    ⚠️ WARNING: This is for development/testing only!
+    """
+    try:
+        test_users = []
+        
+        for username in ["player01", "player02"]:
+            # Check if user exists
+            user = db.query(User).filter(User.username == username).first()
+            
+            if not user:
+                # Create the user
+                hashed_password = pwd_context.hash("testpassword123")
+                user = User(
+                    username=username,
+                    email=f"{username}@test.com",
+                    hashed_password=hashed_password,
+                    is_email_verified=True
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
+                print(f"✅ Created test user: {username}")
+            else:
+                print(f"✅ Test user already exists: {username}")
+            
+            # Create token for the user
+            access_token = create_access_token(
+                data={"sub": str(user.id)},
+                expires_delta=timedelta(days=30)  # Long-lived token for testing
+            )
+            
+            test_users.append({
+                "user_id": user.id,
+                "username": username,
+                "email": user.email,
+                "access_token": access_token,
+                "token_type": "bearer"
+            })
+        
+        return {
+            "message": "Test tokens created successfully",
+            "users": test_users,
+            "usage": {
+                "description": "Use these tokens in the Authorization header",
+                "format": "Bearer <access_token>",
+                "example": f"Authorization: Bearer {test_users[0]['access_token'][:50]}..."
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating test tokens: {str(e)}")
 
 @router.post("/wordlists/import")
 async def import_wordlist_endpoint(
