@@ -1,13 +1,14 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup
-from app.config import CORS_ORIGINS, RATE_LIMIT
+from app.config import CORS_ORIGINS, RATE_LIMIT, SECRET_KEY, ALGORITHM
 import time
 import os
 import logging
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from app.database import engine, Base
+import jwt
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -218,6 +219,100 @@ async def database_status():
     """Get detailed database status information"""
     from app.database_manager import get_database_info
     return get_database_info()
+
+@app.get("/debug/tokens")
+async def debug_tokens():
+    """Debug endpoint that provides test tokens for PLAYER01 and PLAYER02"""
+    from datetime import datetime, timezone, timedelta
+    import jwt
+    from app.config import SECRET_KEY, ALGORITHM
+    from app.database import SessionLocal
+    from app.models import User
+    
+    db = SessionLocal()
+    try:
+        # Find or get info about test users
+        player01 = db.query(User).filter(User.username == "PLAYER01").first()
+        player02 = db.query(User).filter(User.username == "PLAYER02").first()
+        
+        # If users don't exist, find any existing users for testing
+        if not player01:
+            player01 = db.query(User).filter(User.id.in_([1, 2, 3, 4, 5])).first()
+        if not player02:
+            player02 = db.query(User).filter(User.id.in_([6, 7, 8, 9, 10])).first()
+            
+        # Fallback to any users if still none found
+        if not player01:
+            player01 = db.query(User).first()
+        if not player02:
+            player02 = db.query(User).offset(1).first()
+            
+        if not player01 or not player02:
+            return {
+                "error": "No users found in database for testing",
+                "suggestion": "Create some users first"
+            }
+        
+        # Generate tokens that expire in 30 days (reasonable for testing)
+        future_time = datetime.now(timezone.utc) + timedelta(days=30)
+        exp_timestamp = int(future_time.timestamp())
+        
+        # Create fresh tokens for available users - using USERNAME in sub field
+        player01_token = jwt.encode({"sub": player01.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
+        player02_token = jwt.encode({"sub": player02.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
+        
+        return {
+            "message": "Fresh debug tokens (30 days expiry) - WORKING TOKENS!",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": future_time.isoformat(),
+            "tokens": {
+                "PLAYER01": {
+                    "user_id": player01.id,
+                    "username": player01.username, 
+                    "email": player01.email,
+                    "token": player01_token
+                },
+                "PLAYER02": {
+                    "user_id": player02.id,
+                    "username": player02.username,
+                    "email": player02.email,
+                    "token": player02_token
+                }
+            },
+            "testing": {
+                "test_auth": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me",
+                "test_games": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/games/my-games",
+                "note": "Tokens use USERNAME in sub field for proper authentication"
+            },
+            "usage": {
+                "authorization_header": "Authorization: Bearer <token>",
+                "example_test": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me"
+            }
+        }
+    finally:
+        db.close()
+
+@app.get("/debug/test-auth/{username}")
+async def debug_test_auth(username: str):
+    """Simple debug endpoint to test user lookup by username"""
+    from app.database import SessionLocal
+    from app.models import User
+    
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if user:
+            return {
+                "found": True,
+                "user_id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "last_login": user.last_login.isoformat() if user.last_login else None
+            }
+        else:
+            return {"found": False, "username": username}
+    finally:
+        db.close()
 
 # Include routers
 app.include_router(users.router)
