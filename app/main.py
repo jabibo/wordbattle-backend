@@ -222,7 +222,7 @@ async def database_status():
 
 @app.get("/debug/tokens")
 async def debug_tokens():
-    """Debug endpoint that provides test tokens for PLAYER01 and PLAYER02"""
+    """Debug endpoint that provides test tokens for player01 and player02"""
     from datetime import datetime, timezone, timedelta
     import jwt
     from app.config import SECRET_KEY, ALGORITHM
@@ -232,8 +232,8 @@ async def debug_tokens():
     db = SessionLocal()
     try:
         # Find or get info about test users
-        player01 = db.query(User).filter(User.username == "PLAYER01").first()
-        player02 = db.query(User).filter(User.username == "PLAYER02").first()
+        player01 = db.query(User).filter(User.username == "player01").first()
+        player02 = db.query(User).filter(User.username == "player02").first()
         
         # If users don't exist, find any existing users for testing
         if not player01:
@@ -266,13 +266,13 @@ async def debug_tokens():
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": future_time.isoformat(),
             "tokens": {
-                "PLAYER01": {
+                "player01": {
                     "user_id": player01.id,
                     "username": player01.username, 
                     "email": player01.email,
                     "token": player01_token
                 },
-                "PLAYER02": {
+                "player02": {
                     "user_id": player02.id,
                     "username": player02.username,
                     "email": player02.email,

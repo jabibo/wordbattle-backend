@@ -26,6 +26,12 @@ async def create_test_tokens(
     try:
         test_users = []
         
+        # Define email mapping for test users
+        email_mapping = {
+            "player01": "player01@binge.de",
+            "player02": "player02@binge.de"
+        }
+        
         for username in ["player01", "player02"]:
             # Check if user exists
             user = db.query(User).filter(User.username == username).first()
@@ -35,7 +41,7 @@ async def create_test_tokens(
                 hashed_password = pwd_context.hash("testpassword123")
                 user = User(
                     username=username,
-                    email=f"{username}@test.com",
+                    email=email_mapping[username],
                     hashed_password=hashed_password,
                     is_email_verified=True
                 )
@@ -44,7 +50,13 @@ async def create_test_tokens(
                 db.refresh(user)
                 print(f"✅ Created test user: {username}")
             else:
-                print(f"✅ Test user already exists: {username}")
+                # Update email if it's different
+                if user.email != email_mapping[username]:
+                    user.email = email_mapping[username]
+                    db.commit()
+                    print(f"✅ Updated email for test user: {username}")
+                else:
+                    print(f"✅ Test user already exists: {username}")
             
             # Create token for the user
             access_token = create_access_token(
