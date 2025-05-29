@@ -1,0 +1,9 @@
+{
+  "ImageRepository": {
+    "ImageIdentifier": "598510278922.dkr.ecr.eu-central-1.amazonaws.com/wordbattle-backend:jwt-fix",
+    "ImageConfiguration": {
+      "Port": "8000"
+    },
+    "ImageRepositoryType": "ECR"
+  }
+} 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup
-from app.config import CORS_ORIGINS, RATE_LIMIT, BACKEND_URL, FRONTEND_URL
+from app.config import CORS_ORIGINS, RATE_LIMIT
 import time
 import os
 import logging
@@ -74,10 +74,6 @@ app = FastAPI(
         {
             "name": "chat",
             "description": "Chat operations",
-        },
-        {
-            "name": "config",
-            "description": "Configuration operations",
         },
     ]
 )
@@ -223,74 +219,6 @@ async def database_status():
     from app.database_manager import get_database_info
     return get_database_info()
 
-@app.post("/debug-tokens")
-async def create_debug_tokens():
-    """
-    DEBUG ENDPOINT: Create tokens for test users player01 and player02.
-    This endpoint creates the users if they don't exist and returns their tokens.
-    
-    ⚠️ WARNING: This is for development/testing only!
-    """
-    try:
-        from app.database import SessionLocal
-        from app.models import User
-        from app.auth import create_access_token
-        from passlib.context import CryptContext
-        from datetime import timedelta
-        
-        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        db = SessionLocal()
-        
-        try:
-            test_users = []
-            
-            for username in ["player01", "player02"]:
-                # Check if user exists
-                user = db.query(User).filter(User.username == username).first()
-                
-                if not user:
-                    # Create the user
-                    hashed_password = pwd_context.hash("testpassword123")
-                    user = User(
-                        username=username,
-                        email=f"{username}@test.com",
-                        hashed_password=hashed_password,
-                        is_email_verified=True
-                    )
-                    db.add(user)
-                    db.commit()
-                    db.refresh(user)
-                
-                # Create token for the user
-                access_token = create_access_token(
-                    data={"sub": str(user.id)},
-                    expires_delta=timedelta(days=30)  # Long-lived token for testing
-                )
-                
-                test_users.append({
-                    "user_id": user.id,
-                    "username": username,
-                    "email": user.email,
-                    "access_token": access_token,
-                    "token_type": "bearer"
-                })
-            
-            return {
-                "message": "Test tokens created successfully",
-                "users": test_users,
-                "usage": {
-                    "description": "Use these tokens in the Authorization header",
-                    "format": "Bearer <access_token>",
-                    "example": f"Authorization: Bearer {test_users[0]['access_token'][:50]}..."
-                }
-            }
-            
-        finally:
-            db.close()
-            
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error creating test tokens: {str(e)}")
-
 # Include routers
 app.include_router(users.router)
 app.include_router(game_setup.router)  # Include game_setup before games to avoid route conflicts
@@ -301,44 +229,6 @@ app.include_router(profile.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
-
-@app.get("/config", tags=["config"])
-def get_frontend_config():
-    """
-    Get frontend configuration including backend URL and other settings.
-    
-    This endpoint provides configuration information that the frontend needs,
-    such as the correct backend URL, environment info, and feature flags.
-    
-    Returns:
-        dict: Configuration object with frontend-relevant settings
-    """
-    # Determine the actual backend URL from the request if possible
-    # For deployed environments, use the configured BACKEND_URL
-    backend_url = BACKEND_URL
-    
-    # If we're in production and have a specific URL, use it
-    environment = os.getenv("ENVIRONMENT", "development")
-    if environment == "production":
-        # Use the deployed backend URL
-        backend_url = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
-    
-    return {
-        "backend_url": backend_url,
-        "frontend_url": FRONTEND_URL,
-        "environment": environment,
-        "version": "1.0.0",
-        "features": {
-            "email_invitations": True,
-            "game_chat": True,
-            "real_time_updates": True,
-            "multi_language": True,
-            "push_notifications": os.getenv("ENABLE_PUSH_NOTIFICATIONS", "false").lower() == "true"
-        },
-        "supported_languages": ["en", "de"],
-        "api_docs": f"{backend_url}/docs" if backend_url else "/docs",
-        "websocket_url": f"{backend_url.replace('http', 'ws')}/ws" if backend_url else None
-    }
 
 @app.get("/", tags=["root"])
 def read_root():
