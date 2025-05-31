@@ -55,6 +55,12 @@ class GameStateEncoder(json.JSONEncoder):
 
 router = APIRouter(prefix="/games", tags=["games"])
 
+def detect_center_used_from_board(board):
+    """Helper function to detect if center has been used by checking if there's a tile at position (7,7)."""
+    if not board or len(board) < 8 or len(board[7]) < 8:
+        return False
+    return board[7][7] is not None
+
 def reconstruct_board_from_json(board_data):
     """Helper function to reconstruct board with proper PlacedTile objects from JSON data."""
     if not board_data:
@@ -828,6 +834,12 @@ async def make_move(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     # Load player racks and scores from Player table into GameState
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
@@ -906,6 +918,7 @@ async def make_move(
         "letter_bag": game_state.letter_bag,
         "turn_number": game_state.turn_number,
         "consecutive_passes": game_state.consecutive_passes,
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()}, # Snapshot current racks
         "player_scores_snapshot": game_state.scores.copy(), # Snapshot current scores
         "completion_data": completion_details if is_game_over else None
@@ -985,6 +998,12 @@ async def pass_turn(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     for p_rec in db_players:
@@ -1035,6 +1054,7 @@ async def pass_turn(
         "letter_bag": game_state.letter_bag, # Unchanged by pass
         "turn_number": game_state.turn_number,
         "consecutive_passes": game_state.consecutive_passes, # Updated by make_move(PASS)
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()},
         "player_scores_snapshot": game_state.scores.copy(),
         "completion_data": completion_details if is_game_over else None
@@ -1113,6 +1133,12 @@ async def exchange_letters(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     current_player_record = None
@@ -1163,6 +1189,7 @@ async def exchange_letters(
         "letter_bag": game_state.letter_bag, # Updated
         "turn_number": game_state.turn_number, # Updated
         "consecutive_passes": game_state.consecutive_passes, # Reset
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()},
         "player_scores_snapshot": game_state.scores.copy(),
         # No completion data from exchange
