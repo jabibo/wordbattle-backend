@@ -5,11 +5,14 @@ from app.auth import get_current_user, create_access_token
 from app.models import User, WordList
 from app.wordlist import import_wordlist, load_wordlist_from_file
 from passlib.context import CryptContext
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 import os
 import tempfile
+from sqlalchemy import text
+import logging
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -185,3 +188,60 @@ def delete_wordlist(
         "language": language,
         "word_count": count
     }
+
+@router.post("/migrate-word-admin")
+def migrate_word_admin_schema(
+    db: Session = Depends(get_db),
+    current_user = Depends(require_admin)
+):
+    """Run migration to add word admin features to existing database (admin only)."""
+    try:
+        # Add word admin field to users table
+        db.execute(text("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS is_word_admin BOOLEAN DEFAULT FALSE;
+        """))
+        
+        # Add tracking fields to wordlists table
+        db.execute(text("""
+        ALTER TABLE wordlists 
+        ADD COLUMN IF NOT EXISTS added_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS added_user_id INTEGER REFERENCES users(id);
+        """))
+        
+        # Create indexes for better performance
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_users_word_admin ON users(is_word_admin);
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_wordlists_added_user ON wordlists(added_user_id);
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_wordlists_added_timestamp ON wordlists(added_timestamp);
+        """))
+        
+        # Set added_timestamp for existing words to current time
+        db.execute(text("""
+        UPDATE wordlists 
+        SET added_timestamp = CURRENT_TIMESTAMP 
+        WHERE added_timestamp IS NULL;
+        """))
+        
+        db.commit()
+        
+        logger.info(f"Word admin migration executed successfully by admin {current_user.username}")
+        
+        return {
+            "success": True,
+            "message": "Word admin schema migration completed successfully",
+            "executed_by": current_user.username,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Word admin migration failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Migration failed: {str(e)}"
+        )
