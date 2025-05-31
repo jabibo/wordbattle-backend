@@ -1,5 +1,9 @@
 import random
+import os
 from typing import List, Dict, Optional, Tuple
+
+# Test mode configuration for endgame testing
+TEST_MODE_ENDGAME = os.getenv("TEST_MODE_ENDGAME", "false").lower() == "true"
 
 # Letter distribution with frequencies and points for each language
 LETTER_DISTRIBUTION = {
@@ -31,12 +35,26 @@ LETTER_DISTRIBUTION = {
     }
 }
 
+# Test mode distributions - only most common letters, total 24 tiles
+TEST_LETTER_DISTRIBUTION = {
+    "de": {
+        # Most common German letters: E, N, S, A, R, I, T, U - total 24
+        'E': 6, 'N': 4, 'S': 3, 'A': 3, 'R': 3, 'I': 2, 'T': 2, '?': 1
+    },
+    "en": {
+        # Most common English letters: E, A, I, O, N, R, T, S - total 24  
+        'E': 5, 'A': 4, 'I': 4, 'O': 3, 'N': 3, 'R': 2, 'T': 2, 'S': 1
+    }
+}
+
 class LetterBag:
     """A class to manage the letter bag for the game."""
     
-    def __init__(self, language: str = "en"):
+    def __init__(self, language: str = "en", test_mode: bool = None):
         self.language = language
-        self.letters = create_letter_bag(language)
+        # Use test_mode parameter if provided, otherwise check environment variable
+        self.test_mode = test_mode if test_mode is not None else TEST_MODE_ENDGAME
+        self.letters = create_letter_bag(language, self.test_mode)
     
     def draw(self, count: int) -> List[str]:
         """Draw letters from the bag."""
@@ -50,20 +68,29 @@ class LetterBag:
         """Get the number of letters remaining in the bag."""
         return len(self.letters)
 
-def create_letter_bag(language: str = "en") -> List[str]:
+def create_letter_bag(language: str = "en", test_mode: bool = None) -> List[str]:
     """Create a new letter bag with the correct distribution of letters."""
-    if language == "de":
-        letter_distribution = {
-            'A': 5, 'B': 2, 'C': 2, 'D': 4, 'E': 15, 'F': 2, 'G': 3, 'H': 4, 'I': 6,
-            'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 9, 'O': 3, 'P': 1, 'Q': 1, 'R': 6,
-            'S': 7, 'T': 6, 'U': 6, 'V': 1, 'W': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
-        }
-    else:  # English
-        letter_distribution = {
-            'A': 9, 'B': 2, 'C': 2, 'D': 4, 'E': 12, 'F': 2, 'G': 3, 'H': 2, 'I': 9,
-            'J': 1, 'K': 1, 'L': 4, 'M': 2, 'N': 6, 'O': 8, 'P': 2, 'Q': 1, 'R': 6,
-            'S': 4, 'T': 6, 'U': 4, 'V': 2, 'W': 2, 'X': 1, 'Y': 2, 'Z': 1, '?': 2
-        }
+    # Use test_mode parameter if provided, otherwise check environment variable
+    use_test_mode = test_mode if test_mode is not None else TEST_MODE_ENDGAME
+    
+    if use_test_mode:
+        # Use reduced test distribution for endgame testing
+        letter_distribution = TEST_LETTER_DISTRIBUTION.get(language, TEST_LETTER_DISTRIBUTION["en"])
+        print(f"🧪 TEST MODE: Using reduced letter bag with {sum(letter_distribution.values())} tiles for endgame testing")
+    else:
+        # Use normal distribution
+        if language == "de":
+            letter_distribution = {
+                'A': 5, 'B': 2, 'C': 2, 'D': 4, 'E': 15, 'F': 2, 'G': 3, 'H': 4, 'I': 6,
+                'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 9, 'O': 3, 'P': 1, 'Q': 1, 'R': 6,
+                'S': 7, 'T': 6, 'U': 6, 'V': 1, 'W': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
+            }
+        else:  # English
+            letter_distribution = {
+                'A': 9, 'B': 2, 'C': 2, 'D': 4, 'E': 12, 'F': 2, 'G': 3, 'H': 2, 'I': 9,
+                'J': 1, 'K': 1, 'L': 4, 'M': 2, 'N': 6, 'O': 8, 'P': 2, 'Q': 1, 'R': 6,
+                'S': 4, 'T': 6, 'U': 4, 'V': 2, 'W': 2, 'X': 1, 'Y': 2, 'Z': 1, '?': 2
+            }
     
     # Create list with correct distribution
     letters = []

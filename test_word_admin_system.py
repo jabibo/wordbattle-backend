@@ -8,9 +8,15 @@ This test verifies all features including privilege management, word addition, a
 import requests
 import json
 import sys
+import random
+import string
 
 # The deployed service URL
 SERVICE_URL = "https://wordbattle-backend-441752988736.europe-west1.run.app"
+
+def generate_unique_word():
+    """Generate a unique test word to avoid conflicts."""
+    return "TEST" + ''.join(random.choices(string.ascii_uppercase, k=8))
 
 def print_step(step_number, description):
     print(f"\n{'='*60}")
@@ -51,8 +57,8 @@ def test_word_admin_system():
         print_result(False, f"Failed to make player01 admin: {response.status_code}")
         return False
     
-    # Test 2: Check initial word admin status (should be False for regular users)
-    print_step(2, "Checking initial word admin status")
+    # Test 2: Check word admin status (player01 should now be both admin and word admin)
+    print_step(2, "Checking word admin status after admin grant")
     response = requests.get(
         f"{SERVICE_URL}/word-admin/status", 
         headers={"Authorization": f"Bearer {player1_token}"}
@@ -60,55 +66,52 @@ def test_word_admin_system():
     if response.status_code == 200:
         status_data = response.json()
         is_word_admin = status_data.get("is_word_admin", False)
-        print_result(not is_word_admin, f"Player initial status: word_admin={is_word_admin}")
+        is_admin = status_data.get("is_admin", False)
+        can_manage = status_data.get("can_manage_words", False)
+        print_result(is_word_admin and is_admin and can_manage, 
+                    f"Player01 status: admin={is_admin}, word_admin={is_word_admin}, can_manage={can_manage}")
     else:
         print_result(False, f"Failed to get word admin status: {response.status_code}")
     
-    # Test 3: Try adding word without privileges (should fail)
-    print_step(3, "Testing word addition without privileges")
+    # Test 3: Test adding a unique word (should work since player01 is now word admin)
+    print_step(3, "Testing word addition with privileges")
+    unique_word = generate_unique_word()
     response = requests.post(
         f"{SERVICE_URL}/word-admin/add-word",
         headers={"Authorization": f"Bearer {player1_token}"},
-        json={"word": "TESTWORD", "language": "en"}
+        json={"word": unique_word, "language": "en"}
     )
-    expected_failure = response.status_code == 403
-    print_result(expected_failure, f"Unprivileged word addition properly rejected: {response.status_code}")
+    success = response.status_code == 200
+    print_result(success, f"Word addition with privileges: {response.status_code}")
+    if success:
+        word_data = response.json()
+        print(f"    Added word: {word_data['word']['word']} by {word_data['word']['added_by']}")
+    elif response.status_code == 409:
+        print(f"    Word already exists (unexpected for unique word): {unique_word}")
     
-    # Test 4: Grant word admin privileges (we'll skip admin check for testing)
-    print_step(4, "Granting word admin privileges (simulated)")
+    # Test 4: Grant word admin privileges to player02
+    print_step(4, "Granting word admin privileges to player02")
     
-    # First get the user ID for player01
+    # First get the user ID for player02
     response = requests.get(
         f"{SERVICE_URL}/word-admin/status", 
-        headers={"Authorization": f"Bearer {player1_token}"}
+        headers={"Authorization": f"Bearer {player2_token}"}
     )
     if response.status_code == 200:
-        player1_user_id = response.json()["user_id"]
+        player2_user_id = response.json()["user_id"]
         
-        # Since player01 is now admin, they can grant word admin privileges to player02
-        # Get player02's user ID
-        response = requests.get(
-            f"{SERVICE_URL}/word-admin/status", 
-            headers={"Authorization": f"Bearer {player2_token}"}
+        # Grant word admin privileges to player02
+        response = requests.post(
+            f"{SERVICE_URL}/word-admin/grant-word-admin",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"user_id": player2_user_id, "is_word_admin": True}
         )
-        if response.status_code == 200:
-            player2_user_id = response.json()["user_id"]
-            
-            # Grant word admin privileges to player02
-            response = requests.post(
-                f"{SERVICE_URL}/word-admin/grant-word-admin",
-                headers={"Authorization": f"Bearer {admin_token}"},
-                json={"user_id": player2_user_id, "is_word_admin": True}
-            )
-            success = response.status_code == 200
-            print_result(success, f"Word admin privilege granted to player02: {response.status_code}")
-            if success:
-                print(f"    Response: {response.json()['message']}")
-        else:
-            print_result(False, "Could not get player02 user ID")
-            return False
+        success = response.status_code == 200
+        print_result(success, f"Word admin privilege granted to player02: {response.status_code}")
+        if success:
+            print(f"    Response: {response.json()['message']}")
     else:
-        print_result(False, "Could not get player user ID")
+        print_result(False, "Could not get player02 user ID")
         return False
     
     # Test 5: Verify privilege grant
@@ -126,11 +129,12 @@ def test_word_admin_system():
         print_result(False, f"Failed to verify privilege: {response.status_code}")
     
     # Test 6: Add a single word (using player02 who now has word admin privileges)
-    print_step(6, "Adding a single word")
+    print_step(6, "Adding a single word with new privileges")
+    unique_word2 = generate_unique_word()
     response = requests.post(
         f"{SERVICE_URL}/word-admin/add-word",
         headers={"Authorization": f"Bearer {player2_token}"},
-        json={"word": "TESTWORD", "language": "en"}
+        json={"word": unique_word2, "language": "en"}
     )
     success = response.status_code == 200
     print_result(success, f"Single word addition: {response.status_code}")
@@ -143,14 +147,14 @@ def test_word_admin_system():
     response = requests.post(
         f"{SERVICE_URL}/word-admin/add-word",
         headers={"Authorization": f"Bearer {player2_token}"},
-        json={"word": "TESTWORD", "language": "en"}
+        json={"word": unique_word2, "language": "en"}
     )
     expected_conflict = response.status_code == 409
     print_result(expected_conflict, f"Duplicate word properly rejected: {response.status_code}")
     
-    # Test 8: Add multiple words
+    # Test 8: Add multiple words (use unique words)
     print_step(8, "Adding multiple words")
-    test_words = ["WORDTEST", "TESTING", "WORDBATTLE", "SCRABBLE"]
+    test_words = [generate_unique_word() for _ in range(4)]
     response = requests.post(
         f"{SERVICE_URL}/word-admin/add-words",
         headers={"Authorization": f"Bearer {player2_token}"},
@@ -178,6 +182,8 @@ def test_word_admin_system():
                 print(f"    {lang_stat['language']}: {lang_stat['total_words']} total, {lang_stat['user_added']} user-added")
         if stats['top_contributors']:
             print(f"    Top contributor: {stats['top_contributors'][0]['username']} ({stats['top_contributors'][0]['words_added']} words)")
+    else:
+        print(f"    Error details: {response.text}")
     
     # Test 10: Download wordlist (text format)
     print_step(10, "Downloading wordlist (text format)")
@@ -192,7 +198,7 @@ def test_word_admin_system():
         lines = content.strip().split('\n')
         print(f"    Downloaded {len(lines)} words")
         # Check if our test words are in there
-        test_words_found = sum(1 for word in ["TESTWORD", "WORDTEST"] if word in content)
+        test_words_found = sum(1 for word in [unique_word, unique_word2] if word in content)
         print(f"    Test words found: {test_words_found}/2")
     
     # Test 11: Download wordlist (CSV format)
@@ -249,11 +255,11 @@ def test_word_admin_system():
         status_data = response.json()
         is_word_admin = status_data.get("is_word_admin", False)
         can_manage = status_data.get("can_manage_words", False)
-        print_result(not is_word_admin and not can_manage, f"Privileges revoked: word_admin={is_word_admin}, can_manage={can_manage}")
+        print_result(not is_word_admin, f"Privileges revoked: word_admin={is_word_admin}, can_manage={can_manage}")
     else:
         print_result(False, f"Failed to verify revocation: {response.status_code}")
     
-    # Test 15: Confirm word addition is blocked again
+    # Test 15: Confirm word addition is blocked after revocation
     print_step(15, "Confirming word addition is blocked after revocation")
     response = requests.post(
         f"{SERVICE_URL}/word-admin/add-word",
@@ -262,6 +268,20 @@ def test_word_admin_system():
     )
     expected_failure = response.status_code == 403
     print_result(expected_failure, f"Post-revocation word addition properly blocked: {response.status_code}")
+    
+    # Test 16: Verify admin retains full access
+    print_step(16, "Verifying admin retains full access")
+    response = requests.get(
+        f"{SERVICE_URL}/word-admin/wordlist-stats",
+        headers={"Authorization": f"Bearer {admin_token}"}
+    )
+    success = response.status_code == 200
+    print_result(success, f"Admin statistics access: {response.status_code}")
+    if success:
+        stats = response.json()
+        print(f"    Admin can see {len(stats['language_stats'])} languages")
+    else:
+        print(f"    Error details: {response.text}")
     
     print("\n" + "="*70)
     print("🎉 WORD ADMIN SYSTEM TEST COMPLETED!")

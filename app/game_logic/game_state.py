@@ -52,11 +52,11 @@ class PlacedTile:
             self.tile_id = str(uuid.uuid4())
 
 class GameState:
-    def __init__(self, language: str = "en"):
+    def __init__(self, language: str = "en", test_mode: bool = None):
         self.board = [[None]*15 for _ in range(15)]  # 15x15 board
         self.phase = GamePhase.NOT_STARTED
         self.language = language
-        self.letter_bag = create_letter_bag(language)
+        self.letter_bag = create_letter_bag(language, test_mode)
         self.players = {}  # Dict[player_id, List[str]] for racks
         self.scores = {}   # Dict[player_id, int]
         self.bonus_points = {}  # Dict[player_id, int] for end-game bonuses
