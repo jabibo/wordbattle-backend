@@ -1,0 +1,14 @@
+{
+  "ImageRepository": {
+    "ImageIdentifier": "598510278922.dkr.ecr.eu-central-1.amazonaws.com/wordbattle-backend:router-fix",
+    "ImageConfiguration": {
+      "Port": "8000",
+      "RuntimeEnvironmentVariables": {
+        "DATABASE_URL": "postgresql://wordbattle_user:n80xUdDC27sqMOV5HXINvlcmF6JjfWBwyTptPkhKoAzbu4YerQEG1R3gSaL9Zi@wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com:5432/wordbattle_db",
+        "SECRET_KEY": "n80xUdDC27sqMOV5HXINvlcmF6JjfWBwyTptPkhKoAzbu4YerQEG1R3gSaL9Zi",
+        "ENVIRONMENT": "production"
+      }
+    },
+    "ImageRepositoryType": "ECR"
+  }
+} 

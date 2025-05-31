@@ -10,6 +10,7 @@ class User(Base):
     email = Column(String, unique=True, index=True)
     hashed_password = Column(String, nullable=True)  # Make nullable for email-only auth
     is_admin = Column(Boolean, default=False)
+    is_word_admin = Column(Boolean, default=False)  # Word admin privilege
     
     # Email verification fields
     verification_code = Column(String, nullable=True)
@@ -35,3 +36,6 @@ class User(Base):
     # Friendship relationships
     friends = relationship("Friend", foreign_keys="[Friend.user_id]", back_populates="user")
     friend_of = relationship("Friend", foreign_keys="[Friend.friend_id]", back_populates="friend")
+    
+    # Words added by this user as word admin
+    words_added = relationship("WordList", back_populates="added_by_user")

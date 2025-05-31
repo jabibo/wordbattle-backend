@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup
+from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup, word_admin
 from app.config import CORS_ORIGINS, RATE_LIMIT, SECRET_KEY, ALGORITHM
 import time
 import os
@@ -75,6 +75,10 @@ app = FastAPI(
         {
             "name": "chat",
             "description": "Chat operations",
+        },
+        {
+            "name": "word-admin",
+            "description": "Word admin operations for managing wordlists",
         },
     ]
 )
@@ -318,12 +322,13 @@ async def debug_test_auth(username: str):
 app.include_router(users.router)
 app.include_router(game_setup.router)  # Include game_setup before games to avoid route conflicts
 app.include_router(games.router)
-# app.include_router(moves.router)  # Commented out - conflicts with games.router move endpoint
+app.include_router(moves.router)
 app.include_router(rack.router)
 app.include_router(profile.router)
 app.include_router(admin.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
+app.include_router(word_admin.router)
 
 @app.get("/", tags=["root"])
 def read_root():

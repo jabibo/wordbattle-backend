@@ -1,0 +1,55 @@
+{
+  "family": "wordbattle-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::598510278922:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::598510278922:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "wordbattle-backend",
+      "image": "598510278922.dkr.ecr.eu-central-1.amazonaws.com/wordbattle-backend:working-exact",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "DB_HOST",
+          "value": "wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com"
+        },
+        {
+          "name": "DB_NAME",
+          "value": "wordbattle"
+        },
+        {
+          "name": "DB_USER",
+          "value": "postgres"
+        },
+        {
+          "name": "DB_PASSWORD",
+          "value": "Wordbattle2024"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/wordbattle-backend",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+} 
