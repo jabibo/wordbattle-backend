@@ -16,6 +16,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+def require_admin(current_user = Depends(get_current_user)):
+    """Dependency to ensure user is an admin"""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator privileges required"
+        )
+    return current_user
+
 @router.post("/debug/create-test-tokens")
 async def create_test_tokens(
     db: Session = Depends(get_db)
