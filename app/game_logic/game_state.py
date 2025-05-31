@@ -84,7 +84,7 @@ class GameState:
     def validate_word_placement(self, word_positions: List[Tuple[Position, PlacedTile]], dictionary: Set[str]) -> Tuple[bool, str]:
         """Validate a word placement according to Scrabble rules."""
         if not word_positions:
-            return False, "No tiles placed"
+            return False, "No tiles were placed. Please place at least one tile to make a move."
             
         # Validate word direction and connectivity
         valid_direction, direction_msg = self._validate_word_direction(word_positions)
@@ -95,48 +95,86 @@ class GameState:
         if not self.center_used:
             center_used = any(pos.row == 7 and pos.col == 7 for pos, _ in word_positions)
             if not center_used:
-                return False, "First word must use center square"
+                return False, "The first word must pass through the center star square (H8). Please place at least one tile on the center square."
+
+        # Validate all positions are within bounds
+        for pos, tile in word_positions:
+            if not (0 <= pos.row < 15 and 0 <= pos.col < 15):
+                col_letter = chr(65 + pos.col)
+                return False, f"Tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) is outside the board boundaries. All tiles must be placed within the 15x15 grid."
+                
+        # Validate no overlapping with existing tiles
+        for pos, tile in word_positions:
+            if self.board[pos.row][pos.col] is not None:
+                existing_tile = self.board[pos.row][pos.col]
+                col_letter = chr(65 + pos.col)
+                return False, f"Cannot place tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) - there is already a '{existing_tile.letter}' tile there."
 
         # Validate all formed words
         all_words = self._get_all_formed_words(word_positions)
         if not all_words:
-            return False, "No valid words formed"
+            if len(word_positions) == 1:
+                return False, "Single tile placement must form a word of at least 2 letters by connecting to existing tiles."
+            else:
+                return False, "The placed tiles do not form any valid words. Make sure tiles are connected and form complete words."
             
+        # Check each word against dictionary
+        invalid_words = []
+        valid_words = []
         for word in all_words:
             if word.upper() not in dictionary:
-                return False, f"Invalid word: {word}"
+                invalid_words.append(word)
+            else:
+                valid_words.append(word)
+        
+        if invalid_words:
+            if len(invalid_words) == 1:
+                return False, f"'{invalid_words[0]}' is not a valid word in the dictionary."
+            else:
+                return False, f"Invalid words formed: {', '.join(invalid_words)}. All words must be valid dictionary words."
 
         # Validate connection to existing words (except first move)
         if self.center_used and not self._is_connected_to_existing(word_positions):
-            return False, "Word must connect to existing tiles"
+            return False, "New tiles must connect to existing words on the board. Place at least one tile adjacent to an existing tile."
             
-        # Validate all positions are within bounds
-        for pos, _ in word_positions:
-            if not (0 <= pos.row < 15 and 0 <= pos.col < 15):
-                return False, "Word placement out of bounds"
-                
-        # Validate no overlapping with existing tiles
-        for pos, _ in word_positions:
-            if self.board[pos.row][pos.col] is not None:
-                return False, "Cannot place tiles over existing tiles"
-
-        return True, ""
+        # If we get here, the move is valid - provide success message with details
+        points = self._calculate_points(word_positions)
+        
+        # Build success message
+        if len(valid_words) == 1:
+            word_info = f"Word formed: '{valid_words[0]}'"
+        else:
+            word_list = "', '".join(valid_words)
+            word_info = f"Words formed: '{word_list}'"
+        
+        bonus_info = ""
+        if len(word_positions) == 7:
+            bonus_info = " (includes 50-point bonus for using all 7 tiles)"
+        
+        success_msg = f"Valid move! {word_info}. Points scored: {points}{bonus_info}."
+        
+        return True, success_msg
 
     def make_move(self, player_id: int, move_type: MoveType, move_data: List[Tuple[Position, PlacedTile]], dictionary: Set[str]) -> Tuple[bool, str, int]:
         """Make a move and return (success, message, points)."""
         if self.phase != GamePhase.IN_PROGRESS:
-            return False, "Game not in progress", 0
+            if self.phase == GamePhase.NOT_STARTED:
+                return False, "Game has not started yet. Please wait for the game to begin.", 0
+            elif self.phase == GamePhase.COMPLETED:
+                return False, "Game has already ended. No more moves can be made.", 0
+            else:
+                return False, "Game is not in progress.", 0
         
         if player_id != self.current_player_id:
-            return False, "Not your turn", 0
+            return False, f"It's not your turn. Please wait for player {self.current_player_id} to make their move.", 0
 
         if move_type == MoveType.PASS:
             self._handle_pass(player_id)
-            return True, "Pass successful", 0
+            return True, "Turn passed. No tiles placed and no points scored.", 0
         
         elif move_type == MoveType.EXCHANGE:
             if len(self.letter_bag) < 7:
-                return False, "Not enough letters in bag for exchange", []
+                return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", []
             success, msg, new_rack = self._handle_exchange(player_id, move_data)
             if success:
                 # Reset consecutive passes since an exchange was made
@@ -164,7 +202,8 @@ class GameState:
                 self.center_used = any(pos.row == 7 and pos.col == 7 for pos, _ in move_data)
             
             self._advance_turn()
-            return True, "Move successful", points
+            # Return the detailed success message from validation
+            return True, msg, points
 
     def _handle_pass(self, player_id: int) -> None:
         """Handle a pass move."""
@@ -178,10 +217,18 @@ class GameState:
         rack = self.players[player_id]
         
         # Verify player has these letters and remove them
+        missing_letters = []
         for letter in letters:
             if letter not in rack:
-                return False, "Cannot exchange letters you don't have", []
-            rack = rack.replace(letter, "", 1)
+                missing_letters.append(letter)
+            else:
+                rack = rack.replace(letter, "", 1)
+        
+        if missing_letters:
+            if len(missing_letters) == 1:
+                return False, f"Cannot exchange '{missing_letters[0]}' - you don't have this letter in your rack.", []
+            else:
+                return False, f"Cannot exchange letters {', '.join(missing_letters)} - you don't have these letters in your rack.", []
         
         # Perform exchange
         return_letters(self.letter_bag, letters)
@@ -193,7 +240,15 @@ class GameState:
         
         self.last_moves.append((player_id, MoveType.EXCHANGE, letters_to_exchange))
         self._advance_turn()
-        return True, "Exchange successful", rack
+        
+        # Build success message
+        if len(letters) == 1:
+            exchange_msg = f"Exchanged 1 letter ('{letters[0]}') for a new letter."
+        else:
+            letters_str = "', '".join(letters)
+            exchange_msg = f"Exchanged {len(letters)} letters ('{letters_str}') for new letters."
+        
+        return True, exchange_msg, rack
 
     def _advance_turn(self) -> None:
         """Advance to the next player's turn."""
@@ -349,7 +404,7 @@ class GameState:
         return ["".join(word)] if len(word) > 1 else []
 
     def _validate_word_direction(self, word_positions: List[Tuple[Position, PlacedTile]]) -> Tuple[bool, str]:
-        """Validate that all tiles are placed in a single line and are connected."""
+        """Validate that all tiles are placed in a single line and form a connected word with existing tiles."""
         if len(word_positions) <= 1:
             return True, ""
             
@@ -358,18 +413,66 @@ class GameState:
         reference = word_positions[0][0].row if is_horizontal else word_positions[0][0].col
         
         # Check all tiles are in the same line
-        for pos, _ in word_positions[1:]:
+        for pos, tile in word_positions[1:]:
             current = pos.row if is_horizontal else pos.col
             if current != reference:
-                return False, "All tiles must be placed in a single line"
+                direction = "row" if is_horizontal else "column"
+                return False, f"All tiles must be placed in a single {direction}. Found tiles in different {direction}s - please place all tiles either horizontally in one row or vertically in one column."
         
-        # Check tiles are connected
+        # Check that new tiles form a connected word when combined with existing board tiles
+        # Create a temporary board with the new tiles
+        board_copy = [[tile for tile in row] for row in self.board]
+        for pos, tile in word_positions:
+            board_copy[pos.row][pos.col] = tile
+        
+        # Get all positions in the word direction
         positions = sorted(
             [(pos.col if is_horizontal else pos.row) for pos, _ in word_positions]
         )
-        for i in range(len(positions) - 1):
-            if positions[i + 1] - positions[i] > 1:
-                return False, "All tiles must be connected"
+        
+        # Find the complete word span including existing tiles
+        start_pos = positions[0]
+        end_pos = positions[-1]
+        
+        # Extend backwards to find start of complete word
+        while True:
+            prev_pos = start_pos - 1
+            if is_horizontal:
+                if prev_pos < 0 or board_copy[reference][prev_pos] is None:
+                    break
+            else:
+                if prev_pos < 0 or board_copy[prev_pos][reference] is None:
+                    break
+            start_pos = prev_pos
+        
+        # Extend forwards to find end of complete word
+        while True:
+            next_pos = end_pos + 1
+            if is_horizontal:
+                if next_pos >= 15 or board_copy[reference][next_pos] is None:
+                    break
+            else:
+                if next_pos >= 15 or board_copy[next_pos][reference] is None:
+                    break
+            end_pos = next_pos
+        
+        # Check that all positions from start to end have tiles (no gaps)
+        gap_positions = []
+        for pos in range(start_pos, end_pos + 1):
+            if is_horizontal:
+                if board_copy[reference][pos] is None:
+                    gap_positions.append(pos)
+            else:
+                if board_copy[pos][reference] is None:
+                    gap_positions.append(pos)
+        
+        if gap_positions:
+            direction = "horizontally" if is_horizontal else "vertically"
+            if len(gap_positions) == 1:
+                gap_desc = f"position {gap_positions[0] + 1}"
+            else:
+                gap_desc = f"positions {', '.join(str(p + 1) for p in gap_positions)}"
+            return False, f"Tiles must form a connected word {direction}. There are gaps at {gap_desc} - either fill the gaps with tiles or place tiles adjacent to each other."
         
         return True, ""
 
