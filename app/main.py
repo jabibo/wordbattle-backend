@@ -445,3 +445,60 @@ async def websocket_endpoint(
         await websocket.close(code=1008)
     finally:
         db.close()
+
+@app.get("/migrate-word-admin-public")
+async def migrate_word_admin_public():
+    """Public endpoint to run word admin migration - for deployment only"""
+    from app.database import SessionLocal
+    from sqlalchemy import text
+    
+    db = SessionLocal()
+    try:
+        # Add word admin field to users table
+        db.execute(text("""
+        ALTER TABLE users 
+        ADD COLUMN IF NOT EXISTS is_word_admin BOOLEAN DEFAULT FALSE;
+        """))
+        
+        # Add tracking fields to wordlists table
+        db.execute(text("""
+        ALTER TABLE wordlists 
+        ADD COLUMN IF NOT EXISTS added_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ADD COLUMN IF NOT EXISTS added_user_id INTEGER REFERENCES users(id);
+        """))
+        
+        # Create indexes for better performance
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_users_word_admin ON users(is_word_admin);
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_wordlists_added_user ON wordlists(added_user_id);
+        """))
+        db.execute(text("""
+        CREATE INDEX IF NOT EXISTS idx_wordlists_added_timestamp ON wordlists(added_timestamp);
+        """))
+        
+        # Set added_timestamp for existing words to current time
+        db.execute(text("""
+        UPDATE wordlists 
+        SET added_timestamp = CURRENT_TIMESTAMP 
+        WHERE added_timestamp IS NULL;
+        """))
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Word admin schema migration completed successfully",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    finally:
+        db.close()
