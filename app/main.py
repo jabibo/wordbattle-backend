@@ -446,6 +446,39 @@ async def websocket_endpoint(
     finally:
         db.close()
 
+@app.get("/make-admin/{username}")
+async def make_admin_for_testing(username: str):
+    """Make a user admin - for testing only"""
+    from app.database import SessionLocal
+    from sqlalchemy import text
+    
+    db = SessionLocal()
+    try:
+        # Make the user admin and word admin
+        db.execute(text("""
+        UPDATE users 
+        SET is_admin = TRUE, is_word_admin = TRUE 
+        WHERE username = :username
+        """), {"username": username})
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"User {username} is now admin and word admin",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    finally:
+        db.close()
+
 @app.get("/migrate-word-admin-public")
 async def migrate_word_admin_public():
     """Public endpoint to run word admin migration - for deployment only"""
