@@ -48,12 +48,34 @@ class GameStateEncoder(json.JSONEncoder):
         elif isinstance(obj, Position):
             return {"row": obj.row, "col": obj.col}
         elif isinstance(obj, PlacedTile):
-            return {"letter": obj.letter, "is_blank": obj.is_blank}
+            return {"letter": obj.letter, "is_blank": obj.is_blank, "tile_id": obj.tile_id}
         elif isinstance(obj, set):
             return list(obj)
         return super().default(obj)
 
 router = APIRouter(prefix="/games", tags=["games"])
+
+def reconstruct_board_from_json(board_data):
+    """Helper function to reconstruct board with proper PlacedTile objects from JSON data."""
+    if not board_data:
+        return [[None]*15 for _ in range(15)]
+    
+    reconstructed_board = []
+    for row in board_data:
+        reconstructed_row = []
+        for cell in row:
+            if cell is None:
+                reconstructed_row.append(None)
+            else:
+                # Reconstruct PlacedTile object from JSON dict
+                tile = PlacedTile(
+                    letter=cell["letter"],
+                    is_blank=cell.get("is_blank", False),
+                    tile_id=cell.get("tile_id")  # Preserve existing tile_id or None (will auto-generate)
+                )
+                reconstructed_row.append(tile)
+        reconstructed_board.append(reconstructed_row)
+    return reconstructed_board
 
 @router.post("/")
 def create_game(
@@ -774,7 +796,7 @@ async def start_game(
 @router.post("/{game_id}/move")
 async def make_move(
     game_id: str,
-    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional)}]
+    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -791,7 +813,7 @@ async def make_move(
     # Load game state from DB JSON (game.state)
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board", [[None]*15 for _ in range(15)])
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value)) # Default to IN_PROGRESS
     game_state.current_player_id = game.current_player_id # From Game table
     
@@ -818,7 +840,11 @@ async def make_move(
     for m_item in move_data:
         try:
             pos = Position(m_item["row"], m_item["col"])
-            tile = PlacedTile(m_item["letter"], m_item.get("is_blank", False))
+            tile = PlacedTile(
+                letter=m_item["letter"], 
+                is_blank=m_item.get("is_blank", False),
+                tile_id=m_item.get("tile_id")  # Use provided tile_id or None (will auto-generate)
+            )
             parsed_move_positions.append((pos, tile))
         except KeyError: # pragma: no cover
             raise HTTPException(400, "Invalid move data format. Each item must have 'row', 'col', 'letter'.")
@@ -944,7 +970,7 @@ async def pass_turn(
     # Load game state
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board", [[None]*15 for _ in range(15)])
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
     game_state.current_player_id = game.current_player_id
     
@@ -1072,7 +1098,7 @@ async def exchange_letters(
     # Load game state
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board") 
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
     game_state.current_player_id = game.current_player_id
     

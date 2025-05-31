@@ -7,6 +7,7 @@ from app.game_logic.full_points import calculate_full_move_points
 import logging
 import json
 import random
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,12 @@ class Position:
 class PlacedTile:
     letter: str
     is_blank: bool = False
+    tile_id: Optional[str] = None
+    
+    def __post_init__(self):
+        """Generate a unique tile ID if not provided."""
+        if self.tile_id is None:
+            self.tile_id = str(uuid.uuid4())
 
 class GameState:
     def __init__(self, language: str = "en"):
