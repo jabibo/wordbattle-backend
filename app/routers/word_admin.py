@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import io
 import csv
 import logging
+from sqlalchemy.sql import text
 
 logger = logging.getLogger(__name__)
 
@@ -275,64 +276,67 @@ def get_wordlist_stats(
     current_user = Depends(require_word_admin)
 ):
     """Get statistics about wordlists."""
-    # Get stats by language
-    language_stats = db.execute("""
-        SELECT 
-            language,
-            COUNT(*) as total_words,
-            COUNT(added_user_id) as user_added_words,
-            COUNT(CASE WHEN added_user_id IS NULL THEN 1 END) as system_words
-        FROM wordlists 
-        GROUP BY language
-        ORDER BY language
-    """).fetchall()
-    
-    # Get top contributors
-    top_contributors = db.execute("""
-        SELECT 
-            u.username,
-            COUNT(w.id) as words_added,
-            array_agg(DISTINCT w.language) as languages
-        FROM wordlists w
-        JOIN users u ON w.added_user_id = u.id
-        GROUP BY u.id, u.username
-        ORDER BY words_added DESC
-        LIMIT 10
-    """).fetchall()
-    
-    # Get recent additions
-    recent_additions = db.query(WordList).filter(
-        WordList.added_user_id.isnot(None)
-    ).order_by(WordList.added_timestamp.desc()).limit(20).all()
-    
-    return {
-        "language_stats": [
-            {
-                "language": stat[0],
-                "total_words": stat[1],
-                "user_added": stat[2],
-                "system_words": stat[3]
-            }
-            for stat in language_stats
-        ],
-        "top_contributors": [
-            {
-                "username": contrib[0],
-                "words_added": contrib[1],
-                "languages": contrib[2]
-            }
-            for contrib in top_contributors
-        ],
-        "recent_additions": [
-            {
-                "word": word.word,
-                "language": word.language,
-                "added_by": word.added_by_user.username if word.added_by_user else "System",
-                "added_timestamp": word.added_timestamp.isoformat() if word.added_timestamp else None
-            }
-            for word in recent_additions
-        ]
-    }
+    try:
+        # Get stats by language using standard SQL
+        language_stats = db.execute(text("""
+            SELECT 
+                language,
+                COUNT(*) as total_words,
+                COUNT(added_user_id) as user_added_words,
+                COUNT(CASE WHEN added_user_id IS NULL THEN 1 END) as system_words
+            FROM wordlists 
+            GROUP BY language
+            ORDER BY language
+        """)).fetchall()
+        
+        # Get top contributors using standard SQL (no array_agg)
+        top_contributors = db.execute(text("""
+            SELECT 
+                u.username,
+                COUNT(w.id) as words_added
+            FROM wordlists w
+            JOIN users u ON w.added_user_id = u.id
+            GROUP BY u.id, u.username
+            ORDER BY words_added DESC
+            LIMIT 10
+        """)).fetchall()
+        
+        # Get recent additions
+        recent_additions = db.query(WordList).filter(
+            WordList.added_user_id.isnot(None)
+        ).order_by(WordList.added_timestamp.desc()).limit(20).all()
+        
+        return {
+            "language_stats": [
+                {
+                    "language": stat[0],
+                    "total_words": stat[1],
+                    "user_added": stat[2],
+                    "system_words": stat[3]
+                }
+                for stat in language_stats
+            ],
+            "top_contributors": [
+                {
+                    "username": contrib[0],
+                    "words_added": contrib[1],
+                    "languages": []  # Simplified for compatibility
+                }
+                for contrib in top_contributors
+            ],
+            "recent_additions": [
+                {
+                    "word": word.word,
+                    "language": word.language,
+                    "added_by": word.added_by_user.username if word.added_by_user else "System",
+                    "added_timestamp": word.added_timestamp.isoformat() if word.added_timestamp else None
+                }
+                for word in recent_additions
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error getting wordlist stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
 
 # Admin-only endpoints for managing word admin privileges
 
