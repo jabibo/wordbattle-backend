@@ -29,5 +29,5 @@ USER appuser
 # Expose port
 EXPOSE 8000
 
-# Start command using Cloud Run specific main file - no database initialization during startup
-CMD ["uvicorn", "app.main_cloudrun:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Start command using the regular main file with automatic migration
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
