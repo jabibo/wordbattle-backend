@@ -12,6 +12,9 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_word_admin = Column(Boolean, default=False)  # Word admin privilege
     
+    # User preferences
+    language = Column(String, default="en")  # User's preferred language
+    
     # Email verification fields
     verification_code = Column(String, nullable=True)
     verification_code_expires = Column(DateTime, nullable=True)

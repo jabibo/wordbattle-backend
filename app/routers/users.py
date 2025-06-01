@@ -2,7 +2,7 @@
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from app.models import User
-from app.auth import get_password_hash
+from app.auth import get_password_hash, get_current_user
 from app.dependencies import get_db
 from app.utils.email_service import email_service
 from sqlalchemy.future import select
@@ -20,6 +20,9 @@ class RegisterUser(BaseModel):
 class RegisterUserEmailOnly(BaseModel):
     username: str
     email: EmailStr
+
+class LanguageUpdate(BaseModel):
+    language: str
 
 @router.post("/register")
 def register(user: RegisterUser, db: Session = Depends(get_db)):
@@ -99,5 +102,37 @@ def register_email_only(user: RegisterUserEmailOnly, db: Session = Depends(get_d
         "username": new_user.username,
         "email": new_user.email,
         "auth_method": "email_only"
+    }
+
+@router.get("/language")
+def get_user_language(current_user: User = Depends(get_current_user)):
+    """Get the current user's language preference."""
+    return {
+        "language": current_user.language or "en",
+        "available_languages": ["en", "de", "fr", "es", "it"]
+    }
+
+@router.put("/language")
+def update_user_language(
+    language_data: LanguageUpdate, 
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update the current user's language preference."""
+    # Validate language
+    supported_languages = ["en", "de", "fr", "es", "it"]
+    if language_data.language not in supported_languages:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Language '{language_data.language}' not supported. Available: {supported_languages}"
+        )
+    
+    # Update user's language
+    current_user.language = language_data.language
+    db.commit()
+    
+    return {
+        "message": "Language updated successfully",
+        "language": current_user.language
     }
 
