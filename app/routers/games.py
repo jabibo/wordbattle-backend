@@ -474,33 +474,16 @@ def list_user_games(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """List all games the current user participates in or has been invited to with detailed information."""
+    """List all games the current user is actively playing in (as a player only)."""
     
-    # Get all games where the user is a player
-    user_games_as_player = db.query(Game).join(Player).filter(
+    # Get only games where the user is a player (no invitations)
+    user_games = db.query(Game).join(Player).filter(
         Player.user_id == current_user.id
     ).all()
     
-    # Get all games where the user has pending invitations
-    user_games_with_invitations = db.query(Game).join(GameInvitation).filter(
-        GameInvitation.invitee_id == current_user.id,
-        GameInvitation.status == InvitationStatus.PENDING
-    ).all()
-    
-    # Combine both lists and remove duplicates (in case user is both player and has invitation)
-    all_user_games = list({game.id: game for game in user_games_as_player + user_games_with_invitations}.values())
-    
     games_info = []
     
-    for game in all_user_games:
-        # Check if user is already a player or just invited
-        is_player = any(p.user_id == current_user.id for p in game.players)
-        has_pending_invitation = db.query(GameInvitation).filter(
-            GameInvitation.game_id == game.id,
-            GameInvitation.invitee_id == current_user.id,
-            GameInvitation.status == InvitationStatus.PENDING
-        ).first() is not None
-        
+    for game in user_games:
         # Get all players in the game
         players = db.query(Player).filter(Player.game_id == game.id).all()
         
@@ -569,25 +552,6 @@ def list_user_games(
                     "is_creator": player_user.id == game.creator_id
                 })
         
-        # If user has pending invitation, show invitation info instead of empty player slot
-        invitation_info = None
-        if has_pending_invitation and not is_player:
-            invitation = db.query(GameInvitation).filter(
-                GameInvitation.game_id == game.id,
-                GameInvitation.invitee_id == current_user.id,
-                GameInvitation.status == InvitationStatus.PENDING
-            ).first()
-            
-            if invitation:
-                inviter = db.query(User).filter(User.id == invitation.inviter_id).first()
-                invitation_info = {
-                    "id": invitation.id,
-                    "inviter_username": inviter.username if inviter else "Unknown",
-                    "created_at": invitation.created_at.isoformat(),
-                    "join_token": invitation.join_token,
-                    "status": invitation.status.value
-                }
-        
         # Calculate time since last activity
         last_activity = last_move.timestamp if last_move else game.created_at
         time_since_activity = datetime.now(timezone.utc) - last_activity.replace(tzinfo=timezone.utc)
@@ -604,9 +568,8 @@ def list_user_games(
         else:
             time_since_str = "Just now"
         
-        # Determine if it's the current user's turn (only if they're a player)
+        # Determine if it's the current user's turn
         is_user_turn = (
-            is_player and
             game.status == GameStatus.IN_PROGRESS and 
             game.current_player_id == current_user.id
         )
@@ -625,32 +588,27 @@ def list_user_games(
             "completed_at": game.completed_at.isoformat() if game.completed_at else None,
             "turn_number": turn_number,
             "is_user_turn": is_user_turn,
-            "is_player": is_player,  # NEW: Whether user is already a player
-            "has_pending_invitation": has_pending_invitation,  # NEW: Whether user has pending invitation
-            "invitation": invitation_info,  # NEW: Invitation details if applicable
             "time_since_last_activity": time_since_str,
             "next_player": next_player_info,
             "last_move": last_move_info,
             "players": players_info,
-            "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0) if is_player else 0
+            "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0)
         }
         
         games_info.append(game_info)
     
-    # Sort games by priority: invitations first, then user's turn, then by last activity
+    # Sort games by priority: user's turn first, then by last activity
     def sort_key(game):
-        if game["has_pending_invitation"] and not game["is_player"]:
-            return (0, game["created_at"])  # Pending invitations first
-        elif game["is_user_turn"]:
-            return (1, game["created_at"])  # User's turn games
+        if game["is_user_turn"]:
+            return (0, game["created_at"])  # User's turn games first
         elif game["status"] == "in_progress":
-            return (2, game["created_at"])  # Other in-progress games
+            return (1, game["created_at"])  # Other in-progress games
         elif game["status"] == "ready":
-            return (3, game["created_at"])  # Ready games
+            return (2, game["created_at"])  # Ready games
         elif game["status"] == "setup":
-            return (4, game["created_at"])  # Setup games
+            return (3, game["created_at"])  # Setup games
         else:
-            return (5, game["created_at"])  # Completed games last
+            return (4, game["created_at"])  # Completed games last
     
     games_info.sort(key=sort_key, reverse=True)
     
@@ -658,9 +616,95 @@ def list_user_games(
         "games": games_info,
         "total_games": len(games_info),
         "games_waiting_for_user": sum(1 for g in games_info if g["is_user_turn"]),
-        "pending_invitations": sum(1 for g in games_info if g["has_pending_invitation"] and not g["is_player"]),
         "active_games": sum(1 for g in games_info if g["status"] == "in_progress"),
         "completed_games": sum(1 for g in games_info if g["status"] == "completed")
+    }
+
+@router.get("/my-invitations")
+def list_user_invitations(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """List all pending game invitations for the current user."""
+    
+    # Get all games where the user has pending invitations
+    invitations = db.query(GameInvitation).filter(
+        GameInvitation.invitee_id == current_user.id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).all()
+    
+    invitations_info = []
+    
+    for invitation in invitations:
+        # Get the game details
+        game = invitation.game
+        if not game:
+            continue  # Skip if game was deleted
+        
+        # Get the inviter details
+        inviter = invitation.inviter
+        
+        # Get current players in the game
+        players = db.query(Player).filter(Player.game_id == game.id).all()
+        
+        # Calculate time since invitation was sent
+        time_since_invitation = datetime.now(timezone.utc) - invitation.created_at.replace(tzinfo=timezone.utc)
+        
+        # Format time since invitation
+        if time_since_invitation.days > 0:
+            time_since_str = f"{time_since_invitation.days} day(s) ago"
+        elif time_since_invitation.seconds > 3600:
+            hours = time_since_invitation.seconds // 3600
+            time_since_str = f"{hours} hour(s) ago"
+        elif time_since_invitation.seconds > 60:
+            minutes = time_since_invitation.seconds // 60
+            time_since_str = f"{minutes} minute(s) ago"
+        else:
+            time_since_str = "Just now"
+        
+        # Get player information
+        players_info = []
+        for player in players:
+            player_user = db.query(User).filter(User.id == player.user_id).first()
+            if player_user:
+                players_info.append({
+                    "id": player_user.id,
+                    "username": player_user.username,
+                    "score": player.score,
+                    "is_creator": player_user.id == game.creator_id
+                })
+        
+        invitation_info = {
+            "invitation_id": invitation.id,
+            "game_id": game.id,
+            "game_status": game.status.value,
+            "game_language": game.language,
+            "max_players": game.max_players,
+            "current_players": len(players),
+            "game_created_at": game.created_at.isoformat(),
+            "invitation_created_at": invitation.created_at.isoformat(),
+            "time_since_invitation": time_since_str,
+            "join_token": invitation.join_token,
+            "inviter": {
+                "id": inviter.id,
+                "username": inviter.username
+            },
+            "players": players_info,
+            "can_still_join": (
+                game.status in [GameStatus.SETUP, GameStatus.READY] and 
+                len(players) < game.max_players
+            )
+        }
+        
+        invitations_info.append(invitation_info)
+    
+    # Sort by most recent invitation first
+    invitations_info.sort(key=lambda x: x["invitation_created_at"], reverse=True)
+    
+    return {
+        "invitations": invitations_info,
+        "total_invitations": len(invitations_info),
+        "joinable_invitations": sum(1 for inv in invitations_info if inv["can_still_join"])
     }
 
 @router.get("/friends")
