@@ -118,6 +118,23 @@ Base.metadata.create_all(bind=engine)
 @app.on_event("startup")
 async def startup_event():
     from app.database_manager import initialize_database_if_needed
+    
+    # Run database migrations first
+    logger.info("Running database migrations...")
+    try:
+        # Import and run the language field migration
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        from migrations.add_user_language_field import run_migration
+        run_migration()
+        logger.info("Database migrations completed successfully")
+    except Exception as e:
+        logger.error(f"Database migration failed: {e}")
+        # Don't fail startup, migration might already be applied
+    
+    # Continue with normal initialization
     result = initialize_database_if_needed()
     
     if result["success"]:
