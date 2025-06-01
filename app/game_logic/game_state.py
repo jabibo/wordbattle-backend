@@ -189,13 +189,46 @@ class GameState:
             return success, msg, new_rack
         
         elif move_type == MoveType.PLACE:
+            # First validate that player has the required letters in their rack
+            rack = self.players[player_id]
+            letters_needed = []
+            for _, tile in move_data:
+                if tile.is_blank:
+                    letters_needed.append("?")  # Blank tiles show as "?" in rack
+                else:
+                    letters_needed.append(tile.letter.upper())
+            
+            # Check if player has all required letters
+            rack_copy = rack
+            missing_letters = []
+            for letter in letters_needed:
+                if letter in rack_copy:
+                    rack_copy = rack_copy.replace(letter, "", 1)
+                else:
+                    missing_letters.append(letter)
+            
+            if missing_letters:
+                if len(missing_letters) == 1:
+                    return False, f"You don't have the letter '{missing_letters[0]}' in your rack.", 0
+                else:
+                    return False, f"You don't have these letters in your rack: {', '.join(missing_letters)}.", 0
+            
             success, msg = self.validate_word_placement(move_data, dictionary)
             if not success:
                 return False, msg, 0
             
             points = self._calculate_points(move_data)
             self._update_board(move_data)
-            self._replenish_rack(player_id, [tile.letter for _, tile in move_data])
+            
+            # For blank tiles, we need to remove "?" from rack, not the chosen letter
+            letters_to_remove = []
+            for _, tile in move_data:
+                if tile.is_blank:
+                    letters_to_remove.append("?")  # Remove the wildcard from rack
+                else:
+                    letters_to_remove.append(tile.letter)  # Remove the actual letter
+            
+            self._replenish_rack(player_id, letters_to_remove)
             self.scores[player_id] += points
             
             # Record move
@@ -404,7 +437,10 @@ class GameState:
             if current_tile is None:
                 break
                 
+            # For blank tiles, the letter field should contain the chosen letter (e.g., "D")
+            # not the original wildcard symbol ("?")
             word.append(current_tile.letter.upper())
+            
             current_row += 0 if is_horizontal else 1
             current_col += 1 if is_horizontal else 0
         
