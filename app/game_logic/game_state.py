@@ -301,24 +301,46 @@ class GameState:
 
     def _calculate_points(self, move_data: List[Tuple[Position, PlacedTile]]) -> int:
         """Calculate points for a move."""
+        # Get all formed words to properly score including blank tiles
+        all_words = self._get_all_formed_words(move_data)
+        if not all_words:
+            return 0
+            
         total_points = 0
         word_multiplier = 1
         
-        # Calculate base points with letter multipliers
+        # For blank tiles, we need to score based on the resolved word
+        # Apply temporary move to board to get resolved letters
+        board_copy = [[tile for tile in row] for row in self.board]
         for pos, tile in move_data:
-            points = LETTER_DISTRIBUTION[self.language]["points"][tile.letter.upper()] if not tile.is_blank else 0
-            if pos in self.multipliers:
-                multi = self.multipliers[pos]
-                if multi == "BL":  # Triple letter score
-                    points *= 3
-                elif multi == "BW":  # Double letter score
+            board_copy[pos.row][pos.col] = tile
+            
+        # Calculate points for each newly placed tile
+        move_positions = {(pos.row, pos.col) for pos, _ in move_data}
+        
+        for pos, tile in move_data:
+            if tile.is_blank:
+                # Blank tiles are worth 0 points regardless of letter represented
+                points = 0
+            else:
+                # Regular tiles use their letter value
+                points = LETTER_DISTRIBUTION[self.language]["points"][tile.letter.upper()]
+            
+            # Apply letter multipliers only to newly placed tiles
+            if (pos.row, pos.col) in self.multipliers:
+                multi = self.multipliers[(pos.row, pos.col)]
+                if multi == "BL":  # Double letter score
                     points *= 2
-                elif multi == "WW":  # Triple word score
-                    word_multiplier *= 3
+                elif multi == "BW":  # Triple letter score
+                    points *= 3
                 elif multi == "WL":  # Double word score
                     word_multiplier *= 2
+                elif multi == "WW":  # Triple word score
+                    word_multiplier *= 3
+            
             total_points += points
         
+        # Apply word multiplier
         total_points *= word_multiplier
         
         # Bonus for using all 7 letters
@@ -326,7 +348,7 @@ class GameState:
             total_points += 50
             
         return total_points
-
+    
     def _replenish_rack(self, player_id: int, used_letters: List[str]) -> None:
         """Replenish a player's rack after a move."""
         rack = self.players[player_id]
