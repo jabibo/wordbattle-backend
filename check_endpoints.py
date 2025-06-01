@@ -4,7 +4,8 @@ Check what endpoints are currently available on the deployed backend
 """
 import requests
 
-BACKEND_URL = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
+# Configuration - using Google Cloud Run
+BACKEND_URL = "https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
 
 def check_endpoints():
     """Check what endpoints are available"""

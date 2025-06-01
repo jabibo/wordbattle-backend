@@ -1,12 +1,22 @@
 import requests
 import json
+import time
+
+# Configuration - using Google Cloud Run
+backend_url = "https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
+
+# Test credentials  
+test_user = {
+    "email": "test_list_games@example.com",
+    "username": "test_game_lister",
+    "password": "TestPassword123!",
+    "remember_me": True
+}
 
 def test_list_games():
     """Test the new list games endpoint"""
     print("🎮 Testing List User Games Endpoint")
     print("=" * 50)
-    
-    backend_url = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
     
     # Login first
     print("1. Logging in...")

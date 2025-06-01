@@ -5,7 +5,8 @@ Test script to debug invitation creation
 import requests
 import uuid
 
-BACKEND_URL = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
+# Configuration - using Google Cloud Run
+BACKEND_URL = "https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
 
 def test_invitation_creation():
     """Test if invitations are actually being created"""

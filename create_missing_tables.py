@@ -4,7 +4,8 @@ Script to create missing database tables
 """
 import requests
 
-BACKEND_URL = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
+# Configuration - using Google Cloud Run
+BACKEND_URL = "https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
 
 def create_missing_tables():
     """Try to create missing tables via API"""

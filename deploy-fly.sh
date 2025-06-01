@@ -1,79 +1,74 @@
 #!/bin/bash
 
-echo "Fly.io Deployment - Non-AWS Alternative"
+echo "Fly.io Deployment - Google Cloud SQL Backend"
 echo "======================================="
 
 # Check if flyctl is installed
 if ! command -v flyctl &> /dev/null; then
-    echo "Installing Fly.io CLI..."
-    curl -L https://fly.io/install.sh | sh
-    export PATH="$HOME/.fly/bin:$PATH"
+    echo "❌ Fly CLI not found. Please install it first:"
+    echo "   curl -L https://fly.io/install.sh | sh"
+    exit 1
 fi
 
 # Check if logged in
 if ! flyctl auth whoami &> /dev/null; then
-    echo "Please login to Fly.io:"
+    echo "🔐 Please login to Fly.io:"
     flyctl auth login
 fi
 
-# Create fly.toml configuration
-cat > fly.toml << 'EOF'
-app = "wordbattle-backend"
-primary_region = "fra"
+echo "📋 Setting up Fly.io project..."
 
-[build]
-  dockerfile = "Dockerfile.prod"
+# Initialize fly app if not exists
+if [ ! -f "fly.toml" ]; then
+    flyctl launch --no-deploy --generate-name --region fra
+fi
 
-[env]
-  PORT = "8000"
-  DB_HOST = "wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com"
-  DB_NAME = "wordbattle"
-  DB_USER = "postgres"
-  DB_PASSWORD = "Wordbattle2024"
+echo "🔧 Setting environment variables..."
 
-[http_service]
-  internal_port = 8000
-  force_https = true
-  auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 1
-  processes = ["app"]
-
-[[http_service.checks]]
-  grace_period = "10s"
-  interval = "30s"
-  method = "GET"
-  timeout = "5s"
-  path = "/health"
-
-[vm]
-  cpu_kind = "shared"
-  cpus = 1
-  memory_mb = 512
-EOF
-
-echo "Creating Fly.io app..."
-flyctl apps create wordbattle-backend --org personal
-
-echo "Setting secrets..."
+# Database settings (using Google Cloud SQL)
+flyctl secrets set DB_HOST=35.187.90.105
+flyctl secrets set DB_PORT=5432
+flyctl secrets set DB_USER=postgres
 flyctl secrets set DB_PASSWORD=Wordbattle2024
+flyctl secrets set DB_NAME=wordbattle_db
 
-echo "Deploying to Fly.io..."
+# Application settings
+flyctl secrets set SECRET_KEY=09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7
+flyctl secrets set ALGORITHM=HS256
+flyctl secrets set ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Email settings
+flyctl secrets set SMTP_SERVER=smtp.strato.de
+flyctl secrets set SMTP_PORT=465
+flyctl secrets set SMTP_USERNAME=jan@binge-dev.de
+flyctl secrets set SMTP_PASSWORD=q2NvW4J1%tcAyJSg8
+flyctl secrets set FROM_EMAIL=jan@binge-dev.de
+flyctl secrets set SMTP_USE_SSL=true
+flyctl secrets set VERIFICATION_CODE_EXPIRE_MINUTES=10
+
+# Game settings
+flyctl secrets set DEFAULT_WORDLIST_PATH=data/de_words.txt
+flyctl secrets set LETTER_POOL_SIZE=7
+flyctl secrets set GAME_INACTIVE_DAYS=7
+flyctl secrets set CORS_ORIGINS="*"
+flyctl secrets set RATE_LIMIT=60
+
+echo "🚀 Deploying to Fly.io..."
 flyctl deploy
 
 echo ""
-echo "Deployment completed!"
-
-# Get the app URL
-APP_URL="https://wordbattle-backend.fly.dev"
-
-echo "Application URL: $APP_URL"
-echo "Health check: $APP_URL/health"
-echo "Debug tokens: $APP_URL/debug/tokens"
-
+echo "✅ Deployment complete!"
 echo ""
-echo "Fly.io deployment complete!"
-echo "Your application is now running globally on Fly.io!"
-
-# Show status
-flyctl status 
+echo "📋 Summary:"
+echo "- Platform: Fly.io"
+echo "- Database: Google Cloud SQL PostgreSQL"
+echo "- DB_HOST = 35.187.90.105"
+echo "- DB_NAME = wordbattle_db"
+echo ""
+echo "🔗 View your deployment:"
+flyctl status
+echo ""
+echo "📝 View logs:"
+echo "   flyctl logs"
+echo ""
+echo "Your application is now running with Google Cloud SQL!" 

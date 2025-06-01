@@ -7,7 +7,8 @@ import uuid
 import time
 from datetime import datetime
 
-BACKEND_URL = "https://mnirejmq3g.eu-central-1.awsapprunner.com"
+# Configuration - using Google Cloud Run
+BACKEND_URL = "https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
 
 def register_user(username_suffix):
     """Register a test user and return auth token"""

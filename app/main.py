@@ -301,13 +301,14 @@ async def debug_tokens():
                 }
             },
             "testing": {
-                "test_auth": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me",
-                "test_games": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/games/my-games",
+                "test_auth": f"curl -H 'Authorization: Bearer {player01_token}' https://wordbattle-backend-skhco4fxoq-ew.a.run.app/auth/me",
+                "test_games": f"curl -H 'Authorization: Bearer {player01_token}' https://wordbattle-backend-skhco4fxoq-ew.a.run.app/games/my-games",
+                "test_language": f"curl -H 'Authorization: Bearer {player01_token}' https://wordbattle-backend-skhco4fxoq-ew.a.run.app/users/language",
                 "note": "Tokens use USERNAME in sub field for proper authentication"
             },
             "usage": {
                 "authorization_header": "Authorization: Bearer <token>",
-                "example_test": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me"
+                "example_test": f"curl -H 'Authorization: Bearer {player01_token}' https://wordbattle-backend-skhco4fxoq-ew.a.run.app/auth/me"
             }
         }
     finally:

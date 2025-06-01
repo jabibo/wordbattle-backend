@@ -2,7 +2,7 @@
 
 # Monitor GitHub Actions deployment and test endpoints
 REPO="jabibo/wordbattle-backend"
-PRODUCTION_URL="https://nmexamntve.eu-central-1.awsapprunner.com"
+PRODUCTION_URL="https://wordbattle-backend-skhco4fxoq-ew.a.run.app"
 
 echo "🔄 Monitoring WordBattle Deployment"
 echo "=================================="

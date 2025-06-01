@@ -64,7 +64,7 @@ gcloud run deploy $SERVICE_NAME \
   --memory=1Gi \
   --cpu=1 \
   --timeout=300 \
-  --set-env-vars="DB_HOST=wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com,DB_NAME=wordbattle,DB_USER=postgres,DB_PASSWORD=Wordbattle2024" \
+  --set-env-vars="DB_HOST=35.187.90.105,DB_NAME=wordbattle_db,DB_USER=postgres,DB_PASSWORD=Wordbattle2024" \
   --max-instances=10 \
   --min-instances=1
 
