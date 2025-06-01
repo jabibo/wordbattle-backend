@@ -117,22 +117,24 @@ class GameState:
                 col_letter = chr(65 + pos.col)
                 return False, f"Cannot place tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) - there is already a '{existing_tile.letter}' tile there."
 
-        # Validate all formed words
-        all_words = self._get_all_formed_words(word_positions)
-        if not all_words:
+        # Validate all formed words with blank tile handling
+        all_words_patterns = self._get_all_formed_words(word_positions)
+        if not all_words_patterns:
             if len(word_positions) == 1:
                 return False, "Single tile placement must form a word of at least 2 letters by connecting to existing tiles."
             else:
                 return False, "The placed tiles do not form any valid words. Make sure tiles are connected and form complete words."
             
-        # Check each word against dictionary
+        # Check each word pattern against dictionary (handling blank tiles)
         invalid_words = []
         valid_words = []
-        for word in all_words:
-            if word.upper() not in dictionary:
-                invalid_words.append(word)
+        for word_pattern in all_words_patterns:
+            if self._is_valid_word_pattern(word_pattern, dictionary):
+                # Find the actual word that would be formed (for display)
+                actual_word = self._resolve_word_pattern(word_pattern, dictionary)
+                valid_words.append(actual_word)
             else:
-                valid_words.append(word)
+                invalid_words.append(word_pattern)
         
         if invalid_words:
             if len(invalid_words) == 1:
@@ -437,9 +439,12 @@ class GameState:
             if current_tile is None:
                 break
                 
-            # For blank tiles, the letter field should contain the chosen letter (e.g., "D")
-            # not the original wildcard symbol ("?")
-            word.append(current_tile.letter.upper())
+            # For blank tiles, preserve the '?' character for pattern matching
+            # For regular tiles, use the letter
+            if current_tile.is_blank and current_tile.letter == "?":
+                word.append("?")
+            else:
+                word.append(current_tile.letter.upper())
             
             current_row += 0 if is_horizontal else 1
             current_col += 1 if is_horizontal else 0
@@ -559,3 +564,58 @@ class GameState:
             final_scores[player_id] -= penalty
         
         return final_scores 
+
+    def _is_valid_word_pattern(self, word_pattern: str, dictionary: Set[str]) -> bool:
+        """Check if a word pattern with potential blank tiles ('?') can form any valid word."""
+        if '?' not in word_pattern:
+            # No blank tiles, direct dictionary lookup
+            return word_pattern.upper() in dictionary
+        
+        # Has blank tiles - try all possible letter substitutions
+        alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        return self._check_pattern_recursive(word_pattern.upper(), dictionary, alphabet, 0)
+    
+    def _check_pattern_recursive(self, pattern: str, dictionary: Set[str], alphabet: str, pos: int) -> bool:
+        """Recursively check if pattern can form valid words by substituting letters for '?'."""
+        # Find next '?' in pattern starting from pos
+        question_pos = pattern.find('?', pos)
+        if question_pos == -1:
+            # No more '?' characters, check if current pattern is valid
+            return pattern in dictionary
+        
+        # Try each letter for this '?' position
+        for letter in alphabet:
+            new_pattern = pattern[:question_pos] + letter + pattern[question_pos + 1:]
+            if self._check_pattern_recursive(new_pattern, dictionary, alphabet, question_pos + 1):
+                return True
+        
+        return False
+    
+    def _resolve_word_pattern(self, word_pattern: str, dictionary: Set[str]) -> str:
+        """Find the actual word that a pattern with '?' would form (for display purposes)."""
+        if '?' not in word_pattern:
+            return word_pattern.upper()
+        
+        # Find first valid word that matches the pattern
+        alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+        return self._find_first_valid_word(word_pattern.upper(), dictionary, alphabet, 0)
+    
+    def _find_first_valid_word(self, pattern: str, dictionary: Set[str], alphabet: str, pos: int) -> str:
+        """Find first valid word that matches the pattern."""
+        question_pos = pattern.find('?', pos)
+        if question_pos == -1:
+            return pattern if pattern in dictionary else pattern  # Should be valid if we got here
+        
+        for letter in alphabet:
+            new_pattern = pattern[:question_pos] + letter + pattern[question_pos + 1:]
+            if '?' not in new_pattern[question_pos + 1:]:
+                # No more '?' after this position
+                if new_pattern in dictionary:
+                    return new_pattern
+            else:
+                # More '?' characters to resolve
+                result = self._find_first_valid_word(new_pattern, dictionary, alphabet, question_pos + 1)
+                if result and result in dictionary:
+                    return result
+        
+        return pattern  # Fallback 
