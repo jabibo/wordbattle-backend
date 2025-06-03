@@ -2298,12 +2298,74 @@ async def validate_move(
     )
     
     if success:
-        # Get words formed from the validation
+        # Get detailed score breakdown for the validation - same format as move endpoint
         try:
             score_breakdown = validation_game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+            
+            # Transform the detailed breakdown to match the move endpoint format
+            tiles_placed = []
+            word_scores = []
+            
+            # Extract tiles placed information from the move
+            for pos, tile in parsed_move_positions:
+                # Find the tile in the score breakdown
+                base_points = 0
+                multiplier = None
+                final_points = 0
+                
+                # Look through all words to find this tile's contribution
+                for word_info in score_breakdown.get("words_formed", []):
+                    for letter_info in word_info.get("letters", []):
+                        if (letter_info["position"]["row"] == pos.row and 
+                            letter_info["position"]["col"] == pos.col and
+                            letter_info["is_newly_placed"]):
+                            base_points = letter_info["base_value"]
+                            final_points = letter_info["final_value"]
+                            if letter_info["multiplier"]:
+                                if letter_info["multiplier"] == "double_letter":
+                                    multiplier = "double_letter"
+                                elif letter_info["multiplier"] == "triple_letter":
+                                    multiplier = "triple_letter"
+                            # Check for word multipliers on this position
+                            for word_multiplier in word_info.get("word_multipliers", []):
+                                if multiplier is None:  # Only set if no letter multiplier
+                                    if word_multiplier["type"] == "double_word":
+                                        multiplier = "double_word"
+                                    elif word_multiplier["type"] == "triple_word":
+                                        multiplier = "triple_word"
+                            break
+                
+                tiles_placed.append({
+                    "letter": tile.letter.upper(),
+                    "position": {"row": pos.row, "col": pos.col},
+                    "basePoints": base_points,
+                    "multiplier": multiplier,
+                    "finalPoints": final_points
+                })
+            
+            # Extract word scores information
+            for word_info in score_breakdown.get("words_formed", []):
+                multipliers = []
+                for word_multiplier in word_info.get("word_multipliers", []):
+                    if word_multiplier["type"] == "double_word":
+                        multipliers.append("double_word")
+                    elif word_multiplier["type"] == "triple_word":
+                        multipliers.append("triple_word")
+                
+                word_scores.append({
+                    "word": word_info["word"],
+                    "baseScore": word_info["base_score"],
+                    "multipliers": multipliers,
+                    "finalScore": word_info["final_score"]
+                })
+            
             words_formed = [word_info["word"] for word_info in score_breakdown.get("words_formed", [])]
+            
         except Exception as e:
-            logger.error(f"Error getting words formed in validation: {e}")
+            logger.error(f"Error getting detailed score breakdown in validation: {e}")
+            # Fallback to basic format if detailed breakdown fails
+            tiles_placed = []
+            word_scores = []
             words_formed = []
         
         return {
@@ -2311,6 +2373,11 @@ async def validate_move(
             "message": message,
             "points": points_gained,
             "words_formed": words_formed,
+            "scoreBreakdown": {
+                "tilesPlaced": tiles_placed,
+                "wordScores": word_scores,
+                "totalScore": points_gained
+            },
             "validation_type": "move_validation"
         }
     else:
@@ -2319,5 +2386,10 @@ async def validate_move(
             "error": message,
             "points": 0,
             "words_formed": [],
+            "scoreBreakdown": {
+                "tilesPlaced": [],
+                "wordScores": [],
+                "totalScore": 0
+            },
             "validation_type": "move_validation"
         }
