@@ -46,6 +46,60 @@ class CreateGameWithInvitationsRequest(BaseModel):
     base_url: str = "http://localhost:3000"  # Default to frontend port
     short_game: bool = False  # Simple parameter for endgame testing
 
+# Response models for enhanced scoring
+class TilePlacedInfo(BaseModel):
+    letter: str
+    position: Dict[str, int]  # {"row": int, "col": int}
+    basePoints: int
+    multiplier: Optional[str] = None  # "double_letter", "triple_letter", "double_word", "triple_word"
+    finalPoints: int
+
+class WordScoreInfo(BaseModel):
+    word: str
+    baseScore: int
+    multipliers: List[str] = []  # List of word multipliers like ["double_word", "triple_word"]
+    finalScore: int
+
+class ScoreBreakdown(BaseModel):
+    tilesPlaced: List[TilePlacedInfo]
+    wordScores: List[WordScoreInfo]
+    totalScore: int
+
+class MoveResponse(BaseModel):
+    success: bool
+    score: int
+    wordsFormed: List[str]
+    message: str
+    scoreBreakdown: ScoreBreakdown
+    # Legacy fields for backward compatibility
+    points_gained: int
+    your_new_rack: List[str]
+    next_player_id: Optional[str]
+    game_over: bool
+    completion_details: Optional[Dict] = None
+
+class TestMoveResponse(BaseModel):
+    success: bool
+    score: int
+    wordsFormed: List[str]
+    message: str
+    scoreBreakdown: ScoreBreakdown
+    # Test-specific fields
+    test_mode: bool = True
+    move_valid: bool
+    original_rack: List[str]
+    rack_used_for_test: List[str]
+    rack_after_move: List[str]
+    next_player_id: Optional[str]
+    turn_validation_skipped: bool
+    rack_validation_skipped: bool
+    rack_source: str
+    database_updated: bool = False
+    warning: str = "This is a test move and does not affect the actual game state"
+    # Legacy fields
+    points_gained: int
+    game_state: Dict
+
 class GameStateEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, datetime):
@@ -1042,13 +1096,13 @@ async def start_game(
     
     return {"success": True}
 
-@router.post("/{game_id}/move")
+@router.post("/{game_id}/move", response_model=MoveResponse)
 async def make_move(
     game_id: str,
     move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> MoveResponse:
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(404, "Game not found")
@@ -1306,7 +1360,7 @@ async def make_move(
     
     return response_data
 
-@router.post("/{game_id}/test-move")
+@router.post("/{game_id}/test-move", response_model=TestMoveResponse)
 async def test_move(
     game_id: str,
     move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
@@ -1315,7 +1369,7 @@ async def test_move(
     test_rack: Optional[str] = Body(None, description="Override player's rack for testing (e.g., 'ABCDEFG'). If not provided, uses current rack."),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
-):
+) -> TestMoveResponse:
     """
     🧪 TEST ENDPOINT: Make a move for testing purposes with optional validation bypasses.
     
