@@ -1306,7 +1306,7 @@ async def make_move(
             # Legacy fields for backward compatibility
             "points_gained": points_gained,
             "your_new_rack": list(game_state.players[current_user.id]),
-            "next_player_id": game.current_player_id,
+            "next_player_id": str(game.current_player_id) if game.current_player_id else None,
             "game_over": is_game_over
         }
         
@@ -1326,7 +1326,7 @@ async def make_move(
             # Legacy fields for backward compatibility
             "points_gained": points_gained,
             "your_new_rack": list(game_state.players[current_user.id]),
-            "next_player_id": game.current_player_id,
+            "next_player_id": str(game.current_player_id) if game.current_player_id else None,
             "game_over": is_game_over
         }
     
@@ -1588,7 +1588,7 @@ async def test_move(
         "original_rack": list(original_rack),
         "rack_used_for_test": list(game_state.players[current_user.id]),
         "rack_after_move": list(game_state.players[current_user.id]),
-        "next_player_id": game_state.current_player_id,
+        "next_player_id": str(game_state.current_player_id) if game_state.current_player_id else None,
         "turn_validation_skipped": skip_turn_validation,
         "rack_validation_skipped": skip_rack_validation,
         "rack_source": rack_source,
@@ -1708,7 +1708,7 @@ async def pass_turn(
     
     response_data = {
         "message": "Turn passed successfully.",
-        "next_player_id": game.current_player_id,
+        "next_player_id": str(game.current_player_id) if game.current_player_id else None,
         "game_over": is_game_over
     }
     if is_game_over:
@@ -1844,7 +1844,7 @@ async def exchange_letters(
     response_data = {
         "message": "Letters exchanged successfully.",
         "your_new_rack": list(new_rack_after_exchange),
-        "next_player_id": game.current_player_id
+        "next_player_id": str(game.current_player_id) if game.current_player_id else None
     }
     
     # Broadcast game update
