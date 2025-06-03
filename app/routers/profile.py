@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from app.auth import get_current_user
 from app.models import User, Game, Player
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
 
 router = APIRouter(tags=["profile"])
 

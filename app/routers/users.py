@@ -3,8 +3,10 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 from app.models import User
 from app.auth import get_password_hash, get_current_user
-from app.dependencies import get_db
+from app.db import get_db
+from app.dependencies import get_translation_helper
 from app.utils.email_service import email_service
+from app.utils.i18n import TranslationHelper
 from sqlalchemy.future import select
 import logging
 
@@ -31,13 +33,16 @@ def register(user: RegisterUser, db: Session = Depends(get_db)):
     result = db.execute(select(User).where(User.username == user.username))
     existing_user = result.scalars().first()
     if existing_user:
-        raise HTTPException(status_code=400, detail="Username already taken")
+        # Use English for registration errors since user doesn't exist yet
+        from app.utils.i18n import get_translation
+        raise HTTPException(status_code=400, detail=get_translation("error.username_taken", "en"))
     
     # Check if email already exists
     result = db.execute(select(User).where(User.email == user.email))
     existing_email = result.scalars().first()
     if existing_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        from app.utils.i18n import get_translation
+        raise HTTPException(status_code=400, detail=get_translation("error.email_registered", "en"))
 
     # Create new user
     hashed_password = get_password_hash(user.password) if user.password else None
@@ -116,7 +121,8 @@ def get_user_language(current_user: User = Depends(get_current_user)):
 def update_user_language(
     language_data: LanguageUpdate, 
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    t: TranslationHelper = Depends(get_translation_helper)
 ):
     """Update the current user's language preference."""
     # Validate language
@@ -124,15 +130,18 @@ def update_user_language(
     if language_data.language not in supported_languages:
         raise HTTPException(
             status_code=400, 
-            detail=f"Language '{language_data.language}' not supported. Available: {supported_languages}"
+            detail=t.error("invalid_language", languages=", ".join(supported_languages))
         )
     
     # Update user's language
     current_user.language = language_data.language
     db.commit()
     
+    # Create new translation helper with updated language for response
+    new_t = TranslationHelper(language_data.language)
+    
     return {
-        "message": "Language updated successfully",
+        "message": new_t.success("language_updated"),
         "language": current_user.language
     }
 

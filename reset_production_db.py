@@ -2,7 +2,7 @@
 """
 Reset Production Database Script
 
-This script connects to the AWS RDS production database and clears all game-related data.
+This script connects to the Google Cloud SQL production database and clears all game-related data.
 """
 
 import sys
@@ -10,12 +10,12 @@ import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-# Production database connection
-DB_HOST = "wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com"
+# Production database connection (Google Cloud SQL)
+DB_HOST = "35.187.90.105"
 DB_PORT = "5432"
 DB_USER = "postgres"
-DB_PASSWORD = "Y3RHlw7BACKDFNg6QWmkirhPu"
-DB_NAME = "wordbattle"
+DB_PASSWORD = "Wordbattle2024"
+DB_NAME = "wordbattle_db"
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
@@ -40,6 +40,7 @@ def reset_production_games():
             ("players", "Players"),
             ("game_invitations", "Game Invitations"),
             ("games", "Games"),
+            ("friends", "Friends"),
             ("users", "Users"),
             ("wordlists", "WordLists")
         ]
@@ -52,42 +53,27 @@ def reset_production_games():
             except Exception as e:
                 print(f"   {name}: Error - {e}")
         
-        print("\n🔄 Deleting game-related data...")
+        print("\n🔄 Using TRUNCATE CASCADE for faster reset...")
         
-        # Delete in order to respect foreign key constraints
-        delete_queries = [
-            ("DELETE FROM chat_messages", "Chat Messages"),
-            ("DELETE FROM moves", "Moves"),
-            ("DELETE FROM players", "Players"),
-            ("DELETE FROM game_invitations", "Game Invitations"),
-            ("DELETE FROM games", "Games"),
+        # Use TRUNCATE CASCADE for faster deletion
+        truncate_queries = [
+            ("TRUNCATE TABLE chat_messages RESTART IDENTITY CASCADE", "Chat Messages"),
+            ("TRUNCATE TABLE moves RESTART IDENTITY CASCADE", "Moves"),
+            ("TRUNCATE TABLE players RESTART IDENTITY CASCADE", "Players"),
+            ("TRUNCATE TABLE game_invitations RESTART IDENTITY CASCADE", "Game Invitations"),
+            ("TRUNCATE TABLE games RESTART IDENTITY CASCADE", "Games"),
+            ("TRUNCATE TABLE friends RESTART IDENTITY CASCADE", "Friends"),
         ]
         
-        for query, name in delete_queries:
+        for query, name in truncate_queries:
             try:
-                result = db.execute(text(query))
-                print(f"✅ Deleted {result.rowcount} {name}")
+                db.execute(text(query))
+                print(f"✅ Truncated {name}")
+                db.commit()  # Commit each truncate individually
             except Exception as e:
-                print(f"❌ Error deleting {name}: {e}")
+                print(f"❌ Error truncating {name}: {e}")
+                db.rollback()
         
-        # Reset sequences
-        print("\n🔄 Resetting sequences...")
-        sequences = [
-            "chat_messages_id_seq",
-            "moves_id_seq", 
-            "players_id_seq",
-            "game_invitations_id_seq"
-        ]
-        
-        for seq in sequences:
-            try:
-                db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
-                print(f"✅ Reset sequence: {seq}")
-            except Exception as e:
-                print(f"⚠️  Sequence {seq}: {e}")
-        
-        # Commit all changes
-        db.commit()
         print("\n✅ Production database reset completed successfully!")
         
         # Show final counts
@@ -110,7 +96,7 @@ def reset_production_games():
 def confirm_production_reset():
     """Ask for user confirmation before proceeding with production reset."""
     print("⚠️  WARNING: This will delete ALL game-related data from PRODUCTION!")
-    print("   🌐 Target: AWS RDS Production Database")
+    print("   🌐 Target: Google Cloud SQL Production Database")
     print(f"   🏠 Host: {DB_HOST}")
     print("   📊 Data to be deleted:")
     print("      - All games and their state")
@@ -118,9 +104,10 @@ def confirm_production_reset():
     print("      - All moves history")
     print("      - All game invitations")
     print("      - All chat messages")
+    print("      - All friend relationships")
     print()
     print("✅ This will PRESERVE:")
-    print("   - User accounts")
+    print("   - User accounts and their language preferences")
     print("   - WordLists")
     print()
     

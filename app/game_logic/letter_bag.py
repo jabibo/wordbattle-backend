@@ -1,6 +1,9 @@
 import random
 import os
+import logging
 from typing import List, Dict, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # Test mode configuration for endgame testing
 TEST_MODE_ENDGAME = os.getenv("TEST_MODE_ENDGAME", "false").lower() == "true"
@@ -32,29 +35,77 @@ LETTER_DISTRIBUTION = {
             'J': 8, 'K': 5, 'L': 1, 'M': 3, 'N': 1, 'O': 1, 'P': 3, 'Q': 10, 'R': 1,
             'S': 1, 'T': 1, 'U': 1, 'V': 4, 'W': 4, 'X': 8, 'Y': 4, 'Z': 10, '?': 0
         }
+    },
+    "es": {  # Spanish
+        "frequency": {
+            'A': 12, 'B': 2, 'C': 4, 'D': 5, 'E': 12, 'F': 1, 'G': 2, 'H': 2, 'I': 6,
+            'J': 1, 'L': 4, 'M': 2, 'N': 5, 'Ñ': 1, 'O': 9, 'P': 2, 'Q': 1, 'R': 5,
+            'S': 6, 'T': 4, 'U': 5, 'V': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
+        },
+        "points": {
+            'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4, 'I': 1,
+            'J': 8, 'L': 1, 'M': 3, 'N': 1, 'Ñ': 8, 'O': 1, 'P': 3, 'Q': 5, 'R': 1,
+            'S': 1, 'T': 1, 'U': 1, 'V': 4, 'X': 8, 'Y': 4, 'Z': 10, '?': 0
+        }
+    },
+    "fr": {  # French
+        "frequency": {
+            'A': 9, 'B': 2, 'C': 2, 'D': 3, 'E': 15, 'F': 2, 'G': 2, 'H': 2, 'I': 8,
+            'J': 1, 'K': 1, 'L': 5, 'M': 3, 'N': 6, 'O': 6, 'P': 2, 'Q': 1, 'R': 6,
+            'S': 6, 'T': 6, 'U': 6, 'V': 2, 'W': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
+        },
+        "points": {
+            'A': 1, 'B': 3, 'C': 3, 'D': 2, 'E': 1, 'F': 4, 'G': 2, 'H': 4, 'I': 1,
+            'J': 8, 'K': 10, 'L': 1, 'M': 2, 'N': 1, 'O': 1, 'P': 3, 'Q': 8, 'R': 1,
+            'S': 1, 'T': 1, 'U': 1, 'V': 4, 'W': 10, 'X': 10, 'Y': 10, 'Z': 10, '?': 0
+        }
+    },
+    "it": {  # Italian
+        "frequency": {
+            'A': 14, 'B': 3, 'C': 4, 'D': 3, 'E': 11, 'F': 2, 'G': 2, 'H': 2, 'I': 12,
+            'L': 5, 'M': 5, 'N': 5, 'O': 15, 'P': 3, 'Q': 1, 'R': 4, 'S': 6, 'T': 4,
+            'U': 5, 'V': 3, 'Z': 2, '?': 2
+        },
+        "points": {
+            'A': 1, 'B': 5, 'C': 2, 'D': 5, 'E': 1, 'F': 5, 'G': 8, 'H': 8, 'I': 1,
+            'L': 3, 'M': 4, 'N': 3, 'O': 1, 'P': 5, 'Q': 10, 'R': 2, 'S': 2, 'T': 2,
+            'U': 5, 'V': 4, 'Z': 8, '?': 0
+        }
     }
 }
 
-# Test mode distributions - only most common letters, total 24 tiles
-TEST_LETTER_DISTRIBUTION = {
+# Short game distributions - only value-1 letters, total 24 tiles for quick endgame testing
+SHORT_GAME_DISTRIBUTION = {
     "de": {
-        # Most common German letters: E, N, S, A, R, I, T, U - total 24
-        'E': 6, 'N': 4, 'S': 3, 'A': 3, 'R': 3, 'I': 2, 'T': 2, '?': 1
+        # German value-1 letters: A, D, E, I, N, R, S, T, U - total 24
+        'E': 4, 'A': 3, 'I': 3, 'N': 3, 'S': 3, 'R': 2, 'T': 2, 'U': 2, 'D': 2
     },
     "en": {
-        # Most common English letters: E, A, I, O, N, R, T, S - total 24  
-        'E': 5, 'A': 4, 'I': 4, 'O': 3, 'N': 3, 'R': 2, 'T': 2, 'S': 1
+        # English value-1 letters: A, E, I, L, N, O, R, S, T, U - total 24
+        'E': 4, 'A': 3, 'I': 3, 'O': 3, 'N': 2, 'R': 2, 'S': 2, 'T': 2, 'L': 2, 'U': 1
+    },
+    "es": {
+        # Spanish value-1 letters: A, E, I, L, N, O, R, S, T, U - total 24
+        'A': 4, 'E': 4, 'O': 3, 'I': 3, 'S': 2, 'R': 2, 'N': 2, 'T': 2, 'L': 1, 'U': 1
+    },
+    "fr": {
+        # French value-1 letters: A, E, I, L, N, O, R, S, T, U - total 24
+        'E': 4, 'A': 3, 'I': 3, 'O': 3, 'S': 2, 'T': 2, 'N': 2, 'R': 2, 'L': 2, 'U': 1
+    },
+    "it": {
+        # Italian value-1 letters: A, E, I, O - total 24
+        'A': 6, 'E': 6, 'I': 6, 'O': 6
     }
 }
 
 class LetterBag:
     """A class to manage the letter bag for the game."""
     
-    def __init__(self, language: str = "en", test_mode: bool = None):
+    def __init__(self, language: str = "en", short_game: bool = None):
         self.language = language
-        # Use test_mode parameter if provided, otherwise check environment variable
-        self.test_mode = test_mode if test_mode is not None else TEST_MODE_ENDGAME
-        self.letters = create_letter_bag(language, self.test_mode)
+        # Use short_game parameter if provided, otherwise check environment variable for backward compatibility
+        self.short_game = short_game if short_game is not None else TEST_MODE_ENDGAME
+        self.letters = create_letter_bag(language, self.short_game)
     
     def draw(self, count: int) -> List[str]:
         """Draw letters from the bag."""
@@ -68,29 +119,23 @@ class LetterBag:
         """Get the number of letters remaining in the bag."""
         return len(self.letters)
 
-def create_letter_bag(language: str = "en", test_mode: bool = None) -> List[str]:
+def create_letter_bag(language: str = "en", short_game: bool = None) -> List[str]:
     """Create a new letter bag with the correct distribution of letters."""
-    # Use test_mode parameter if provided, otherwise check environment variable
-    use_test_mode = test_mode if test_mode is not None else TEST_MODE_ENDGAME
+    # Use short_game parameter if provided, otherwise check environment variable for backward compatibility
+    use_short_game = short_game if short_game is not None else TEST_MODE_ENDGAME
     
-    if use_test_mode:
-        # Use reduced test distribution for endgame testing
-        letter_distribution = TEST_LETTER_DISTRIBUTION.get(language, TEST_LETTER_DISTRIBUTION["en"])
-        print(f"🧪 TEST MODE: Using reduced letter bag with {sum(letter_distribution.values())} tiles for endgame testing")
+    if use_short_game:
+        # Use reduced distribution with only value-1 letters for quick endgame testing
+        letter_distribution = SHORT_GAME_DISTRIBUTION.get(language, SHORT_GAME_DISTRIBUTION["en"])
+        logger.info(f"🧪 SHORT GAME: Using {language} letter bag with only value-1 letters ({sum(letter_distribution.values())} tiles total)")
     else:
-        # Use normal distribution
-        if language == "de":
-            letter_distribution = {
-                'A': 5, 'B': 2, 'C': 2, 'D': 4, 'E': 15, 'F': 2, 'G': 3, 'H': 4, 'I': 6,
-                'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 9, 'O': 3, 'P': 1, 'Q': 1, 'R': 6,
-                'S': 7, 'T': 6, 'U': 6, 'V': 1, 'W': 1, 'X': 1, 'Y': 1, 'Z': 1, '?': 2
-            }
-        else:  # English
-            letter_distribution = {
-                'A': 9, 'B': 2, 'C': 2, 'D': 4, 'E': 12, 'F': 2, 'G': 3, 'H': 2, 'I': 9,
-                'J': 1, 'K': 1, 'L': 4, 'M': 2, 'N': 6, 'O': 8, 'P': 2, 'Q': 1, 'R': 6,
-                'S': 4, 'T': 6, 'U': 4, 'V': 2, 'W': 2, 'X': 1, 'Y': 2, 'Z': 1, '?': 2
-            }
+        # Use normal distribution from LETTER_DISTRIBUTION
+        if language in LETTER_DISTRIBUTION:
+            letter_distribution = LETTER_DISTRIBUTION[language]["frequency"]
+        else:
+            # Default to English if language not found
+            letter_distribution = LETTER_DISTRIBUTION["en"]["frequency"]
+            logger.warning(f"⚠️  Language '{language}' not found, defaulting to English")
     
     # Create list with correct distribution
     letters = []

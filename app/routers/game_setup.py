@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from app.dependencies import get_db
+from app.db import get_db
 from app.models import Game, GameInvitation, User, Player
 from app.models.game import GameStatus
 from app.models.game_invitation import InvitationStatus

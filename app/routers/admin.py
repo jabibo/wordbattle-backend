@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
 from app.auth import get_current_user, create_access_token
 from app.models import User, WordList
 from app.wordlist import import_wordlist, load_wordlist_from_file

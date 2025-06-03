@@ -15,7 +15,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from app.models import User
-from app.dependencies import get_db
+from app.db import get_db
 from app.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES, PERSISTENT_TOKEN_EXPIRE_DAYS
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

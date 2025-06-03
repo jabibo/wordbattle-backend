@@ -1,6 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
 from app.models import Game, Move, Player
 from pydantic import BaseModel, Field
 from typing import List, Dict

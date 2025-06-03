@@ -3,14 +3,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from app.dependencies import get_db
+from app.db import get_db
 from app.auth import get_current_user
 from app.models import User, WordList
 from datetime import datetime, timezone
 import io
 import csv
 import logging
-from sqlalchemy.sql import text
+from sqlalchemy import text, or_
+from app.utils.wordlist_utils import clear_wordlist_cache, add_word_to_database, add_words_to_database, get_cache_stats
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +30,20 @@ class WordAdminStatusRequest(BaseModel):
     is_word_admin: bool
 
 def require_word_admin(current_user = Depends(get_current_user)):
-    """Dependency to ensure user is a word admin"""
+    """Require the current user to be a word admin or regular admin."""
     if not current_user.is_word_admin and not current_user.is_admin:
         raise HTTPException(
             status_code=403,
-            detail="Word admin privileges required. Contact an administrator to get word admin access."
+            detail="Word admin or admin privileges required"
         )
     return current_user
 
 def require_admin(current_user = Depends(get_current_user)):
-    """Dependency to ensure user is an admin"""
+    """Require the current user to be a regular admin."""
     if not current_user.is_admin:
         raise HTTPException(
             status_code=403,
-            detail="Administrator privileges required"
+            detail="Admin privileges required"
         )
     return current_user
 
@@ -50,7 +51,7 @@ def require_admin(current_user = Depends(get_current_user)):
 def get_word_admin_status(
     current_user = Depends(get_current_user)
 ):
-    """Get the current user's word admin status."""
+    """Get the current user's word admin status and capabilities."""
     return {
         "user_id": current_user.id,
         "username": current_user.username,
@@ -65,8 +66,8 @@ def add_single_word(
     db: Session = Depends(get_db),
     current_user = Depends(require_word_admin)
 ):
-    """Add a single word to the wordlist."""
-    word = request.word.strip().upper()
+    """Add a single word to the wordlist with automatic cache invalidation."""
+    word = request.word.strip()
     language = request.language.lower()
     
     if not word:
@@ -75,40 +76,22 @@ def add_single_word(
     if not language:
         raise HTTPException(status_code=400, detail="Language cannot be empty")
     
-    # Check if word already exists
-    existing_word = db.query(WordList).filter(
-        WordList.word == word,
-        WordList.language == language
-    ).first()
+    # Use the cache-aware function
+    was_added = add_word_to_database(word, language, current_user.id, db)
     
-    if existing_word:
+    if not was_added:
         raise HTTPException(
             status_code=409,
-            detail=f"Word '{word}' already exists in {language} wordlist"
+            detail=f"Word '{word.upper()}' already exists in {language} wordlist"
         )
     
-    # Add the word
-    new_word = WordList(
-        word=word,
-        language=language,
-        added_user_id=current_user.id,
-        added_timestamp=datetime.now(timezone.utc)
-    )
-    
-    db.add(new_word)
-    db.commit()
-    db.refresh(new_word)
-    
-    logger.info(f"User {current_user.username} ({current_user.id}) added word '{word}' to {language} wordlist")
-    
     return {
-        "message": f"Word '{word}' added successfully to {language} wordlist",
+        "message": f"Word '{word.upper()}' added successfully to {language} wordlist",
         "word": {
-            "id": new_word.id,
-            "word": new_word.word,
-            "language": new_word.language,
+            "word": word.upper(),
+            "language": language,
             "added_by": current_user.username,
-            "added_timestamp": new_word.added_timestamp.isoformat()
+            "cache_cleared": True
         }
     }
 
@@ -118,58 +101,30 @@ def add_multiple_words(
     db: Session = Depends(get_db),
     current_user = Depends(require_word_admin)
 ):
-    """Add multiple words to the wordlist."""
+    """Add multiple words to the wordlist with automatic cache invalidation."""
     language = request.language.lower()
-    words = [word.strip().upper() for word in request.words if word.strip()]
+    words = request.words
     
     if not words:
-        raise HTTPException(status_code=400, detail="No valid words provided")
+        raise HTTPException(status_code=400, detail="No words provided")
     
     if not language:
         raise HTTPException(status_code=400, detail="Language cannot be empty")
     
-    # Check for existing words
-    existing_words = db.query(WordList.word).filter(
-        WordList.word.in_(words),
-        WordList.language == language
-    ).all()
-    existing_word_set = {word[0] for word in existing_words}
+    # Use the cache-aware function
+    result = add_words_to_database(words, language, current_user.id, db)
     
-    # Filter out existing words
-    new_words = [word for word in words if word not in existing_word_set]
-    
-    if not new_words:
+    if result["newly_added"] == 0:
         return {
             "message": "All words already exist in the wordlist",
-            "total_requested": len(words),
-            "already_existing": len(words),
-            "newly_added": 0,
-            "existing_words": list(existing_word_set)
+            **result,
+            "cache_cleared": False
         }
     
-    # Add new words in batch
-    word_objects = [
-        WordList(
-            word=word,
-            language=language,
-            added_user_id=current_user.id,
-            added_timestamp=datetime.now(timezone.utc)
-        )
-        for word in new_words
-    ]
-    
-    db.add_all(word_objects)
-    db.commit()
-    
-    logger.info(f"User {current_user.username} ({current_user.id}) added {len(new_words)} words to {language} wordlist")
-    
     return {
-        "message": f"Successfully added {len(new_words)} words to {language} wordlist",
-        "total_requested": len(words),
-        "already_existing": len(existing_word_set),
-        "newly_added": len(new_words),
-        "existing_words": list(existing_word_set) if existing_word_set else [],
-        "added_words": new_words
+        "message": f"Successfully added {result['newly_added']} words to {language} wordlist",
+        **result,
+        "cache_cleared": True
     }
 
 @router.post("/upload-wordlist")
@@ -179,7 +134,7 @@ async def upload_wordlist(
     db: Session = Depends(get_db),
     current_user = Depends(require_word_admin)
 ):
-    """Upload a wordlist file and add all words to the database."""
+    """Upload a wordlist file and add all words to the database with automatic cache invalidation."""
     language = language.lower()
     
     if not file.filename.endswith(('.txt', '.csv')):
@@ -200,20 +155,26 @@ async def upload_wordlist(
             csv_reader = csv.reader(io.StringIO(text_content))
             for row in csv_reader:
                 if row and row[0].strip():
-                    words.append(row[0].strip().upper())
+                    words.append(row[0].strip())
         else:
             # Parse plain text (one word per line)
             for line in text_content.split('\n'):
-                word = line.strip().upper()
+                word = line.strip()
                 if word:
                     words.append(word)
         
         if not words:
             raise HTTPException(status_code=400, detail="No valid words found in file")
         
-        # Use the add_multiple_words logic
-        request = AddWordsRequest(words=words, language=language)
-        return add_multiple_words(request, db, current_user)
+        # Use the cache-aware function
+        result = add_words_to_database(words, language, current_user.id, db)
+        
+        return {
+            "message": f"Successfully processed file '{file.filename}'",
+            "filename": file.filename,
+            **result,
+            "cache_cleared": result["newly_added"] > 0
+        }
         
     except UnicodeDecodeError:
         raise HTTPException(
@@ -223,6 +184,35 @@ async def upload_wordlist(
     except Exception as e:
         logger.error(f"Error uploading wordlist: {e}")
         raise HTTPException(status_code=500, detail="Error processing file")
+
+@router.get("/cache-stats")
+def get_dictionary_cache_stats(
+    current_user = Depends(require_word_admin)
+):
+    """Get statistics about the current dictionary cache state."""
+    stats = get_cache_stats()
+    return {
+        "cache_stats": stats,
+        "message": "Dictionary cache statistics"
+    }
+
+@router.post("/clear-cache")
+def clear_dictionary_cache(
+    language: str = None,
+    current_user = Depends(require_word_admin)
+):
+    """Manually clear the dictionary cache for a language or all languages."""
+    clear_wordlist_cache(language)
+    
+    if language:
+        return {
+            "message": f"Dictionary cache cleared for language: {language}",
+            "language": language
+        }
+    else:
+        return {
+            "message": "All dictionary caches cleared"
+        }
 
 @router.get("/download-wordlist/{language}")
 def download_wordlist(

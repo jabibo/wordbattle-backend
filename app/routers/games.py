@@ -399,7 +399,7 @@ def join_game(
             
             logger.info(f"Created friendship between users {inviter_id} and {invitee_id}")
     
-    # Check if game should transition to READY state
+    # Check if game should transition to READY state and potentially auto-start
     new_player_count = current_players + 1
     
     # Check if all invitations are responded to and we have enough players
@@ -408,32 +408,101 @@ def join_game(
         GameInvitation.status == InvitationStatus.PENDING
     ).count()
     
-    if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
-        game.status = GameStatus.READY
+    should_auto_start = new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players)
+    
+    if should_auto_start:
+        # Auto-start the game immediately when conditions are met
+        logger.info(f"🚀 AUTO-START: Game {game_id} will be auto-started with {new_player_count} players (via token)")
         
-        # Notify via WebSocket that game is ready
+        game.status = GameStatus.IN_PROGRESS
+        
+        # Get all players for auto-start
+        all_players = db.query(Player).filter(Player.game_id == game_id).all()
+        
+        # Get test mode from game state
+        state_data = json.loads(game.state) if game.state else {}
+        short_game = state_data.get("test_mode", False)
+        
+        # Create letter bag (use short game mode if enabled)
+        from app.game_logic.letter_bag import create_letter_bag, create_rack
+        letter_bag = create_letter_bag(game.language, short_game=short_game)
+        
+        # Deal initial letters to players
+        for p in all_players:
+            p.rack = create_rack(letter_bag)
+        
+        # Set first player (randomly selected for fairness)
+        import random
+        first_player = random.choice(all_players)
+        game.current_player_id = first_player.user_id
+        game.started_at = datetime.now(timezone.utc)
+        
+        logger.info(f"🚀 AUTO-START: Game {game_id} auto-started with {len(all_players)} players. First player: {first_player.user.username} (ID: {first_player.user_id})")
+        
+        # Update the game state JSON to reflect the started game
+        state_data.update({
+            "phase": GamePhase.IN_PROGRESS.value,
+            "letter_bag": letter_bag,
+            "turn_number": 1,  # Start at turn 1, not 0
+            "consecutive_passes": 0
+        })
+        game.state = json.dumps(state_data, cls=GameStateEncoder)
+        
+        # Notify via WebSocket that game has auto-started
+        try:
+            manager.broadcast_to_game(game_id, {
+                "type": "game_auto_started",
+                "game_id": game_id,
+                "status": "in_progress", 
+                "current_player_id": game.current_player_id,
+                "player_count": new_player_count,
+                "message": f"Game auto-started with {new_player_count} players!"
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
+        
+        # Return auto-start response
+        db.commit()
+        db.refresh(player)
+        db.refresh(game)
+        
+        return {
+            "message": "Successfully joined the game via invitation and auto-started!",
+            "game_id": game_id,
+            "player_count": new_player_count,
+            "game_status": game.status.value,
+            "invitation_accepted": True,
+            "auto_started": True,
+            "current_player_id": game.current_player_id
+        }
+    else:
+        # Game not ready to auto-start yet
+        if new_player_count >= 2:
+            game.status = GameStatus.READY
+            
+        # Notify via WebSocket that game status changed
         try:
             manager.broadcast_to_game(game_id, {
                 "type": "game_status_change",
                 "game_id": game_id,
-                "status": "ready",
+                "status": game.status.value,
                 "player_count": new_player_count,
-                "message": f"Game is ready to start! {new_player_count} players joined."
+                "message": f"Game status: {game.status.value}. {new_player_count} players joined."
             })
         except Exception as e:
             logger.warning(f"Failed to send WebSocket notification: {e}")
-    elif new_player_count >= 2 and game.status == GameStatus.SETUP:
-        game.status = GameStatus.READY
     
     db.commit()
     db.refresh(player)
     db.refresh(game)
     
     return {
-        "message": t.success("game_joined"),
+        "message": "Successfully joined the game via invitation",
         "game_id": game_id,
         "player_count": new_player_count,
-        "game_status": game.status.value
+        "game_status": game.status.value,
+        "invitation_accepted": True,
+        "auto_started": False
     }
 
 @router.post("/{game_id}/join-with-token")
