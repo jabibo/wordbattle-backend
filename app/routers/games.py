@@ -712,6 +712,7 @@ def list_user_games(
             "current_player_id": game.current_player_id,  # Add missing current_player_id field
             "turn_number": turn_number,
             "is_user_turn": is_user_turn,
+            "debug_deployment_test": "FIXED_VERSION_2024",  # Debug field to verify deployment
             "time_since_last_activity": time_since_str,
             "next_player": next_player_info,
             "last_move": last_move_info,
