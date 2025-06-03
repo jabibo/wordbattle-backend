@@ -900,7 +900,7 @@ def get_my_invitations(
             },
             "status": inv.status.value,
             "created_at": inv.created_at.isoformat(),
-            "join_token": inv.join_token
+            "join_token": inv.join_token  # Include for debugging/resending
         })
     
     return {
@@ -2213,6 +2213,8 @@ async def validate_move(
     This endpoint validates whether a move is legal according to game rules,
     but doesn't execute the move or update any game state.
     
+    Users can test moves even when it's not their turn to plan ahead.
+    
     Returns a simple validation response with success/failure and basic scoring info.
     For comprehensive testing with bypass options, use /test-move instead.
     """
@@ -2223,8 +2225,8 @@ async def validate_move(
     if game.status != GameStatus.IN_PROGRESS:
         raise HTTPException(400, f"Game is not in progress. Status: {game.status.value}")
         
-    if game.current_player_id != current_user.id:
-        raise HTTPException(403, "Not your turn")
+    # NO TURN VALIDATION - Users should be able to test moves when it's not their turn to plan ahead
+    # This is the key difference from /test-move which can optionally check turns
 
     # Load game state from DB JSON (game.state)
     persisted_state_data = json.loads(game.state)
@@ -2286,12 +2288,13 @@ async def validate_move(
     validation_game_state.players = {uid: rack[:] for uid, rack in game_state.players.items()}  # Copy racks
     validation_game_state.scores = game_state.scores.copy()  # Copy scores
     
-    # Execute the move logic for validation only
+    # Execute the move logic for validation only - skip turn validation since this is for planning
     success, message, points_gained = validation_game_state.make_move(
         current_user.id,
         MoveType.PLACE,
         parsed_move_positions,
-        dictionary
+        dictionary,
+        skip_turn_validation=True  # Always skip turn validation for move validation
     )
     
     if success:
