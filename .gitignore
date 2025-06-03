@@ -44,3 +44,4 @@ scripts/*
 .env
 .env.*
 !.env.example
+wordbattle-backend-production.tar
