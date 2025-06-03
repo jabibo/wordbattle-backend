@@ -1177,14 +1177,105 @@ async def make_move(
     db.commit()
     
     # Prepare HTTP response
-    response_data = {
-        "message": message,
-        "points_gained": points_gained,
-        "your_new_rack": list(game_state.players[current_user.id]),
-        "next_player_id": game.current_player_id,
-        "game_over": is_game_over,
-        "score_breakdown": score_breakdown if score_breakdown else {"error": "Score breakdown calculation failed"}
-    }
+    # Get detailed score breakdown
+    try:
+        score_breakdown = game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+        
+        # Transform the detailed breakdown to match the requested format
+        tiles_placed = []
+        word_scores = []
+        
+        # Extract tiles placed information from the move
+        for pos, tile in parsed_move_positions:
+            # Find the tile in the score breakdown
+            base_points = 0
+            multiplier = None
+            final_points = 0
+            
+            # Look through all words to find this tile's contribution
+            for word_info in score_breakdown.get("words_formed", []):
+                for letter_info in word_info.get("letters", []):
+                    if (letter_info["position"]["row"] == pos.row and 
+                        letter_info["position"]["col"] == pos.col and
+                        letter_info["is_newly_placed"]):
+                        base_points = letter_info["base_value"]
+                        final_points = letter_info["final_value"]
+                        if letter_info["multiplier"]:
+                            if letter_info["multiplier"] == "double_letter":
+                                multiplier = "double_letter"
+                            elif letter_info["multiplier"] == "triple_letter":
+                                multiplier = "triple_letter"
+                        # Check for word multipliers on this position
+                        for word_multiplier in word_info.get("word_multipliers", []):
+                            if multiplier is None:  # Only set if no letter multiplier
+                                if word_multiplier["type"] == "double_word":
+                                    multiplier = "double_word"
+                                elif word_multiplier["type"] == "triple_word":
+                                    multiplier = "triple_word"
+                        break
+            
+            tiles_placed.append({
+                "letter": tile.letter.upper(),
+                "position": {"row": pos.row, "col": pos.col},
+                "basePoints": base_points,
+                "multiplier": multiplier,
+                "finalPoints": final_points
+            })
+        
+        # Extract word scores information
+        for word_info in score_breakdown.get("words_formed", []):
+            multipliers = []
+            for word_multiplier in word_info.get("word_multipliers", []):
+                if word_multiplier["type"] == "double_word":
+                    multipliers.append("double_word")
+                elif word_multiplier["type"] == "triple_word":
+                    multipliers.append("triple_word")
+            
+            word_scores.append({
+                "word": word_info["word"],
+                "baseScore": word_info["base_score"],
+                "multipliers": multipliers,
+                "finalScore": word_info["final_score"]
+            })
+        
+        # Create the enhanced response format
+        response_data = {
+            "success": True,
+            "score": points_gained,
+            "wordsFormed": [word_info["word"] for word_info in score_breakdown.get("words_formed", [])],
+            "message": message,
+            "scoreBreakdown": {
+                "tilesPlaced": tiles_placed,
+                "wordScores": word_scores,
+                "totalScore": points_gained
+            },
+            # Legacy fields for backward compatibility
+            "points_gained": points_gained,
+            "your_new_rack": list(game_state.players[current_user.id]),
+            "next_player_id": game.current_player_id,
+            "game_over": is_game_over
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating detailed score breakdown: {e}")
+        # Fallback to basic response if detailed breakdown fails
+        response_data = {
+            "success": True,
+            "score": points_gained,
+            "wordsFormed": [],
+            "message": message,
+            "scoreBreakdown": {
+                "tilesPlaced": [],
+                "wordScores": [],
+                "totalScore": points_gained
+            },
+            # Legacy fields for backward compatibility
+            "points_gained": points_gained,
+            "your_new_rack": list(game_state.players[current_user.id]),
+            "next_player_id": game.current_player_id,
+            "game_over": is_game_over
+        }
+    
     if is_game_over:
         response_data["completion_details"] = completion_details
     
@@ -1354,12 +1445,92 @@ async def test_move(
         score_breakdown = None
     
     # Prepare response with test results
+    # Get detailed score breakdown for this test move
+    try:
+        score_breakdown = game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+        
+        # Transform the detailed breakdown to match the requested format
+        tiles_placed = []
+        word_scores = []
+        
+        # Extract tiles placed information from the move
+        for pos, tile in parsed_move_positions:
+            # Find the tile in the score breakdown
+            base_points = 0
+            multiplier = None
+            final_points = 0
+            
+            # Look through all words to find this tile's contribution
+            for word_info in score_breakdown.get("words_formed", []):
+                for letter_info in word_info.get("letters", []):
+                    if (letter_info["position"]["row"] == pos.row and 
+                        letter_info["position"]["col"] == pos.col and
+                        letter_info["is_newly_placed"]):
+                        base_points = letter_info["base_value"]
+                        final_points = letter_info["final_value"]
+                        if letter_info["multiplier"]:
+                            if letter_info["multiplier"] == "double_letter":
+                                multiplier = "double_letter"
+                            elif letter_info["multiplier"] == "triple_letter":
+                                multiplier = "triple_letter"
+                        # Check for word multipliers on this position
+                        for word_multiplier in word_info.get("word_multipliers", []):
+                            if multiplier is None:  # Only set if no letter multiplier
+                                if word_multiplier["type"] == "double_word":
+                                    multiplier = "double_word"
+                                elif word_multiplier["type"] == "triple_word":
+                                    multiplier = "triple_word"
+                        break
+            
+            tiles_placed.append({
+                "letter": tile.letter.upper(),
+                "position": {"row": pos.row, "col": pos.col},
+                "basePoints": base_points,
+                "multiplier": multiplier,
+                "finalPoints": final_points
+            })
+        
+        # Extract word scores information
+        for word_info in score_breakdown.get("words_formed", []):
+            multipliers = []
+            for word_multiplier in word_info.get("word_multipliers", []):
+                if word_multiplier["type"] == "double_word":
+                    multipliers.append("double_word")
+                elif word_multiplier["type"] == "triple_word":
+                    multipliers.append("triple_word")
+            
+            word_scores.append({
+                "word": word_info["word"],
+                "baseScore": word_info["base_score"],
+                "multipliers": multipliers,
+                "finalScore": word_info["final_score"]
+            })
+        
+        enhanced_score_breakdown = {
+            "tilesPlaced": tiles_placed,
+            "wordScores": word_scores,
+            "totalScore": points_gained
+        }
+        
+    except Exception as e:
+        logger.error(f"Error creating detailed score breakdown for test move: {e}")
+        enhanced_score_breakdown = {
+            "tilesPlaced": [],
+            "wordScores": [],
+            "totalScore": points_gained
+        }
+    
     response_data = {
-        "test_mode": True,
+        # Enhanced format matching regular move endpoint
+        "success": True,
+        "score": points_gained,
+        "wordsFormed": [word_info["word"] for word_info in score_breakdown.get("words_formed", [])] if 'score_breakdown' in locals() else [],
         "message": f"TEST MOVE SUCCESS: {message}",
-        "points_gained": points_gained,
+        "scoreBreakdown": enhanced_score_breakdown,
+        
+        # Test-specific fields
+        "test_mode": True,
         "move_valid": success,
-        "score_breakdown": score_breakdown,
         "original_rack": list(original_rack),
         "rack_used_for_test": list(game_state.players[current_user.id]),
         "rack_after_move": list(game_state.players[current_user.id]),
@@ -1369,6 +1540,9 @@ async def test_move(
         "rack_source": rack_source,
         "database_updated": False,  # Test moves don't update DB by default
         "warning": "This is a test move and does not affect the actual game state",
+        
+        # Legacy test fields for backward compatibility  
+        "points_gained": points_gained,
         "game_state": {
             "turn_number": game_state.turn_number,
             "letter_bag_count": len(game_state.letter_bag),
