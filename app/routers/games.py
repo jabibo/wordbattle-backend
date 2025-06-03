@@ -2199,3 +2199,122 @@ def invite_random_player(
         "email_sent": email_sent,
         "game_id": game_id
     }
+
+@router.post("/{game_id}/validate-move")
+async def validate_move(
+    game_id: str,
+    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    🧪 VALIDATE ENDPOINT: Validate a move without executing it.
+    
+    This endpoint validates whether a move is legal according to game rules,
+    but doesn't execute the move or update any game state.
+    
+    Returns a simple validation response with success/failure and basic scoring info.
+    For comprehensive testing with bypass options, use /test-move instead.
+    """
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.status != GameStatus.IN_PROGRESS:
+        raise HTTPException(400, f"Game is not in progress. Status: {game.status.value}")
+        
+    if game.current_player_id != current_user.id:
+        raise HTTPException(403, "Not your turn")
+
+    # Load game state from DB JSON (game.state)
+    persisted_state_data = json.loads(game.state)
+    game_state = GameState(language=game.language)
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
+    game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
+    game_state.current_player_id = game.current_player_id
+    
+    # Reconstruct LetterBag object from persisted data
+    letter_bag_data = persisted_state_data.get("letter_bag", [])
+    if isinstance(letter_bag_data, dict) and "letters" in letter_bag_data:
+        game_state.letter_bag = letter_bag_data["letters"]
+    else:
+        game_state.letter_bag = letter_bag_data
+    
+    game_state.turn_number = persisted_state_data.get("turn_number", 0)
+    game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        game_state.center_used = detect_center_used_from_board(game_state.board)
+
+    # Load player racks and scores from Player table into GameState
+    db_players = db.query(Player).filter(Player.game_id == game_id).all()
+    for p_rec in db_players:
+        game_state.players[p_rec.user_id] = p_rec.rack 
+        game_state.scores[p_rec.user_id] = p_rec.score
+    
+    # Convert move_data to GameState format
+    parsed_move_positions = []
+    for m_item in move_data:
+        try:
+            pos = Position(m_item["row"], m_item["col"])
+            tile = PlacedTile(
+                letter=m_item["letter"], 
+                is_blank=m_item.get("is_blank", False),
+                tile_id=m_item.get("tile_id")
+            )
+            parsed_move_positions.append((pos, tile))
+        except KeyError:
+            raise HTTPException(400, "Invalid move data format. Each item must have 'row', 'col', 'letter'.")
+
+    # Load dictionary for word validation
+    try:
+        dictionary = load_wordlist(game.language)
+    except FileNotFoundError:
+        raise HTTPException(500, f"Wordlist for language '{game.language}' not found.")
+    
+    # Create a copy of game state for validation (don't modify original)
+    validation_game_state = GameState(language=game.language)
+    validation_game_state.board = [row[:] for row in game_state.board]  # Deep copy board
+    validation_game_state.phase = game_state.phase
+    validation_game_state.current_player_id = game_state.current_player_id
+    validation_game_state.letter_bag = game_state.letter_bag[:]  # Copy letter bag
+    validation_game_state.turn_number = game_state.turn_number
+    validation_game_state.consecutive_passes = game_state.consecutive_passes
+    validation_game_state.center_used = game_state.center_used
+    validation_game_state.players = {uid: rack[:] for uid, rack in game_state.players.items()}  # Copy racks
+    validation_game_state.scores = game_state.scores.copy()  # Copy scores
+    
+    # Execute the move logic for validation only
+    success, message, points_gained = validation_game_state.make_move(
+        current_user.id,
+        MoveType.PLACE,
+        parsed_move_positions,
+        dictionary
+    )
+    
+    if success:
+        # Get words formed from the validation
+        try:
+            score_breakdown = validation_game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+            words_formed = [word_info["word"] for word_info in score_breakdown.get("words_formed", [])]
+        except Exception as e:
+            logger.error(f"Error getting words formed in validation: {e}")
+            words_formed = []
+        
+        return {
+            "valid": True,
+            "message": message,
+            "points": points_gained,
+            "words_formed": words_formed,
+            "validation_type": "move_validation"
+        }
+    else:
+        return {
+            "valid": False,
+            "error": message,
+            "points": 0,
+            "words_formed": [],
+            "validation_type": "move_validation"
+        }
