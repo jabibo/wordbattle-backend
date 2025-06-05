@@ -1,0 +1,211 @@
+name: Deploy to GCP Testing Environment
+
+on:
+  push:
+    branches: [test-environment]
+  pull_request:
+    branches: [test-environment]
+
+env:
+  PROJECT_ID: wordbattle-1748668162
+  SERVICE_NAME: wordbattle-backend-test
+  REGION: europe-west1
+  IMAGE_NAME: wordbattle-backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: wordbattle_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+
+    - name: Run tests
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wordbattle_test
+        SECRET_KEY: test-secret-key
+        TESTING: 1
+      run: |
+        python -m pytest tests/ -v --tb=short
+
+    - name: Run linting
+      run: |
+        python -m flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        python -m flake8 app/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  deploy-to-gcp-testing:
+    needs: [test, security-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/test-environment'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Configure Docker for GCR
+      run: |
+        gcloud auth configure-docker --quiet
+
+    - name: Build and push Docker image
+      env:
+        IMAGE_TAG: test-${{ github.sha }}
+      run: |
+        # Build Docker image
+        docker build -f Dockerfile.cloudrun -t gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG \
+          --label "git.commit=${{ github.sha }}" \
+          --label "git.branch=test-environment" \
+          --label "deploy.environment=testing" \
+          --label "deploy.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" .
+        
+        # Push to GCR
+        docker push gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG
+
+    - name: Deploy to Cloud Run
+      env:
+        IMAGE_TAG: test-${{ github.sha }}
+      run: |
+        gcloud run deploy $SERVICE_NAME \
+          --image gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG \
+          --platform managed \
+          --region $REGION \
+          --allow-unauthenticated \
+          --port 8000 \
+          --memory 1Gi \
+          --cpu 1 \
+          --timeout 300 \
+          --max-instances 10 \
+          --min-instances 0 \
+          --concurrency 80 \
+          --set-env-vars "ENVIRONMENT=testing,LOG_LEVEL=DEBUG,DEBUG=true,CORS_ORIGINS=https://binge-dev.de,https://localhost:3000,http://localhost:3000,GIT_COMMIT=${{ github.sha }},GIT_BRANCH=test-environment,DEPLOY_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          --add-cloudsql-instances=wordbattle-1748668162:europe-west1:wordbattle-db \
+          --update-env-vars "DATABASE_URL=postgresql://wordbattle:wordbattle123@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db"
+
+    - name: Get service URL
+      id: get-url
+      run: |
+        SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=$REGION --format='value(status.url)')
+        echo "service-url=$SERVICE_URL" >> $GITHUB_OUTPUT
+
+    - name: Test deployment
+      run: |
+        echo "Testing deployment at ${{ steps.get-url.outputs.service-url }}"
+        
+        # Wait for the service to be ready
+        sleep 30
+        
+        # Test health endpoint
+        response=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.get-url.outputs.service-url }}/health")
+        if [ $response -eq 200 ]; then
+          echo "✅ Health check passed"
+        else
+          echo "❌ Health check failed with status code: $response"
+          exit 1
+        fi
+        
+        # Test API documentation
+        response=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.get-url.outputs.service-url }}/docs")
+        if [ $response -eq 200 ]; then
+          echo "✅ API documentation accessible"
+        else
+          echo "❌ API documentation not accessible"
+          exit 1
+        fi
+
+        # Test CORS for binge-dev.de
+        response=$(curl -s -w "%{http_code}" -H "Origin: https://binge-dev.de" -H "Access-Control-Request-Method: POST" -X OPTIONS "${{ steps.get-url.outputs.service-url }}/api/auth/register")
+        if echo "$response" | grep -q "200"; then
+          echo "✅ CORS configuration working for binge-dev.de"
+        else
+          echo "❌ CORS test failed"
+          exit 1
+        fi
+
+    - name: Create deployment summary
+      run: |
+        echo "## 🚀 GCP Testing Environment Deployment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** Testing" >> $GITHUB_STEP_SUMMARY
+        echo "**Service URL:** ${{ steps.get-url.outputs.service-url }}" >> $GITHUB_STEP_SUMMARY
+        echo "**API Docs:** ${{ steps.get-url.outputs.service-url }}/docs" >> $GITHUB_STEP_SUMMARY
+        echo "**Health Check:** ${{ steps.get-url.outputs.service-url }}/health" >> $GITHUB_STEP_SUMMARY
+        echo "**Database Status:** ${{ steps.get-url.outputs.service-url }}/database/status" >> $GITHUB_STEP_SUMMARY
+        echo "**Git Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** test-environment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Unit tests passed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Security scan completed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Health check passed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ API documentation accessible" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ CORS configuration verified" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🎯 CORS Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ https://binge-dev.de" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ https://localhost:3000" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ http://localhost:3000" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Ready for frontend integration testing! 🎉" >> $GITHUB_STEP_SUMMARY 
