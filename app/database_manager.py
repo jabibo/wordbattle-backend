@@ -339,13 +339,13 @@ def initialize_database_if_needed():
     
     if status["is_initialized"]:
         logger.info("Database is already initialized - skipping initialization")
-                                return {
-                "success": True,
-                "action": "skipped",
-                "reason": "already_initialized",
-                "status": status,
-                "columns": column_result
-            }
+        return {
+            "success": True,
+            "action": "skipped",
+            "reason": "already_initialized",
+            "status": status,
+            "columns": column_result
+        }
     
     logger.info("Database needs initialization...")
     
@@ -365,8 +365,7 @@ def initialize_database_if_needed():
                 return {
                     "success": False,
                     "action": "failed",
-                    "error": load_result.get("error", "Unknown error"),
-                    "migration": migration_result
+                    "error": load_result.get("error", "Unknown error")
                 }
         
         logger.info("Database initialization completed successfully")
