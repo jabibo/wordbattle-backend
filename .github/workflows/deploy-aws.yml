@@ -1,10 +1,15 @@
-name: Deploy to AWS
+name: Deploy to AWS (DISABLED - Migrated to GCP)
 
+# DISABLED: This workflow has been disabled as the project migrated to Google Cloud Platform
+# The GCP deployment is now handled manually via deploy-gcp-production.ps1
+# Only manual trigger is available for emergency AWS access if needed
 on:
-  push:
-    branches: [main, production]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "EMERGENCY" to confirm AWS deployment (GCP is now the primary platform)'
+        required: true
+        default: ''
 
 env:
   AWS_REGION: eu-central-1
