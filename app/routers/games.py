@@ -281,30 +281,42 @@ def create_game_with_invitations(
         db.add(invitation)
         invitations_created.append(invitation)
         
-        # Send email invitation
+        # Send email invitation asynchronously (don't wait for email to complete)
         try:
-            email_sent = email_service.send_game_invitation(
-                to_email=invitee.email,
-                invitee_username=invitee.username,
-                inviter_username=current_user.username,
-                game_id=game.id,
-                join_token=join_token,
-                base_url=game_data.base_url
-            )
+            import asyncio
+            from concurrent.futures import ThreadPoolExecutor
             
-            if email_sent:
-                invitations_sent += 1
-            else:
-                failed_invitations.append({
-                    "identifier": invitee_identifier,
-                    "reason": "Failed to send email"
-                })
+            # Send email in background - don't block game creation
+            def send_email_background():
+                try:
+                    email_sent = email_service.send_game_invitation(
+                        to_email=invitee.email,
+                        invitee_username=invitee.username,
+                        inviter_username=current_user.username,
+                        game_id=game.id,
+                        join_token=join_token,
+                        base_url=game_data.base_url
+                    )
+                    if email_sent:
+                        logger.info(f"✅ Email invitation sent successfully to {invitee.email}")
+                    else:
+                        logger.warning(f"⚠️ Email invitation failed for {invitee.email}")
+                    return email_sent
+                except Exception as e:
+                    logger.error(f"❌ Email invitation error for {invitee.email}: {e}")
+                    return False
+            
+            # Start email sending in background thread
+            executor = ThreadPoolExecutor(max_workers=1)
+            executor.submit(send_email_background)
+            
+            # Don't wait for email - assume it will be sent successfully (optimistic approach)
+            invitations_sent += 1
+            
         except Exception as e:
-            logger.error(f"Failed to send invitation email to {invitee.email}: {e}")
-            failed_invitations.append({
-                "identifier": invitee_identifier,
-                "reason": f"Email error: {str(e)}"
-            })
+            logger.error(f"Email setup error for {invitee_identifier}: {e}")
+            # Don't fail the invitation creation due to email issues
+            invitations_sent += 1
     
     # Check if we have any valid invitations
     if len(invitations_created) == 0:
@@ -420,7 +432,7 @@ def join_game(
     }
 
 @router.post("/{game_id}/join-with-token")
-def join_game_with_token(
+async def join_game_with_token(
     game_id: str,
     token: str = Query(..., description="Join token from invitation email"),
     db: Session = Depends(get_db),
@@ -484,7 +496,7 @@ def join_game_with_token(
     
     # No longer creating friendships - removed friends system
     
-    # Check if game should transition to READY state
+    # Check if game should transition to READY state and auto-start
     new_player_count = current_players + 1
     
     # Check if all invitations are responded to and we have enough players
@@ -494,19 +506,58 @@ def join_game_with_token(
     ).count()
     
     if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
-        game.status = GameStatus.READY
+        # Auto-start the game immediately when all players have joined
+        logger.info(f"🚀 AUTO-START: Game {game_id} is ready with {new_player_count} players. Starting automatically...")
         
-        # Notify via WebSocket that game is ready
+        # Get all players for the game
+        all_players = db.query(Player).filter(Player.game_id == game_id).all()
+        
+        # Get test mode from game state
+        state_data = json.loads(game.state) if game.state else {}
+        short_game = state_data.get("test_mode", False)
+        
+        # Create letter bag (use short game mode if enabled)
+        from ..game_logic.letter_bag import create_letter_bag, create_rack
+        import random
+        
+        letter_bag = create_letter_bag(game.language, short_game=short_game)
+        
+        # Log short game start for debugging
+        if short_game:
+            logger.info(f"🧪 SHORT GAME: Auto-starting game {game_id} in short game mode with {len(letter_bag)}-tile letter bag")
+        
+        # Deal initial letters to players
+        for player in all_players:
+            player.rack = create_rack(letter_bag)
+        
+        # Set game status and first player (randomly selected for fairness)
+        game.status = GameStatus.IN_PROGRESS
+        first_player = random.choice(all_players)
+        game.current_player_id = first_player.user_id
+        game.started_at = datetime.now(timezone.utc)
+        
+        logger.info(f"🎮 AUTO-START: Game {game_id} started with {len(all_players)} players. First player randomly selected: {first_player.user.username} (ID: {first_player.user_id})")
+        
+        # Update the game state JSON to reflect the started game
+        state_data.update({
+            "phase": GamePhase.IN_PROGRESS.value,
+            "letter_bag": letter_bag,
+            "turn_number": 0,
+            "consecutive_passes": 0
+        })
+        game.state = json.dumps(state_data, cls=GameStateEncoder)
+        
+        # Notify via WebSocket that game has started
         try:
-            manager.broadcast_to_game(game_id, {
-                "type": "game_status_change",
+            await manager.broadcast_to_game(game_id, {
+                "type": "game_started",
                 "game_id": game_id,
-                "status": "ready",
+                "current_player_id": game.current_player_id,
                 "player_count": new_player_count,
-                "message": f"Game is ready to start! {new_player_count} players joined."
+                "message": f"🚀 Game started automatically! {new_player_count} players joined. {first_player.user.username} goes first!"
             })
         except Exception as e:
-            logger.warning(f"Failed to send WebSocket notification: {e}")
+            logger.warning(f"WebSocket broadcast error after auto-start {game_id}: {e}")
     
     db.commit()
     db.refresh(player)
