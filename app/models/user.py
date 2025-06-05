@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime, timezone
@@ -14,6 +14,10 @@ class User(Base):
     
     # User preferences
     language = Column(String, default="en")  # User's preferred language
+    
+    # Invitation preferences
+    allow_invites = Column(Boolean, default=True)  # "No invites" switch
+    preferred_languages = Column(JSON, default=lambda: ["en", "de"])  # Languages user wants to receive invites for
     
     # Email verification fields
     verification_code = Column(String, nullable=True)
@@ -35,10 +39,6 @@ class User(Base):
     invitations_sent = relationship("GameInvitation", foreign_keys="[GameInvitation.inviter_id]", back_populates="inviter")
     invitations_received = relationship("GameInvitation", foreign_keys="[GameInvitation.invitee_id]", back_populates="invitee")
     sent_messages = relationship("ChatMessage", back_populates="sender")
-    
-    # Friendship relationships
-    friends = relationship("Friend", foreign_keys="[Friend.user_id]", back_populates="user")
-    friend_of = relationship("Friend", foreign_keys="[Friend.friend_id]", back_populates="friend")
     
     # Words added by this user as word admin
     words_added = relationship("WordList", back_populates="added_by_user")

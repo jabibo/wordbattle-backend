@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from app.db import get_db
 from app.dependencies import get_translation_helper
-from app.models import Game, Player, Move, User, ChatMessage, GameInvitation, Friend
+from app.models import Game, Player, Move, User, ChatMessage, GameInvitation
 from app.models.game import GameStatus
 from app.models.game_invitation import InvitationStatus
 from app.auth import get_current_user, get_token_from_header, get_user_from_token
@@ -380,24 +380,7 @@ def join_game(
         pending_invitation.status = InvitationStatus.ACCEPTED
         pending_invitation.responded_at = datetime.now(timezone.utc)
         
-        # Add friend relationship between inviter and invitee (if not already friends)
-        inviter_id = pending_invitation.inviter_id
-        invitee_id = current_user.id
-        
-        # Check if they're already friends (either direction)
-        existing_friendship = db.query(Friend).filter(
-            ((Friend.user_id == inviter_id) & (Friend.friend_id == invitee_id)) |
-            ((Friend.user_id == invitee_id) & (Friend.friend_id == inviter_id))
-        ).first()
-        
-        if not existing_friendship and inviter_id != invitee_id:
-            # Create bidirectional friendship
-            friendship1 = Friend(user_id=inviter_id, friend_id=invitee_id)
-            friendship2 = Friend(user_id=invitee_id, friend_id=inviter_id)
-            db.add(friendship1)
-            db.add(friendship2)
-            
-            logger.info(f"Created friendship between users {inviter_id} and {invitee_id}")
+        # No longer creating friendships - removed friends system
     
     # Check if game should transition to READY state
     new_player_count = current_players + 1
@@ -499,24 +482,7 @@ def join_game_with_token(
     invitation.status = InvitationStatus.ACCEPTED
     invitation.responded_at = datetime.now(timezone.utc)
     
-    # Add friend relationship between inviter and invitee (if not already friends)
-    inviter_id = invitation.inviter_id
-    invitee_id = current_user.id
-    
-    # Check if they're already friends (either direction)
-    existing_friendship = db.query(Friend).filter(
-        ((Friend.user_id == inviter_id) & (Friend.friend_id == invitee_id)) |
-        ((Friend.user_id == invitee_id) & (Friend.friend_id == inviter_id))
-    ).first()
-    
-    if not existing_friendship and inviter_id != invitee_id:
-        # Create bidirectional friendship
-        friendship1 = Friend(user_id=inviter_id, friend_id=invitee_id)
-        friendship2 = Friend(user_id=invitee_id, friend_id=inviter_id)
-        db.add(friendship1)
-        db.add(friendship2)
-        
-        logger.info(f"Created friendship between users {inviter_id} and {invitee_id}")
+    # No longer creating friendships - removed friends system
     
     # Check if game should transition to READY state
     new_player_count = current_players + 1
@@ -785,44 +751,7 @@ def get_my_invitations(
         "pending_count": len([inv for inv in invitation_list if inv["status"] == "pending"])
     }
 
-@router.get("/friends")
-def get_user_friends(
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
-):
-    """Get list of user's friends for game invitations."""
-    
-    # Get all friends of the current user
-    friends = db.query(Friend).filter(Friend.user_id == current_user.id).all()
-    
-    friends_info = []
-    for friendship in friends:
-        friend_user = db.query(User).filter(User.id == friendship.friend_id).first()
-        if friend_user:
-            # Get stats about games played together
-            games_together = db.query(Game).join(Player).filter(
-                Player.user_id == current_user.id,
-                Game.id.in_(
-                    db.query(Player.game_id).filter(Player.user_id == friend_user.id)
-                )
-            ).count()
-            
-            friends_info.append({
-                "id": friend_user.id,
-                "username": friend_user.username,
-                "email": friend_user.email,
-                "friendship_created": friendship.created_at.isoformat(),
-                "games_played_together": games_together,
-                "last_seen": friend_user.last_login.isoformat() if friend_user.last_login else None
-            })
-    
-    # Sort by most recent friendship
-    friends_info.sort(key=lambda x: x["friendship_created"], reverse=True)
-    
-    return {
-        "friends": friends_info,
-        "total_friends": len(friends_info)
-    }
+# Friends system removed - see /profile/me/previous-players instead
 
 @router.get("/{game_id}")
 def get_game(
@@ -1834,11 +1763,12 @@ def invite_random_player(
     # Exclude current user, current players, and already invited users
     excluded_ids = set(current_player_ids + invited_user_ids + [current_user.id])
     
-    # Get random users who are not excluded
-    # Prefer users who have been active recently (have played games)
+    # Get random users who are not excluded and accept invites for this language
+    # Filter by invitation preferences
     potential_users = db.query(User).filter(
         ~User.id.in_(excluded_ids),
-        User.is_email_verified == True  # Only verified users
+        User.allow_invites == True,  # User accepts invites
+        User.preferred_languages.contains([game.language])  # User wants invites for this language
     ).all()
     
     if not potential_users:
@@ -1900,4 +1830,134 @@ def invite_random_player(
         "join_token": join_token,
         "email_sent": email_sent,
         "game_id": game_id
+    }
+
+@router.post("/{game_id}/invite-user")
+def invite_user_by_username(
+    game_id: str,
+    username: str = Body(..., description="Username to invite"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Invite a user by username to join the game."""
+    
+    # Check if game exists and user is the creator
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can send invitations")
+    
+    if game.status not in [GameStatus.SETUP, GameStatus.READY]:
+        raise HTTPException(400, f"Cannot send invitations for game in {game.status.value} status")
+    
+    # Find user by username
+    invitee = db.query(User).filter(User.username == username).first()
+    if not invitee:
+        raise HTTPException(404, f"User '{username}' not found")
+    
+    # Check if user accepts invites
+    if not invitee.allow_invites:
+        raise HTTPException(400, f"User '{username}' doesn't accept game invitations")
+    
+    # Check if user wants invites for this language
+    if game.language not in (invitee.preferred_languages or ["en", "de"]):
+        raise HTTPException(400, f"User '{username}' doesn't accept invites for '{game.language}' language")
+    
+    # Check if user is already in the game
+    existing_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == invitee.id
+    ).first()
+    if existing_player:
+        raise HTTPException(400, f"User '{username}' is already in this game")
+    
+    # Check if user already has a pending invitation
+    existing_invitation = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.invitee_id == invitee.id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).first()
+    if existing_invitation:
+        raise HTTPException(400, f"User '{username}' already has a pending invitation for this game")
+    
+    # Check game capacity
+    current_players = db.query(Player).filter(Player.game_id == game_id).count()
+    pending_invitations = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).count()
+    
+    if current_players + pending_invitations >= game.max_players:
+        raise HTTPException(400, "Game is full")
+    
+    # Generate join token
+    join_token = secrets.token_urlsafe(32)
+    
+    # Create invitation
+    invitation = GameInvitation(
+        game_id=game_id,
+        inviter_id=current_user.id,
+        invitee_id=invitee.id,
+        join_token=join_token,
+        status=InvitationStatus.PENDING
+    )
+    
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    
+    logger.info(f"Username-based invitation sent to {username} (ID: {invitee.id}) for game {game_id}")
+    
+    return {
+        "message": f"Invitation sent to {username}",
+        "invitee": {
+            "id": invitee.id,
+            "username": invitee.username
+        },
+        "invitation_id": invitation.id,
+        "join_token": join_token,
+        "game_id": game_id
+    }
+
+@router.get("/search-users")
+def search_users_for_invitation(
+    username_query: str = Query(..., description="Username to search for"),
+    language: str = Query(None, description="Filter by users who accept invites for this language"),
+    limit: int = Query(10, description="Maximum number of results"),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Search for users by username who can be invited to games."""
+    
+    # Build base query for users who accept invites
+    query = db.query(User).filter(
+        User.allow_invites == True,
+        User.username.ilike(f"%{username_query}%"),  # Case-insensitive search
+        User.id != current_user.id  # Exclude current user
+    )
+    
+    # Filter by language preference if specified
+    if language:
+        query = query.filter(User.preferred_languages.contains([language]))
+    
+    # Limit results
+    users = query.limit(limit).all()
+    
+    # Format results
+    results = []
+    for user in users:
+        results.append({
+            "id": user.id,
+            "username": user.username,
+            "preferred_languages": user.preferred_languages or ["en", "de"],
+            "last_login": user.last_login.isoformat() if user.last_login else None
+        })
+    
+    return {
+        "users": results,
+        "total_found": len(results),
+        "query": username_query,
+        "language_filter": language
     }
