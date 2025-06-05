@@ -1,0 +1,8 @@
+ENVIRONMENT: 'testing'
+LOG_LEVEL: 'DEBUG'
+DEBUG: 'true'
+CORS_ORIGINS: 'https://binge-dev.de,https://localhost:3000,http://localhost:3000'
+DATABASE_URL: 'postgresql://wordbattle:wordbattle123@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db'
+GIT_COMMIT: 'c6b72cc'
+GIT_BRANCH: 'test-environment'
+DEPLOY_TIMESTAMP: '2025-01-15T12:45:00Z' 
