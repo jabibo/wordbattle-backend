@@ -276,6 +276,44 @@ def load_wordlist(language="de", wordlist_path=None, skip=0, limit=None):
         logger.error(f"Wordlist loading failed: {e}")
         return {"success": False, "error": str(e)}
 
+def ensure_user_columns():
+    """
+    Ensure the users table has the required columns for invite preferences.
+    This is a fallback if migrations don't work properly.
+    """
+    try:
+        logger.info("Checking if user preference columns exist...")
+        from sqlalchemy import text, inspect
+        
+        inspector = inspect(engine)
+        user_columns = [col['name'] for col in inspector.get_columns('users')]
+        
+        db = SessionLocal()
+        try:
+            if "allow_invites" not in user_columns:
+                logger.info("Adding allow_invites column...")
+                db.execute(text("ALTER TABLE users ADD COLUMN allow_invites BOOLEAN DEFAULT TRUE"))
+                db.commit()
+                
+            if "preferred_languages" not in user_columns:
+                logger.info("Adding preferred_languages column...")
+                db.execute(text("ALTER TABLE users ADD COLUMN preferred_languages JSON DEFAULT '[\"en\", \"de\"]'"))
+                db.commit()
+                
+            logger.info("✅ User preference columns ensured")
+            return {"success": True, "message": "User columns ensured"}
+            
+        except Exception as e:
+            logger.warning(f"Could not add user columns: {e}")
+            db.rollback()
+            return {"success": False, "error": str(e)}
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error checking user columns: {e}")
+        return {"success": False, "error": str(e)}
+
 def initialize_database_if_needed():
     """
     Initialize database only if it's not already set up.
@@ -292,17 +330,21 @@ def initialize_database_if_needed():
     if not migration_result["success"] and migration_result["action"] != "skipped":
         logger.warning(f"Migration issues (continuing anyway): {migration_result.get('error', 'Unknown')}")
     
+    # Ensure user preference columns exist (fallback)
+    column_result = ensure_user_columns()
+    
     status = check_database_status()
     
     if status["is_initialized"]:
         logger.info("Database is already initialized - skipping initialization")
-        return {
-            "success": True,
-            "action": "skipped",
-            "reason": "already_initialized",
-            "status": status,
-            "migration": migration_result
-        }
+                                return {
+                "success": True,
+                "action": "skipped",
+                "reason": "already_initialized",
+                "status": status,
+                "migration": migration_result,
+                "columns": column_result
+            }
     
     logger.info("Database needs initialization...")
     
@@ -331,7 +373,8 @@ def initialize_database_if_needed():
             "success": True,
             "action": "completed",
             "message": "Database initialized successfully",
-            "migration": migration_result
+            "migration": migration_result,
+            "columns": column_result
         }
         
     except Exception as e:
@@ -340,7 +383,8 @@ def initialize_database_if_needed():
             "success": False,
             "action": "failed",
             "error": str(e),
-            "migration": migration_result
+            "migration": migration_result,
+            "columns": column_result
         }
 
 def get_database_info():
