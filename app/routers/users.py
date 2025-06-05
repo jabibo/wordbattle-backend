@@ -1,14 +1,17 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
-from app.models import User
+from sqlalchemy import and_, or_, func
+from app.models import User, Game, Player
 from app.auth import get_password_hash, get_current_user
 from app.db import get_db
 from app.dependencies import get_translation_helper
 from app.utils.email_service import email_service
 from app.utils.i18n import TranslationHelper
 from sqlalchemy.future import select
+from typing import List, Optional
 import logging
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +28,150 @@ class RegisterUserEmailOnly(BaseModel):
 
 class LanguageUpdate(BaseModel):
     language: str
+
+@router.get("/me")
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    """Get current user information."""
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_email_verified": current_user.is_email_verified,
+        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        "language": current_user.language or "en",
+        "allow_invites": current_user.allow_invites,
+        "preferred_languages": current_user.preferred_languages or ["en", "de"]
+    }
+
+@router.get("/previous-opponents")
+def get_previous_opponents(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of players the current user has played with before."""
+    
+    # Get all games where current user was a player
+    user_games = db.query(Player.game_id).filter(Player.user_id == current_user.id).subquery()
+    
+    # Get all other players from those games (excluding current user)
+    previous_players_query = db.query(
+        User.id,
+        User.username,
+        User.allow_invites,
+        User.preferred_languages
+    ).join(Player, Player.user_id == User.id)\
+     .filter(
+         Player.game_id.in_(user_games),
+         Player.user_id != current_user.id,
+         User.allow_invites == True  # Only include users who accept invites
+     ).distinct()
+    
+    previous_players = previous_players_query.all()
+    
+    # Count games played with each player
+    players_info = []
+    for player in previous_players:
+        # Count how many games they played together
+        games_together = db.query(Game.id).join(Player, Player.game_id == Game.id)\
+            .filter(
+                Player.user_id == player.id,
+                Game.id.in_(
+                    db.query(Player.game_id).filter(Player.user_id == current_user.id)
+                )
+            ).count()
+        
+        players_info.append({
+            "id": player.id,
+            "username": player.username,
+            "allow_invites": player.allow_invites,
+            "preferred_languages": player.preferred_languages or ["en", "de"],
+            "games_played_together": games_together
+        })
+    
+    # Sort by number of games played together (most frequent opponents first)
+    players_info.sort(key=lambda x: x["games_played_together"], reverse=True)
+    
+    return {
+        "previous_opponents": players_info,
+        "total_count": len(players_info)
+    }
+
+@router.get("/random-candidates")
+def get_random_candidates(
+    language: str = Query("en", description="Preferred game language"),
+    limit: int = Query(10, description="Maximum number of candidates to return"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get random users who accept invites and have compatible language preferences."""
+    
+    # Get users who:
+    # 1. Allow invites
+    # 2. Are not the current user
+    # 3. Have the requested language in their preferred languages OR have no language preference
+    candidates_query = db.query(User).filter(
+        User.id != current_user.id,
+        User.allow_invites == True,
+        or_(
+            func.json_extract(User.preferred_languages, '$') == None,  # No preference set
+            func.json_contains(User.preferred_languages, f'"{language}"')  # Has the requested language
+        )
+    )
+    
+    candidates = candidates_query.all()
+    
+    # Randomly shuffle and limit results
+    if candidates:
+        random.shuffle(candidates)
+        candidates = candidates[:limit]
+    
+    candidates_info = []
+    for candidate in candidates:
+        candidates_info.append({
+            "id": candidate.id,
+            "username": candidate.username,
+            "preferred_languages": candidate.preferred_languages or ["en", "de"],
+            "allow_invites": candidate.allow_invites
+        })
+    
+    return {
+        "candidates": candidates_info,
+        "total_count": len(candidates_info),
+        "language_filter": language
+    }
+
+@router.get("/search")
+def search_users(
+    username: str = Query(..., description="Username to search for"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Search for users by username (partial match)."""
+    
+    if len(username.strip()) < 2:
+        raise HTTPException(status_code=400, detail="Search term must be at least 2 characters")
+    
+    # Search for users with usernames containing the search term
+    search_results = db.query(User).filter(
+        User.id != current_user.id,  # Exclude current user
+        User.username.ilike(f"%{username}%"),  # Partial match, case insensitive
+        User.allow_invites == True  # Only show users who accept invites
+    ).limit(20).all()  # Limit to 20 results
+    
+    results_info = []
+    for user in search_results:
+        results_info.append({
+            "id": user.id,
+            "username": user.username,
+            "preferred_languages": user.preferred_languages or ["en", "de"],
+            "allow_invites": user.allow_invites
+        })
+    
+    return {
+        "users": results_info,
+        "total_count": len(results_info),
+        "search_term": username
+    }
 
 @router.post("/register")
 def register(user: RegisterUser, db: Session = Depends(get_db)):
