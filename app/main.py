@@ -79,30 +79,21 @@ app = FastAPI(
     ]
 )
 
-# Add CORS middleware
+# Add CORS middleware with environment-based configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for maximum compatibility
+    allow_origins=CORS_ORIGINS,  # Use configured origins, not wildcard
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=[
         "Accept",
-        "Accept-Language",
-        "Content-Language", 
         "Content-Type",
         "Authorization",
         "X-Requested-With",
-        "Origin",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-        "Cache-Control",
-        "Pragma",
     ],
     expose_headers=[
         "Access-Control-Allow-Origin",
         "Access-Control-Allow-Credentials",
-        "Access-Control-Allow-Methods",
-        "Access-Control-Allow-Headers",
     ],
     max_age=600,
 )

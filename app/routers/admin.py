@@ -23,6 +23,10 @@ async def create_test_tokens(
     
     ⚠️ WARNING: This is for development/testing only!
     """
+    # Disable in production
+    if os.getenv("ENVIRONMENT") == "production":
+        raise HTTPException(status_code=403, detail="Debug endpoints disabled in production")
+    
     try:
         test_users = []
         
