@@ -1,48 +1,74 @@
-# Database Migrations
+# Database Migrations - Quick Reference
 
-This document describes how to manage database migrations for the WordBattle backend.
+> ⚠️ **For comprehensive database documentation, see [DATABASE.md](./DATABASE.md)**
 
-## Setup
+This is a quick reference for common migration operations. For detailed processes, troubleshooting, and best practices, refer to the comprehensive database documentation.
 
-1. Install Alembic:
+## Quick Commands
+
+### Create New Migration
 ```bash
-pip install alembic
+alembic revision --autogenerate -m "description of changes"
 ```
 
-2. Initialize Alembic:
-```bash
-alembic init migrations
-```
-
-3. Edit `alembic.ini` to set the database URL:
-```ini
-sqlalchemy.url = sqlite:///./wordbattle.db
-```
-
-## Creating Migrations
-
-To create a new migration:
-```bash
-alembic revision -m "description of changes"
-```
-
-## Running Migrations
-
-To upgrade to the latest version:
+### Apply Migrations
 ```bash
 alembic upgrade head
 ```
 
-To downgrade to a previous version:
+### Check Current Version
+```bash
+alembic current
+```
+
+### Rollback Migration
 ```bash
 alembic downgrade -1
 ```
 
-## First-time Setup
+## Common Scenarios
 
-For initial database setup, run:
+### Adding a New Column
+1. Edit model in `app/models.py`
+2. Generate migration: `alembic revision --autogenerate -m "Add new column"`
+3. Review generated migration file
+4. Test: `alembic upgrade head`
+
+### Migration Troubleshooting
+If you encounter migration issues:
+1. Check current status: `alembic current`
+2. For sync issues: Use `/admin/alembic/reset-to-current` endpoint
+3. See [DATABASE.md](./DATABASE.md#troubleshooting) for detailed solutions
+
+## Development Setup
+
+### First-time Database Setup
 ```bash
-python -m app.create_tables
+# Create tables and load initial data
+python -m app.database_manager init
+
+# Load wordlists
+python -m app.database_manager load
 ```
 
-This should only be used for development or initial setup, not in production where migrations should be used instead.
+### Reset Development Database
+```bash
+python -m app.database_manager reset
+# Type 'RESET' to confirm
+```
+
+## Production Notes
+
+- Migrations run automatically on deployment
+- Check `/admin/database/info` for status
+- See [DATABASE.md](./DATABASE.md#production-deployment) for detailed deployment procedures
+
+## Emergency Recovery
+
+If migrations are broken:
+```bash
+# Use the Alembic reset endpoint (preserves data)
+curl -X POST https://your-backend-url/admin/alembic/reset-to-current
+```
+
+For complete database recovery procedures, see [DATABASE.md](./DATABASE.md#recovery-procedures).
