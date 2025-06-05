@@ -214,74 +214,85 @@ async def database_status():
 @app.get("/debug/tokens")
 async def debug_tokens():
     """Debug endpoint that provides test tokens for player01 and player02"""
-    from datetime import datetime, timezone, timedelta
-    import jwt
-    from app.config import SECRET_KEY, ALGORITHM
-    from app.database import SessionLocal
-    from app.models import User
-    
-    db = SessionLocal()
     try:
-        # Find or get info about test users
-        player01 = db.query(User).filter(User.username == "player01").first()
-        player02 = db.query(User).filter(User.username == "player02").first()
+        from datetime import datetime, timezone, timedelta
+        import jwt
+        from app.config import SECRET_KEY, ALGORITHM
+        from app.database import SessionLocal
+        from app.models.user import User
         
-        # If users don't exist, find any existing users for testing
-        if not player01:
-            player01 = db.query(User).filter(User.id.in_([1, 2, 3, 4, 5])).first()
-        if not player02:
-            player02 = db.query(User).filter(User.id.in_([6, 7, 8, 9, 10])).first()
+        db = SessionLocal()
+        try:
+            # Find or get info about test users
+            player01 = db.query(User).filter(User.username == "player01").first()
+            player02 = db.query(User).filter(User.username == "player02").first()
             
-        # Fallback to any users if still none found
-        if not player01:
-            player01 = db.query(User).first()
-        if not player02:
-            player02 = db.query(User).offset(1).first()
-            
-        if not player01 or not player02:
-            return {
-                "error": "No users found in database for testing",
-                "suggestion": "Create some users first"
-            }
-        
-        # Generate tokens that expire in 30 days (reasonable for testing)
-        future_time = datetime.now(timezone.utc) + timedelta(days=30)
-        exp_timestamp = int(future_time.timestamp())
-        
-        # Create fresh tokens for available users - using USERNAME in sub field
-        player01_token = jwt.encode({"sub": player01.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
-        player02_token = jwt.encode({"sub": player02.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
-        
-        return {
-            "message": "Fresh debug tokens (30 days expiry) - WORKING TOKENS!",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "expires_at": future_time.isoformat(),
-            "tokens": {
-                "player01": {
-                    "user_id": player01.id,
-                    "username": player01.username, 
-                    "email": player01.email,
-                    "token": player01_token
-                },
-                "player02": {
-                    "user_id": player02.id,
-                    "username": player02.username,
-                    "email": player02.email,
-                    "token": player02_token
+            # If users don't exist, find any existing users for testing
+            if not player01:
+                player01 = db.query(User).filter(User.id.in_([1, 2, 3, 4, 5])).first()
+            if not player02:
+                player02 = db.query(User).filter(User.id.in_([6, 7, 8, 9, 10])).first()
+                
+            # Fallback to any users if still none found
+            if not player01:
+                player01 = db.query(User).first()
+            if not player02:
+                player02 = db.query(User).offset(1).first()
+                
+            if not player01 or not player02:
+                return {
+                    "error": "No users found in database for testing",
+                    "suggestion": "Create some users first"
                 }
-            },
-            "testing": {
-                "test_auth": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me",
-                "test_games": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/games/my-games",
-                "note": "Tokens use USERNAME in sub field for proper authentication"
-            },
-            "usage": {
-                "authorization_header": "Authorization: Bearer <token>",
-                "example_test": f"curl -H 'Authorization: Bearer {player01_token}' https://nmexamntve.eu-central-1.awsapprunner.com/auth/me"
+            
+            # Generate tokens that expire in 30 days (reasonable for testing)
+            future_time = datetime.now(timezone.utc) + timedelta(days=30)
+            exp_timestamp = int(future_time.timestamp())
+            
+            # Create fresh tokens for available users - using USERNAME in sub field
+            player01_token = jwt.encode({"sub": player01.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
+            player02_token = jwt.encode({"sub": player02.username, "exp": exp_timestamp}, SECRET_KEY, algorithm=ALGORITHM)
+            
+            # Get current service URL
+            service_url = "https://wordbattle-backend-test-441752988736.europe-west1.run.app"
+            
+            return {
+                "message": "Fresh debug tokens (30 days expiry) - WORKING TOKENS!",
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "expires_at": future_time.isoformat(),
+                "tokens": {
+                    "player01": {
+                        "user_id": player01.id,
+                        "username": player01.username, 
+                        "email": player01.email,
+                        "token": player01_token
+                    },
+                    "player02": {
+                        "user_id": player02.id,
+                        "username": player02.username,
+                        "email": player02.email,
+                        "token": player02_token
+                    }
+                },
+                "testing": {
+                    "test_auth": f"curl -H 'Authorization: Bearer {player01_token}' {service_url}/auth/me",
+                    "test_games": f"curl -H 'Authorization: Bearer {player01_token}' {service_url}/games/my-games",
+                    "note": "Tokens use USERNAME in sub field for proper authentication"
+                },
+                "usage": {
+                    "authorization_header": "Authorization: Bearer <token>",
+                    "example_test": f"curl -H 'Authorization: Bearer {player01_token}' {service_url}/auth/me"
+                }
             }
+        finally:
+            db.close()
+    except Exception as e:
+        # Return error details for debugging
+        return {
+            "error": "Debug tokens endpoint failed",
+            "details": str(e),
+            "type": type(e).__name__
         }
-    finally:
-        db.close()
 
 @app.get("/debug/test-auth/{username}")
 async def debug_test_auth(username: str):
