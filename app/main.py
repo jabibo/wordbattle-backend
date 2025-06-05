@@ -211,6 +211,55 @@ async def database_status():
     from app.database_manager import get_database_info
     return get_database_info()
 
+@app.post("/admin/database/reset")
+async def reset_database_admin():
+    """
+    ADMIN ONLY: Reset and reinitialize the database completely.
+    This will drop all tables and recreate them with current schema.
+    """
+    try:
+        from app.database_manager import reset_database, load_wordlist
+        from app.database import Base, engine
+        
+        logger.info("🔄 Starting complete database reset...")
+        
+        # Drop and recreate all tables using current models
+        logger.info("Dropping all tables...")
+        Base.metadata.drop_all(bind=engine)
+        
+        logger.info("Creating all tables with current schema...")
+        Base.metadata.create_all(bind=engine)
+        
+        # Reset alembic version table to head
+        logger.info("Setting up migration state...")
+        try:
+            from alembic.config import Config
+            from alembic import command
+            alembic_cfg = Config("alembic.ini")
+            command.stamp(alembic_cfg, "head")
+            logger.info("✅ Migration state set to head")
+        except Exception as e:
+            logger.warning(f"Could not set migration state: {e}")
+        
+        # Load initial words
+        logger.info("Loading initial wordlist...")
+        word_result = load_wordlist(language="de", limit=10000)
+        
+        return {
+            "success": True,
+            "message": "Database reset and reinitialized successfully",
+            "wordlist": word_result,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Database reset failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Database reset failed"
+        }
+
 @app.get("/debug/tokens")
 async def debug_tokens():
     """Debug endpoint that provides test tokens for player01 and player02"""
