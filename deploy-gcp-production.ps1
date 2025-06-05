@@ -267,10 +267,14 @@ if ($Environment -eq "production") {
     $envVars += "ENVIRONMENT=production"
     $envVars += "LOG_LEVEL=INFO"
     $envVars += "DEBUG=false"
+    # Production CORS - both localhost for testing and production domain
+    $envVars += "CORS_ORIGINS=https://binge-dev.de,https://localhost:3000"
 } else {
     $envVars += "ENVIRONMENT=testing"
     $envVars += "LOG_LEVEL=DEBUG"
     $envVars += "DEBUG=true"
+    # Testing CORS - include development domains
+    $envVars += "CORS_ORIGINS=https://binge-dev.de,https://localhost:3000,http://localhost:3000"
     # Cloud SQL configuration for testing - use Unix socket format
     $envVars += "DATABASE_URL=postgresql://wordbattle:wordbattle123@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db"
 }
@@ -282,7 +286,18 @@ if ($gitCommit) {
     $envVars += "DEPLOY_TIMESTAMP=$(Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ')"
 }
 
-$envVarString = ($envVars -join ",")
+# Create a temporary environment file to handle special characters in URLs
+$envFile = "env-vars-temp.yaml"
+$yamlContent = @()
+foreach ($envVar in $envVars) {
+    $parts = $envVar -split "=", 2
+    if ($parts.Length -eq 2) {
+        $key = $parts[0]
+        $value = $parts[1]
+        $yamlContent += "$key`: '$value'"
+    }
+}
+$yamlContent | Out-File -FilePath $envFile -Encoding UTF8
 
 # Build the gcloud run deploy command with environment-specific configurations
 $deployArgs = @(
@@ -298,7 +313,7 @@ $deployArgs = @(
     "--max-instances=$MAX_INSTANCES",
     "--min-instances=$MIN_INSTANCES",
     "--concurrency=80",
-    "--set-env-vars=$envVarString"
+    "--env-vars-file=$envFile"
 )
 
 # Add Cloud SQL connection for testing environment
@@ -307,6 +322,9 @@ if ($Environment -eq "testing") {
 }
 
 gcloud @deployArgs
+
+# Clean up temporary environment file
+Remove-Item $envFile -ErrorAction SilentlyContinue
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
