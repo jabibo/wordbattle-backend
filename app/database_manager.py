@@ -56,21 +56,45 @@ def run_migrations():
                 if len(existing_tables) > 1:  # More than just alembic_version
                     logger.info("Database has tables but no version info")
                     
-                    # Check if friends table exists - if so, stamp with 0007 (before friends removal)
-                    if "friends" in existing_tables:
-                        logger.info("Friends table exists - stamping with revision 0007")
-                        command.stamp(alembic_cfg, "0007")
-                        # Now run remaining migrations (0008 to drop friends)
+                    # Check what columns exist to determine proper starting point
+                    from sqlalchemy import inspect, text
+                    inspector = inspect(engine)
+                    
+                    try:
+                        user_columns = [col['name'] for col in inspector.get_columns('users')]
+                        logger.info(f"User table columns: {user_columns}")
+                        
+                        if "allow_invites" in user_columns:
+                            if "friends" in existing_tables:
+                                # Has invite preferences but still has friends table
+                                logger.info("Has allow_invites and friends table - stamping with 0007, then run 0008")
+                                command.stamp(alembic_cfg, "0007")
+                                command.upgrade(alembic_cfg, "head")
+                            else:
+                                # Has invite preferences and no friends table - already at head
+                                logger.info("Has allow_invites, no friends table - stamping with head")
+                                command.stamp(alembic_cfg, "head")
+                        else:
+                            # No invite preferences columns - need to run from 0006 or earlier
+                            if "friends" in existing_tables:
+                                logger.info("Has friends table but no allow_invites - stamping with 0006, then upgrade")
+                                command.stamp(alembic_cfg, "0006")
+                                command.upgrade(alembic_cfg, "head")
+                            else:
+                                # No friends, no invite preferences - probably very old or basic schema
+                                logger.info("Basic schema - stamping with 0001, then upgrade all")
+                                command.stamp(alembic_cfg, "0001")
+                                command.upgrade(alembic_cfg, "head")
+                    except Exception as col_check_error:
+                        logger.warning(f"Could not check columns: {col_check_error}")
+                        # Fallback - just try to run all migrations
+                        logger.info("Column check failed - trying full upgrade")
                         command.upgrade(alembic_cfg, "head")
-                    else:
-                        # No friends table, stamp with latest
-                        logger.info("No friends table - stamping with head")
-                        command.stamp(alembic_cfg, "head")
                     
                     logger.info("✅ Database migration state fixed and updated")
                     return {
                         "success": True,
-                        "action": "fixed_and_upgraded",
+                        "action": "fixed_and_upgraded", 
                         "message": "Database migration state fixed and upgraded to head"
                     }
                 else:
