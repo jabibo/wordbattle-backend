@@ -14,6 +14,50 @@ import os
 
 logger = logging.getLogger(__name__)
 
+def run_migrations():
+    """
+    Run Alembic migrations automatically during startup.
+    
+    Returns:
+        dict: Migration results with success status and info
+    """
+    try:
+        logger.info("Running database migrations...")
+        
+        # Import alembic components
+        from alembic.config import Config
+        from alembic import command
+        
+        # Get alembic config file path (relative to project root)
+        alembic_cfg = Config("alembic.ini")
+        
+        # Run migrations to head
+        command.upgrade(alembic_cfg, "head")
+        
+        logger.info("✅ Database migrations completed successfully")
+        return {
+            "success": True,
+            "action": "completed",
+            "message": "Migrations run successfully"
+        }
+        
+    except ImportError as e:
+        logger.error(f"❌ Alembic not available: {e}")
+        return {
+            "success": False,
+            "action": "skipped",
+            "error": "Alembic not installed",
+            "message": "Migrations skipped - Alembic not available"
+        }
+    except Exception as e:
+        logger.error(f"❌ Migration failed: {e}")
+        return {
+            "success": False,
+            "action": "failed", 
+            "error": str(e),
+            "message": f"Migration error: {str(e)}"
+        }
+
 def check_database_status():
     """
     Check the current status of the database.
@@ -160,11 +204,17 @@ def initialize_database_if_needed():
     """
     Initialize database only if it's not already set up.
     This is the smart initialization function that checks before doing work.
+    Now includes automatic migrations.
     
     Returns:
         dict: Initialization results
     """
     logger.info("Checking if database initialization is needed...")
+    
+    # First, run migrations (this is safe to run multiple times)
+    migration_result = run_migrations()
+    if not migration_result["success"] and migration_result["action"] != "skipped":
+        logger.warning(f"Migration issues (continuing anyway): {migration_result.get('error', 'Unknown')}")
     
     status = check_database_status()
     
@@ -174,7 +224,8 @@ def initialize_database_if_needed():
             "success": True,
             "action": "skipped",
             "reason": "already_initialized",
-            "status": status
+            "status": status,
+            "migration": migration_result
         }
     
     logger.info("Database needs initialization...")
@@ -195,16 +246,16 @@ def initialize_database_if_needed():
                 return {
                     "success": False,
                     "action": "failed",
-                    "error": load_result.get("error", "Unknown error")
+                    "error": load_result.get("error", "Unknown error"),
+                    "migration": migration_result
                 }
         
-        # Check final status
-        final_status = check_database_status()
-        
+        logger.info("Database initialization completed successfully")
         return {
             "success": True,
-            "action": "initialized",
-            "status": final_status
+            "action": "completed",
+            "message": "Database initialized successfully",
+            "migration": migration_result
         }
         
     except Exception as e:
@@ -212,7 +263,8 @@ def initialize_database_if_needed():
         return {
             "success": False,
             "action": "failed",
-            "error": str(e)
+            "error": str(e),
+            "migration": migration_result
         }
 
 def get_database_info():
