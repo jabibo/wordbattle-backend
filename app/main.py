@@ -211,53 +211,109 @@ async def database_status():
     from app.database_manager import get_database_info
     return get_database_info()
 
-@app.post("/admin/database/reset")
-async def reset_database_admin():
+@app.post("/admin/alembic/reset-to-current")
+async def reset_alembic_to_current():
     """
-    ADMIN ONLY: Reset and reinitialize the database completely.
-    This will drop all tables and recreate them with current schema.
+    ADMIN ONLY: Reset Alembic migration state to current schema version.
+    Keeps all data, just fixes the migration tracking.
     """
     try:
-        from app.database_manager import reset_database, load_wordlist
-        from app.database import Base, engine
+        from sqlalchemy import text, inspect
+        from app.database import SessionLocal, engine
         
-        logger.info("🔄 Starting complete database reset...")
+        logger.info("🔄 Resetting Alembic to current schema version...")
         
-        # Drop and recreate all tables using current models
-        logger.info("Dropping all tables...")
-        Base.metadata.drop_all(bind=engine)
+        db = SessionLocal()
+        changes_made = []
         
-        logger.info("Creating all tables with current schema...")
-        Base.metadata.create_all(bind=engine)
+        try:
+            # Get current state
+            inspector = inspect(engine)
+            user_columns = [col['name'] for col in inspector.get_columns('users')]
+            existing_tables = inspector.get_table_names()
+            
+            logger.info(f"Current tables: {existing_tables}")
+            logger.info(f"Current user columns: {user_columns}")
+            
+            user_count = db.execute(text("SELECT COUNT(*) FROM users")).scalar()
+            word_count = db.execute(text("SELECT COUNT(*) FROM wordlists")).scalar()
+            
+            logger.info(f"Preserving {user_count} users and {word_count} words")
+            
+            # Add missing columns for current schema
+            if "allow_invites" not in user_columns:
+                logger.info("Adding missing allow_invites column...")
+                db.execute(text("ALTER TABLE users ADD COLUMN allow_invites BOOLEAN DEFAULT TRUE"))
+                db.commit()
+                changes_made.append("Added allow_invites column")
+                
+            if "preferred_languages" not in user_columns:
+                logger.info("Adding missing preferred_languages column...")
+                db.execute(text("ALTER TABLE users ADD COLUMN preferred_languages JSON DEFAULT '[\"en\", \"de\"]'"))
+                db.commit()
+                changes_made.append("Added preferred_languages column")
+                
+            # Set defaults for existing users
+            if "allow_invites" in user_columns or "allow_invites" in [change for change in changes_made]:
+                db.execute(text("UPDATE users SET allow_invites = TRUE WHERE allow_invites IS NULL"))
+                db.execute(text("UPDATE users SET preferred_languages = '[\"en\", \"de\"]' WHERE preferred_languages IS NULL"))
+                db.commit()
+                changes_made.append("Set default values for existing users")
+                
+        except Exception as e:
+            logger.error(f"Column addition error: {e}")
+            db.rollback()
+            raise
+        finally:
+            db.close()
         
-        # Reset alembic version table to head
-        logger.info("Setting up migration state...")
+        # Reset Alembic migration state to head (current version)
+        logger.info("Resetting Alembic migration state to head...")
         try:
             from alembic.config import Config
             from alembic import command
+            
             alembic_cfg = Config("alembic.ini")
+            
+            # Drop and recreate alembic version table to reset state
+            db = SessionLocal()
+            try:
+                db.execute(text("DROP TABLE IF EXISTS alembic_version"))
+                db.commit()
+                logger.info("Dropped old alembic_version table")
+            except Exception as e:
+                logger.warning(f"Could not drop alembic_version: {e}")
+                db.rollback()
+            finally:
+                db.close()
+            
+            # Stamp with current head revision
             command.stamp(alembic_cfg, "head")
-            logger.info("✅ Migration state set to head")
+            changes_made.append("Reset Alembic migration state to head")
+            logger.info("✅ Alembic migration state reset to head")
+            
         except Exception as e:
-            logger.warning(f"Could not set migration state: {e}")
-        
-        # Load initial words
-        logger.info("Loading initial wordlist...")
-        word_result = load_wordlist(language="de", limit=10000)
+            logger.error(f"Alembic reset failed: {e}")
+            changes_made.append(f"Alembic reset failed: {str(e)}")
         
         return {
             "success": True,
-            "message": "Database reset and reinitialized successfully",
-            "wordlist": word_result,
+            "message": "Alembic migration state reset to current version successfully",
+            "changes_made": changes_made,
+            "preserved_data": {
+                "users": user_count,
+                "words": word_count,
+                "tables": len(existing_tables)
+            },
             "timestamp": datetime.utcnow().isoformat()
         }
         
     except Exception as e:
-        logger.error(f"Database reset failed: {e}")
+        logger.error(f"Alembic reset failed: {e}")
         return {
             "success": False,
             "error": str(e),
-            "message": "Database reset failed"
+            "message": "Alembic reset failed"
         }
 
 @app.get("/debug/tokens")

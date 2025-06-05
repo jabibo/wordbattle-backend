@@ -318,17 +318,19 @@ def initialize_database_if_needed():
     """
     Initialize database only if it's not already set up.
     This is the smart initialization function that checks before doing work.
-    Now includes automatic migrations.
+    Now includes basic table creation and column checks.
     
     Returns:
         dict: Initialization results
     """
     logger.info("Checking if database initialization is needed...")
     
-    # First, run migrations (this is safe to run multiple times)
-    migration_result = run_migrations()
-    if not migration_result["success"] and migration_result["action"] != "skipped":
-        logger.warning(f"Migration issues (continuing anyway): {migration_result.get('error', 'Unknown')}")
+    # Create tables if they don't exist (safe operation)
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables ensured")
+    except Exception as e:
+        logger.warning(f"Could not create tables: {e}")
     
     # Ensure user preference columns exist (fallback)
     column_result = ensure_user_columns()
@@ -342,7 +344,6 @@ def initialize_database_if_needed():
                 "action": "skipped",
                 "reason": "already_initialized",
                 "status": status,
-                "migration": migration_result,
                 "columns": column_result
             }
     
@@ -373,7 +374,6 @@ def initialize_database_if_needed():
             "success": True,
             "action": "completed",
             "message": "Database initialized successfully",
-            "migration": migration_result,
             "columns": column_result
         }
         
@@ -383,7 +383,6 @@ def initialize_database_if_needed():
             "success": False,
             "action": "failed",
             "error": str(e),
-            "migration": migration_result,
             "columns": column_result
         }
 
