@@ -27,12 +27,64 @@ def run_migrations():
         # Import alembic components
         from alembic.config import Config
         from alembic import command
+        from alembic.script import ScriptDirectory
         
         # Get alembic config file path (relative to project root)
         alembic_cfg = Config("alembic.ini")
         
-        # Run migrations to head
-        command.upgrade(alembic_cfg, "head")
+        # Check current revision
+        try:
+            current_rev = command.current(alembic_cfg)
+            logger.info(f"Current database revision: {current_rev}")
+        except Exception as e:
+            logger.info(f"Could not get current revision (probably no version table): {e}")
+            current_rev = None
+        
+        # Get target revision (head)
+        script_dir = ScriptDirectory.from_config(alembic_cfg)
+        head_rev = script_dir.get_current_head()
+        logger.info(f"Target revision (head): {head_rev}")
+        
+        # If database has no version table, we need to handle the migration state properly
+        if current_rev is None:
+            try:
+                # Check if tables already exist
+                from sqlalchemy import inspect
+                inspector = inspect(engine)
+                existing_tables = inspector.get_table_names()
+                
+                if len(existing_tables) > 1:  # More than just alembic_version
+                    logger.info("Database has tables but no version info")
+                    
+                    # Check if friends table exists - if so, stamp with 0007 (before friends removal)
+                    if "friends" in existing_tables:
+                        logger.info("Friends table exists - stamping with revision 0007")
+                        command.stamp(alembic_cfg, "0007")
+                        # Now run remaining migrations (0008 to drop friends)
+                        command.upgrade(alembic_cfg, "head")
+                    else:
+                        # No friends table, stamp with latest
+                        logger.info("No friends table - stamping with head")
+                        command.stamp(alembic_cfg, "head")
+                    
+                    logger.info("✅ Database migration state fixed and updated")
+                    return {
+                        "success": True,
+                        "action": "fixed_and_upgraded",
+                        "message": "Database migration state fixed and upgraded to head"
+                    }
+                else:
+                    # Empty database or only alembic_version - run all migrations
+                    logger.info("Empty database - running all migrations")
+                    command.upgrade(alembic_cfg, "head")
+                    
+            except Exception as stamp_error:
+                logger.warning(f"Could not fix migration state: {stamp_error}")
+                # Fallback - try to run migrations anyway
+                command.upgrade(alembic_cfg, "head")
+        else:
+            # Normal case - database has version info, just upgrade
+            command.upgrade(alembic_cfg, "head")
         
         logger.info("✅ Database migrations completed successfully")
         return {
