@@ -211,6 +211,90 @@ async def database_status():
     from app.database_manager import get_database_info
     return get_database_info()
 
+@app.post("/admin/database/reset-games")
+async def reset_games():
+    """
+    ADMIN ONLY: Reset all game-related data while preserving users and wordlists.
+    """
+    try:
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        
+        logger.info("🗑️ Starting game data reset...")
+        
+        db = SessionLocal()
+        deleted_counts = {}
+        
+        try:
+            # Get counts before deletion
+            tables_to_reset = [
+                ("chat_messages", "Chat Messages"),
+                ("moves", "Moves"),
+                ("players", "Players"),
+                ("game_invitations", "Game Invitations"),
+                ("games", "Games")
+            ]
+            
+            # Delete in order to respect foreign key constraints
+            for table, name in tables_to_reset:
+                try:
+                    # Get count before deletion
+                    count_result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                    count_before = count_result.scalar()
+                    
+                    # Delete all records
+                    delete_result = db.execute(text(f"DELETE FROM {table}"))
+                    deleted_counts[table] = delete_result.rowcount
+                    
+                    logger.info(f"Deleted {delete_result.rowcount} records from {table}")
+                    
+                except Exception as e:
+                    logger.error(f"Error deleting from {table}: {e}")
+                    deleted_counts[table] = f"Error: {str(e)}"
+            
+            # Reset sequences
+            sequences = [
+                "chat_messages_id_seq",
+                "moves_id_seq", 
+                "players_id_seq",
+                "game_invitations_id_seq",
+                "games_id_seq"
+            ]
+            
+            reset_sequences = []
+            for seq in sequences:
+                try:
+                    db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
+                    reset_sequences.append(seq)
+                except Exception as e:
+                    logger.warning(f"Could not reset sequence {seq}: {e}")
+            
+            db.commit()
+            logger.info("✅ Game data reset completed successfully")
+            
+            return {
+                "success": True,
+                "message": "Game data reset completed successfully",
+                "deleted_counts": deleted_counts,
+                "reset_sequences": reset_sequences,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Game reset error: {e}")
+            db.rollback()
+            raise
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Game reset failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Game data reset failed"
+        }
+
 @app.post("/admin/alembic/reset-to-current")
 async def reset_alembic_to_current():
     """
