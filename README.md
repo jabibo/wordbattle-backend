@@ -2,131 +2,165 @@
 
 [![Coverage](https://img.shields.io/badge/coverage-83%25-green.svg)](https://github.com/yourusername/wordbattle-backend)
 
-A FastAPI backend for a multiplayer word game similar to Scrabble.
+A FastAPI backend for a multiplayer word game similar to Scrabble, deployed on Google Cloud Platform.
 
-## Environment Variables
+## 🚀 Current Deployment Status
 
-The application uses environment variables for configuration. Copy the `.env.example` file to `.env` and adjust the values as needed:
+**Production Environment**: Google Cloud Run  
+**Current Branch**: `main`  
+**Deployment**: Automated via Git-integrated pipeline  
 
-```bash
-cp .env.example .env
+The application is currently running on GCP with multi-environment support (production and testing).
+
+## 📁 Project Structure
+
+```
+wordbattle-backend/
+├── app/                    # Main application code
+├── alembic/               # Database migrations
+├── tests/                 # Test suite
+├── terraform/             # GCP infrastructure as code
+├── docs/                  # Documentation
+├── data/                  # Static data files
+├── migrations/            # Database migration scripts
+├── scripts/               # Utility scripts
+├── archive/              # Old/deprecated files
+│   ├── aws-deployment/   # Legacy AWS deployment files
+│   ├── old-deployment-scripts/
+│   ├── test-scripts/
+│   ├── old-dockerfiles/
+│   ├── old-configs/
+│   ├── alternative-deployments/
+│   └── old-documentation/
+├── deploy-gcp-production.ps1  # Main deployment script (PowerShell)
+├── deploy-gcp-production.sh   # Main deployment script (Bash)
+├── DEPLOYMENT_GUIDE.md        # Deployment instructions
+├── GCP_MIGRATION_SUMMARY.md   # Migration details
+└── Dockerfile.cloudrun        # Docker configuration for GCP
 ```
 
-Key environment variables:
+## 🔧 Quick Start
 
-- `DATABASE_URL`: Database connection string (default: SQLite)
-- `SECRET_KEY`: Secret key for JWT token generation
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: JWT token expiration time
-- `DEFAULT_WORDLIST_PATH`: Path to the wordlist file
-- `LETTER_POOL_SIZE`: Number of letters in a player's rack
-- `GAME_INACTIVE_DAYS`: Days of inactivity before a game is considered abandoned
+### Prerequisites
+- Python 3.9+
+- Docker
+- Google Cloud SDK (for deployment)
+- Git
 
-## Installation
+### Local Development
 
-1. Clone the repository:
-
+1. **Clone and setup:**
 ```bash
-git clone https://github.com/yourusername/wordbattle-backend.git
+git clone <repository-url>
 cd wordbattle-backend
-```
-
-2. Create a virtual environment and install dependencies:
-
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-3. Set up the database:
-
+2. **Environment configuration:**
 ```bash
-# For development/initial setup only
-python -m app.create_tables
-
-# For production, use migrations (see docs/MIGRATIONS.md)
+cp .env.example .env
+# Edit .env with your configuration
 ```
 
-4. Import wordlists:
-
+3. **Database setup:**
 ```bash
-# Import default German wordlist
-python import_test_wordlists.py
-
-# Import a custom wordlist
-python -m app.wordlist <language_code> <path_to_wordlist>
+alembic upgrade head
 ```
 
-5. Run the application:
-
+4. **Run locally:**
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API will be available at http://localhost:8000
+API available at: http://localhost:8000
 
-## Multi-Language Support
+## 🌐 Deployment
 
-WordBattle now supports multiple languages for wordlists. See [docs/WORDLISTS.md](docs/WORDLISTS.md) for details on:
+### Production Deployment (GCP)
 
-- Importing wordlists for different languages
-- Setting the language for a game
-- Managing wordlists through the admin API
-
-## Docker Deployment
-
-You can run the application using Docker:
-
-1. Build and start the container:
-
-```bash
-docker-compose up -d
+**PowerShell:**
+```powershell
+.\deploy-gcp-production.ps1 -Environment "production"
 ```
 
-2. The API will be available at http://localhost:8000
-
-3. To view logs:
-
+**Bash:**
 ```bash
-docker-compose logs -f
+./deploy-gcp-production.sh production
 ```
 
-4. To stop the container:
+### Testing Environment
 
-```bash
-docker-compose down
+**PowerShell:**
+```powershell
+.\deploy-gcp-production.ps1 -Environment "testing"
 ```
 
-For more details, see [docs/DOCKER.md](docs/DOCKER.md).
+**Bash:**
+```bash
+./deploy-gcp-production.sh testing
+```
 
-## API Documentation
+For detailed deployment instructions, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).
 
-Once the server is running, you can access the API documentation at:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
+## 📖 Key Environment Variables
 
-## Testing
+- `DATABASE_URL`: Database connection string
+- `SECRET_KEY`: JWT secret key
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration (default: 30)
+- `DEFAULT_WORDLIST_PATH`: Path to wordlist file
+- `LETTER_POOL_SIZE`: Letters per player rack (default: 7)
+- `GAME_INACTIVE_DAYS`: Days before game abandonment (default: 7)
 
-Run the tests with pytest:
+## 🧪 Testing
 
 ```bash
+# Run all tests
 python -m pytest
+
+# Run with coverage
+python -m pytest --cov=app --cov-report=html
 ```
 
-## Database Management
+## 📚 API Documentation
 
-For database management, see [docs/MIGRATIONS.md](docs/MIGRATIONS.md).
+- **Swagger UI**: http://localhost:8000/docs
+- **ReDoc**: http://localhost:8000/redoc
+- **API Spec**: [wordbattle_backend_api_documentation.md](wordbattle_backend_api_documentation.md)
 
-## Game Rules
+## 🗃️ Archive Directory
 
-- Players take turns placing words on the board
-- Words must connect to existing words
-- Points are awarded based on letter values and board multipliers
-- A game ends when:
-  - A player uses all their letters and no more are available
-  - All players pass three consecutive times
-  - The game has been inactive for the configured number of days
+The `archive/` directory contains historical files from the development process:
 
-## License
+- **aws-deployment/**: Legacy AWS App Runner deployment files
+- **old-deployment-scripts/**: Previous deployment attempts and alternatives
+- **test-scripts/**: Development testing scripts and database utilities
+- **old-dockerfiles/**: Previous Docker configurations
+- **old-configs/**: Outdated configuration files
+- **alternative-deployments/**: Scripts for Fly.io, Railway, Render deployments
+- **old-documentation/**: Previous documentation versions
+
+These files are preserved for reference but are not part of the current production system.
+
+## 🎮 Game Features
+
+- **Multiplayer word placement** similar to Scrabble
+- **Multi-language wordlist support** (German, English, etc.)
+- **Real-time gameplay** via WebSocket connections
+- **Invitation system** for private games
+- **Score tracking** with letter and bonus calculations
+- **Intelligent game ending** based on various conditions
+
+## 🏗️ Infrastructure
+
+- **Platform**: Google Cloud Platform
+- **Compute**: Cloud Run (serverless containers)
+- **Database**: Cloud SQL PostgreSQL
+- **Container Registry**: Google Container Registry
+- **Secrets**: Google Secret Manager
+- **Infrastructure**: Terraform-managed
+
+## 📄 License
 
 MIT

@@ -1,28 +1,33 @@
 # app/routers/games.py
 
 from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from sqlalchemy import desc, text, and_
+from typing import List, Optional, Dict, Any
+from pydantic import BaseModel
+import json
+import uuid
+import logging
+from datetime import datetime, timezone
+
+from app.db import get_db
+from app.dependencies import get_translation_helper
 from app.models import Game, Player, Move, User, ChatMessage, GameInvitation, Friend
 from app.models.game import GameStatus
 from app.models.game_invitation import InvitationStatus
 from app.auth import get_current_user, get_token_from_header, get_user_from_token
 from app.game_logic.game_state import GameState, GamePhase, MoveType, Position, PlacedTile
 from app.game_logic.letter_bag import LETTER_DISTRIBUTION, LetterBag, create_letter_bag, draw_letters, return_letters, create_rack
+from app.utils.i18n import TranslationHelper
 from app.utils.wordlist_utils import ensure_wordlist_available, load_wordlist
 from app.utils.email_service import email_service
 from app.config import FRONTEND_URL
-import uuid
-import json
-from datetime import datetime, timezone
 from app.websocket import manager
-from typing import List, Optional, Dict, Any
 from jose import JWTError, jwt
 from app.auth import SECRET_KEY, ALGORITHM
 import random
-import logging
 from app.game_logic.board_utils import find_word_placements
-from pydantic import BaseModel
 from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
 import secrets
@@ -32,12 +37,14 @@ logger = logging.getLogger(__name__)
 class CreateGameRequest(BaseModel):
     language: str = "en"
     max_players: int = 2
+    short_game: bool = False  # Simple parameter for endgame testing
 
 class CreateGameWithInvitationsRequest(BaseModel):
     language: str = "en"
     max_players: int = 2
     invitees: List[str]  # List of usernames or email addresses to invite
     base_url: str = "http://localhost:3000"  # Default to frontend port
+    short_game: bool = False  # Simple parameter for endgame testing
 
 class GameStateEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -48,31 +55,66 @@ class GameStateEncoder(json.JSONEncoder):
         elif isinstance(obj, Position):
             return {"row": obj.row, "col": obj.col}
         elif isinstance(obj, PlacedTile):
-            return {"letter": obj.letter, "is_blank": obj.is_blank}
+            return {"letter": obj.letter, "is_blank": obj.is_blank, "tile_id": obj.tile_id}
         elif isinstance(obj, set):
             return list(obj)
         return super().default(obj)
 
 router = APIRouter(prefix="/games", tags=["games"])
 
+def detect_center_used_from_board(board):
+    """Helper function to detect if center has been used by checking if there's a tile at position (7,7)."""
+    if not board or len(board) < 8 or len(board[7]) < 8:
+        return False
+    return board[7][7] is not None
+
+def reconstruct_board_from_json(board_data):
+    """Helper function to reconstruct board with proper PlacedTile objects from JSON data."""
+    if not board_data:
+        return [[None]*15 for _ in range(15)]
+    
+    reconstructed_board = []
+    for row in board_data:
+        reconstructed_row = []
+        for cell in row:
+            if cell is None:
+                reconstructed_row.append(None)
+            else:
+                # Reconstruct PlacedTile object from JSON dict
+                tile = PlacedTile(
+                    letter=cell["letter"],
+                    is_blank=cell.get("is_blank", False),
+                    tile_id=cell.get("tile_id")  # Preserve existing tile_id or None (will auto-generate)
+                )
+                reconstructed_row.append(tile)
+        reconstructed_board.append(reconstructed_row)
+    return reconstructed_board
+
 @router.post("/")
 def create_game(
     game_data: CreateGameRequest,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    t: TranslationHelper = Depends(get_translation_helper)
 ):
     """Create a new game."""
     # Validate language
-    if game_data.language not in ["en", "de"]:
-        raise HTTPException(400, "Invalid language. Supported languages: en, de")
+    if game_data.language not in ["en", "de", "es", "fr", "it"]:
+        raise HTTPException(400, t.error("invalid_language", languages="en, de, es, fr, it"))
     
     # Validate max_players
     if not (2 <= game_data.max_players <= 4):
-        raise HTTPException(400, "Max players must be between 2 and 4")
+        raise HTTPException(400, t.error("max_players_invalid"))
     
-    # Ensure wordlist exists for the chosen language
+    # Ensure wordlist exists for the chosen language (or fallback to English for short games)
     if not ensure_wordlist_available(game_data.language, db):
-        raise HTTPException(500, f"Wordlist for language '{game_data.language}' not available")
+        if game_data.short_game:
+            # For short games (testing), fallback to English wordlist if target language not available
+            logger.warning(f"⚠️  Wordlist for '{game_data.language}' not available, using English wordlist for short game testing")
+            if not ensure_wordlist_available("en", db):
+                raise HTTPException(500, t.error("wordlist_not_available", language="en (fallback)"))
+        else:
+            raise HTTPException(500, t.error("wordlist_not_available", language=game_data.language))
     
     # Create game record
     game = Game(
@@ -84,8 +126,13 @@ def create_game(
         created_at=datetime.now(timezone.utc)
     )
     
-    # Initialize game state
-    game_state = GameState(language=game_data.language)
+    # Initialize game state with short game mode if requested
+    game_state = GameState(language=game_data.language, short_game=game_data.short_game)
+    
+    # Log short game creation for debugging
+    if game_data.short_game:
+        logger.info(f"🧪 SHORT GAME: Creating game {game.id} in short game mode with 24-tile letter bag for language {game_data.language}")
+    
     initial_state = {
         "board": game_state.board,
         "phase": game_state.phase.value,
@@ -93,7 +140,8 @@ def create_game(
         "multipliers": {f"{pos[0]},{pos[1]}": value for pos, value in game_state.multipliers.items()},
         "letter_bag": game_state.letter_bag,
         "turn_number": 0,
-        "consecutive_passes": 0
+        "consecutive_passes": 0,
+        "test_mode": game_data.short_game  # Store short_game flag as test_mode for backward compatibility
     }
     game.state = json.dumps(initial_state, cls=GameStateEncoder)
     
@@ -128,8 +176,8 @@ def create_game_with_invitations(
 ):
     """Create a new game with automatic invitations and email notifications."""
     # Validate language
-    if game_data.language not in ["en", "de"]:
-        raise HTTPException(400, "Invalid language. Supported languages: en, de")
+    if game_data.language not in ["en", "de", "es", "fr", "it"]:
+        raise HTTPException(400, "Invalid language. Supported languages: en, de, es, fr, it")
     
     # Validate max_players
     if not (2 <= game_data.max_players <= 4):
@@ -142,9 +190,15 @@ def create_game_with_invitations(
     if len(game_data.invitees) >= game_data.max_players:
         raise HTTPException(400, f"Too many invitees. Maximum {game_data.max_players - 1} invitees for {game_data.max_players} player game")
     
-    # Ensure wordlist exists for the chosen language
+    # Ensure wordlist exists for the chosen language (or fallback to English for short games)
     if not ensure_wordlist_available(game_data.language, db):
-        raise HTTPException(500, f"Wordlist for language '{game_data.language}' not available")
+        if game_data.short_game:
+            # For short games (testing), fallback to English wordlist if target language not available
+            logger.warning(f"⚠️  Wordlist for '{game_data.language}' not available, using English wordlist for short game testing")
+            if not ensure_wordlist_available("en", db):
+                raise HTTPException(500, t.error("wordlist_not_available", language="en (fallback)"))
+        else:
+            raise HTTPException(500, t.error("wordlist_not_available", language=game_data.language))
     
     # Create game record
     game = Game(
@@ -156,8 +210,13 @@ def create_game_with_invitations(
         created_at=datetime.now(timezone.utc)
     )
     
-    # Initialize game state
-    game_state = GameState(language=game_data.language)
+    # Initialize game state with short game mode if requested
+    game_state = GameState(language=game_data.language, short_game=game_data.short_game)
+    
+    # Log short game creation for debugging
+    if game_data.short_game:
+        logger.info(f"🧪 SHORT GAME: Creating game {game.id} in short game mode with 24-tile letter bag for language {game_data.language}")
+    
     initial_state = {
         "board": game_state.board,
         "phase": game_state.phase.value,
@@ -165,7 +224,8 @@ def create_game_with_invitations(
         "multipliers": {f"{pos[0]},{pos[1]}": value for pos, value in game_state.multipliers.items()},
         "letter_bag": game_state.letter_bag,
         "turn_number": 0,
-        "consecutive_passes": 0
+        "consecutive_passes": 0,
+        "test_mode": game_data.short_game  # Store short_game flag as test_mode for backward compatibility
     }
     game.state = json.dumps(initial_state, cls=GameStateEncoder)
     
@@ -275,13 +335,14 @@ def create_game_with_invitations(
 def join_game(
     game_id: str,
     db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    current_user = Depends(get_current_user),
+    t: TranslationHelper = Depends(get_translation_helper)
 ):
     """Join an existing game."""
     # Check if game exists
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
-        raise HTTPException(404, "Game not found")
+        raise HTTPException(404, t.error("game_not_found"))
     
     # Check if game is in a joinable state
     if game.status not in [GameStatus.SETUP, GameStatus.READY]:
@@ -295,7 +356,7 @@ def join_game(
     # Check if game is full
     current_players = db.query(Player).filter_by(game_id=game_id).count()
     if current_players >= game.max_players:
-        raise HTTPException(400, "Game is full")
+        raise HTTPException(400, t.error("game_full"))
     
     # Add user as a player
     player = Player(
@@ -307,9 +368,61 @@ def join_game(
     
     db.add(player)
     
+    # Check for any pending invitations for this user and game and update their status
+    pending_invitation = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.invitee_id == current_user.id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).first()
+    
+    if pending_invitation:
+        # Update invitation status to accepted
+        pending_invitation.status = InvitationStatus.ACCEPTED
+        pending_invitation.responded_at = datetime.now(timezone.utc)
+        
+        # Add friend relationship between inviter and invitee (if not already friends)
+        inviter_id = pending_invitation.inviter_id
+        invitee_id = current_user.id
+        
+        # Check if they're already friends (either direction)
+        existing_friendship = db.query(Friend).filter(
+            ((Friend.user_id == inviter_id) & (Friend.friend_id == invitee_id)) |
+            ((Friend.user_id == invitee_id) & (Friend.friend_id == inviter_id))
+        ).first()
+        
+        if not existing_friendship and inviter_id != invitee_id:
+            # Create bidirectional friendship
+            friendship1 = Friend(user_id=inviter_id, friend_id=invitee_id)
+            friendship2 = Friend(user_id=invitee_id, friend_id=inviter_id)
+            db.add(friendship1)
+            db.add(friendship2)
+            
+            logger.info(f"Created friendship between users {inviter_id} and {invitee_id}")
+    
     # Check if game should transition to READY state
     new_player_count = current_players + 1
-    if new_player_count >= 2 and game.status == GameStatus.SETUP:
+    
+    # Check if all invitations are responded to and we have enough players
+    pending_invitations = db.query(GameInvitation).filter(
+        GameInvitation.game_id == game_id,
+        GameInvitation.status == InvitationStatus.PENDING
+    ).count()
+    
+    if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
+        game.status = GameStatus.READY
+        
+        # Notify via WebSocket that game is ready
+        try:
+            manager.broadcast_to_game(game_id, {
+                "type": "game_status_change",
+                "game_id": game_id,
+                "status": "ready",
+                "player_count": new_player_count,
+                "message": f"Game is ready to start! {new_player_count} players joined."
+            })
+        except Exception as e:
+            logger.warning(f"Failed to send WebSocket notification: {e}")
+    elif new_player_count >= 2 and game.status == GameStatus.SETUP:
         game.status = GameStatus.READY
     
     db.commit()
@@ -317,7 +430,7 @@ def join_game(
     db.refresh(game)
     
     return {
-        "message": "Successfully joined the game",
+        "message": t.success("game_joined"),
         "game_id": game_id,
         "player_count": new_player_count,
         "game_status": game.status.value
@@ -443,16 +556,54 @@ def join_game_with_token(
 
 @router.get("/my-games")
 def list_user_games(
+    status_filter: List[str] = Query(None, description="Filter games by status. Valid values: setup, ready, in_progress, completed, cancelled. If not provided, shows all games."),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """List all games the current user participates in with detailed information."""
+    """List all games the current user participates in with detailed information.
+    
+    Args:
+        status_filter: List of game statuses to include. Valid values: 
+                      - "setup": Games being set up, waiting for invitations
+                      - "ready": All players accepted, waiting to start  
+                      - "in_progress": Games currently being played
+                      - "completed": Finished games
+                      - "cancelled": Cancelled games
+                      If not provided, shows all games.
+    """
     
     # Get all games where the user is a player
-    user_games = db.query(Game).join(Player).filter(
+    query = db.query(Game).join(Player).filter(
         Player.user_id == current_user.id
-    ).all()
+    )
     
+    # Add filter for specific statuses if requested
+    if status_filter and len(status_filter) > 0:  # Show all games if None or empty list
+        # Validate status values
+        valid_statuses = ["setup", "ready", "in_progress", "completed", "cancelled"]
+        invalid_statuses = [s for s in status_filter if s not in valid_statuses]
+        if invalid_statuses:
+            raise HTTPException(400, f"Invalid status values: {invalid_statuses}. Valid values: {valid_statuses}")
+        
+        # Convert string values to GameStatus enum values for filtering
+        status_enums = []
+        for status_str in status_filter:
+            if status_str == "setup":
+                status_enums.append(GameStatus.SETUP)
+            elif status_str == "ready":
+                status_enums.append(GameStatus.READY)
+            elif status_str == "in_progress":
+                status_enums.append(GameStatus.IN_PROGRESS)
+            elif status_str == "completed":
+                status_enums.append(GameStatus.COMPLETED)
+            elif status_str == "cancelled":
+                status_enums.append(GameStatus.CANCELLED)
+        
+        query = query.filter(Game.status.in_(status_enums))
+    # If status_filter is None or empty, no filtering is applied (shows all games)
+    
+    user_games = query.all()
+
     games_info = []
     
     for game in user_games:
@@ -558,6 +709,7 @@ def list_user_games(
             "created_at": game.created_at.isoformat(),
             "started_at": game.started_at.isoformat() if game.started_at else None,
             "completed_at": game.completed_at.isoformat() if game.completed_at else None,
+            "current_player_id": game.current_player_id,  # Add missing current_player_id field
             "turn_number": turn_number,
             "is_user_turn": is_user_turn,
             "time_since_last_activity": time_since_str,
@@ -590,6 +742,47 @@ def list_user_games(
         "games_waiting_for_user": sum(1 for g in games_info if g["is_user_turn"]),
         "active_games": sum(1 for g in games_info if g["status"] == "in_progress"),
         "completed_games": sum(1 for g in games_info if g["status"] == "completed")
+    }
+
+@router.get("/my-invitations")
+def get_my_invitations(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get all pending invitations for the current user."""
+    invitations = db.query(GameInvitation).filter(
+        and_(
+            GameInvitation.invitee_id == current_user.id,
+            GameInvitation.status == InvitationStatus.PENDING
+        )
+    ).all()
+    
+    invitation_list = []
+    for inv in invitations:
+        invitation_list.append({
+            "invitation_id": inv.id,
+            "game_id": inv.game_id,
+            "inviter": {
+                "id": inv.inviter.id,
+                "username": inv.inviter.username,
+                "email": inv.inviter.email
+            },
+            "game": {
+                "id": inv.game.id,
+                "language": inv.game.language,
+                "max_players": inv.game.max_players,
+                "status": inv.game.status.value,
+                "created_at": inv.game.created_at.isoformat()
+            },
+            "status": inv.status.value,
+            "created_at": inv.created_at.isoformat(),
+            "join_token": inv.join_token
+        })
+    
+    return {
+        "invitations": invitation_list,
+        "total_count": len(invitation_list),
+        "pending_count": len([inv for inv in invitation_list if inv["status"] == "pending"])
     }
 
 @router.get("/friends")
@@ -730,8 +923,16 @@ async def start_game(
             detail="Not enough players to start game"
         )
     
-    # Create letter bag
-    letter_bag = create_letter_bag(game.language)
+    # Get test mode from game state
+    state_data = json.loads(game.state) if game.state else {}
+    short_game = state_data.get("test_mode", False)  # Keep "test_mode" key for backward compatibility
+    
+    # Create letter bag (use short game mode if enabled)
+    letter_bag = create_letter_bag(game.language, short_game=short_game)
+    
+    # Log short game start for debugging
+    if short_game:
+        logger.info(f"🧪 SHORT GAME: Starting game {game_id} in short game mode with {len(letter_bag)}-tile letter bag")
     
     # Deal initial letters to players
     for player in players:
@@ -774,7 +975,7 @@ async def start_game(
 @router.post("/{game_id}/move")
 async def make_move(
     game_id: str,
-    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional)}]
+    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -791,7 +992,7 @@ async def make_move(
     # Load game state from DB JSON (game.state)
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board", [[None]*15 for _ in range(15)])
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value)) # Default to IN_PROGRESS
     game_state.current_player_id = game.current_player_id # From Game table
     
@@ -806,6 +1007,12 @@ async def make_move(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     # Load player racks and scores from Player table into GameState
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
@@ -818,7 +1025,11 @@ async def make_move(
     for m_item in move_data:
         try:
             pos = Position(m_item["row"], m_item["col"])
-            tile = PlacedTile(m_item["letter"], m_item.get("is_blank", False))
+            tile = PlacedTile(
+                letter=m_item["letter"], 
+                is_blank=m_item.get("is_blank", False),
+                tile_id=m_item.get("tile_id")  # Use provided tile_id or None (will auto-generate)
+            )
             parsed_move_positions.append((pos, tile))
         except KeyError: # pragma: no cover
             raise HTTPException(400, "Invalid move data format. Each item must have 'row', 'col', 'letter'.")
@@ -839,6 +1050,15 @@ async def make_move(
     
     if not success:
         raise HTTPException(400, message) # Move was invalid
+    
+    # Get detailed score breakdown for this move
+    logger.info(f"🔍 Getting detailed score breakdown for move with {len(parsed_move_positions)} positions")
+    try:
+        score_breakdown = game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+        logger.info(f"🔍 Score breakdown calculated successfully: {score_breakdown}")
+    except Exception as e:
+        logger.error(f"🔍 Error calculating score breakdown: {e}")
+        score_breakdown = None
     
     # Update Game table
     game.current_player_id = game_state.current_player_id # game_state updates this
@@ -866,9 +1086,6 @@ async def make_move(
         # Final scores are in game_state.scores, update Player table one last time
         for p_rec in db_players:
             p_rec.score = game_state.scores[p_rec.user_id]
-            if game_state.bonus_points.get(p_rec.user_id, 0) != 0 : # If end game bonus applied
-                 # Log or store bonus points if necessary, already included in p_rec.score by game_state
-                 pass
 
 
     # Persist updated GameState to game.state JSON
@@ -880,6 +1097,7 @@ async def make_move(
         "letter_bag": game_state.letter_bag,
         "turn_number": game_state.turn_number,
         "consecutive_passes": game_state.consecutive_passes,
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()}, # Snapshot current racks
         "player_scores_snapshot": game_state.scores.copy(), # Snapshot current scores
         "completion_data": completion_details if is_game_over else None
@@ -894,7 +1112,8 @@ async def make_move(
         "points_gained": points_gained,
         "your_new_rack": list(game_state.players[current_user.id]),
         "next_player_id": game.current_player_id,
-        "game_over": is_game_over
+        "game_over": is_game_over,
+        "score_breakdown": score_breakdown if score_breakdown else {"error": "Score breakdown calculation failed"}
     }
     if is_game_over:
         response_data["completion_details"] = completion_details
@@ -911,7 +1130,8 @@ async def make_move(
                 "player_id": current_user.id,
                 "username": current_user.username,
                 "move_data": move_data, # The move that was just made
-                "points": points_gained
+                "points": points_gained,
+                "score_breakdown": score_breakdown
             },
             "game_over": is_game_over,
             "completion_details": completion_details if is_game_over else None,
@@ -922,6 +1142,170 @@ async def make_move(
         await manager.broadcast_to_game(game.id, broadcast_payload)
     except Exception as e: # pragma: no cover
         logger.error(f"WebSocket broadcast error after move in game {game_id}: {e}")
+    
+    return response_data
+
+@router.post("/{game_id}/test-move")
+async def test_move(
+    game_id: str,
+    move_data: List[dict], # [{"row": int, "col": int, "letter": str, "is_blank": bool (optional), "tile_id": str (optional)}]
+    skip_turn_validation: bool = Body(False, description="Skip turn validation for testing purposes"),
+    skip_rack_validation: bool = Body(False, description="Skip rack validation for testing purposes"),
+    test_rack: Optional[str] = Body(None, description="Override player's rack for testing (e.g., 'ABCDEFG'). If not provided, uses current rack."),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """
+    🧪 TEST ENDPOINT: Make a move for testing purposes with optional validation bypasses.
+    
+    This endpoint allows developers to test moves using the player's current rack and game state.
+    It can optionally bypass validations for testing edge cases:
+    - It's not their turn (skip_turn_validation=true)
+    - They don't have the required letters (skip_rack_validation=true) 
+    - Using a custom rack for testing (test_rack="ABCDEFG")
+    
+    By default, it uses the player's current rack and actual game state for realistic testing.
+    
+    ⚠️ WARNING: This is for development/testing only and should not be used in production games!
+    """
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.status != GameStatus.IN_PROGRESS:
+        raise HTTPException(400, f"Game is not in progress. Status: {game.status.value}")
+        
+    # Turn validation can be skipped for testing
+    if not skip_turn_validation and game.current_player_id != current_user.id:
+        raise HTTPException(403, "Not your turn (use skip_turn_validation=true to bypass for testing)")
+
+    # Load game state from DB JSON (game.state)
+    persisted_state_data = json.loads(game.state)
+    game_state = GameState(language=game.language)
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
+    game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
+    game_state.current_player_id = game.current_player_id
+    
+    # Reconstruct LetterBag object from persisted data
+    letter_bag_data = persisted_state_data.get("letter_bag", [])
+    if isinstance(letter_bag_data, dict) and "letters" in letter_bag_data:
+        game_state.letter_bag = letter_bag_data["letters"]
+    else:
+        game_state.letter_bag = letter_bag_data
+    
+    game_state.turn_number = persisted_state_data.get("turn_number", 0)
+    game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        game_state.center_used = detect_center_used_from_board(game_state.board)
+
+    # Load player racks and scores from Player table into GameState
+    db_players = db.query(Player).filter(Player.game_id == game_id).all()
+    for p_rec in db_players:
+        game_state.players[p_rec.user_id] = p_rec.rack 
+        game_state.scores[p_rec.user_id] = p_rec.score
+    
+    # Get the player's current rack
+    current_player_record = None
+    for p_rec in db_players:
+        if p_rec.user_id == current_user.id:
+            current_player_record = p_rec
+            break
+    
+    if not current_player_record:
+        raise HTTPException(404, "Player not found in game")
+    
+    original_rack = current_player_record.rack
+    
+    # Override rack for testing if provided, otherwise use current rack
+    if test_rack:
+        game_state.players[current_user.id] = test_rack
+        logger.info(f"🧪 TEST MODE: Using test rack '{test_rack}' for user {current_user.id}")
+        rack_source = "custom test rack"
+    else:
+        # Use the player's actual current rack
+        logger.info(f"🧪 TEST MODE: Using current rack '{original_rack}' for user {current_user.id}")
+        rack_source = "current player rack"
+    
+    # Convert move_data to GameState format
+    parsed_move_positions = []
+    for m_item in move_data:
+        try:
+            pos = Position(m_item["row"], m_item["col"])
+            tile = PlacedTile(
+                letter=m_item["letter"], 
+                is_blank=m_item.get("is_blank", False),
+                tile_id=m_item.get("tile_id")
+            )
+            parsed_move_positions.append((pos, tile))
+        except KeyError:
+            raise HTTPException(400, "Invalid move data format. Each item must have 'row', 'col', 'letter'.")
+
+    # Load dictionary for word validation
+    try:
+        dictionary = load_wordlist(game.language)
+    except FileNotFoundError:
+        raise HTTPException(500, f"Wordlist for language '{game.language}' not found.")
+    
+    # Temporarily disable rack validation if requested
+    if skip_rack_validation:
+        # Save original rack validation method
+        original_validate_rack = game_state._validate_rack_usage
+        # Replace with a method that always returns True
+        game_state._validate_rack_usage = lambda *args, **kwargs: (True, "Rack validation bypassed for testing")
+        logger.info(f"🧪 TEST MODE: Rack validation bypassed for user {current_user.id}")
+    
+    try:
+        # Execute the move logic within GameState
+        success, message, points_gained = game_state.make_move(
+            current_user.id,
+            MoveType.PLACE,
+            parsed_move_positions,
+            dictionary,
+            skip_turn_validation=skip_turn_validation  # Pass the skip flag to GameState
+        )
+    finally:
+        # Restore original rack validation if it was disabled
+        if skip_rack_validation:
+            game_state._validate_rack_usage = original_validate_rack
+    
+    if not success:
+        raise HTTPException(400, f"Move validation failed: {message}")
+    
+    # Get detailed score breakdown for this test move
+    logger.info(f"🔍 Getting detailed score breakdown for move with {len(parsed_move_positions)} positions")
+    try:
+        score_breakdown = game_state.calculate_detailed_score_breakdown(parsed_move_positions)
+        logger.info(f"🔍 Score breakdown calculated successfully: {score_breakdown}")
+    except Exception as e:
+        logger.error(f"🔍 Error calculating score breakdown: {e}")
+        score_breakdown = None
+    
+    # Prepare response with test results
+    response_data = {
+        "test_mode": True,
+        "message": f"TEST MOVE SUCCESS: {message}",
+        "points_gained": points_gained,
+        "move_valid": success,
+        "score_breakdown": score_breakdown,
+        "original_rack": list(original_rack),
+        "rack_used_for_test": list(game_state.players[current_user.id]),
+        "rack_after_move": list(game_state.players[current_user.id]),
+        "next_player_id": game_state.current_player_id,
+        "turn_validation_skipped": skip_turn_validation,
+        "rack_validation_skipped": skip_rack_validation,
+        "rack_source": rack_source,
+        "database_updated": False,  # Test moves don't update DB by default
+        "warning": "This is a test move and does not affect the actual game state",
+        "game_state": {
+            "turn_number": game_state.turn_number,
+            "letter_bag_count": len(game_state.letter_bag),
+            "board_after_move": game_state.board,
+            "scores_after_move": game_state.scores
+        }
+    }
     
     return response_data
 
@@ -944,7 +1328,7 @@ async def pass_turn(
     # Load game state
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board", [[None]*15 for _ in range(15)])
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
     game_state.current_player_id = game.current_player_id
     
@@ -959,6 +1343,12 @@ async def pass_turn(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     for p_rec in db_players:
@@ -1009,6 +1399,7 @@ async def pass_turn(
         "letter_bag": game_state.letter_bag, # Unchanged by pass
         "turn_number": game_state.turn_number,
         "consecutive_passes": game_state.consecutive_passes, # Updated by make_move(PASS)
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()},
         "player_scores_snapshot": game_state.scores.copy(),
         "completion_data": completion_details if is_game_over else None
@@ -1072,7 +1463,7 @@ async def exchange_letters(
     # Load game state
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = persisted_state_data.get("board") 
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
     game_state.current_player_id = game.current_player_id
     
@@ -1087,6 +1478,12 @@ async def exchange_letters(
     
     game_state.turn_number = persisted_state_data.get("turn_number", 0)
     game_state.consecutive_passes = persisted_state_data.get("consecutive_passes", 0)
+    # Restore center_used flag from persisted state, or detect from board if not available
+    if "center_used" in persisted_state_data:
+        game_state.center_used = persisted_state_data["center_used"]
+    else:
+        # Fallback for existing games: detect if center is used by checking the board
+        game_state.center_used = detect_center_used_from_board(game_state.board)
 
     db_players = db.query(Player).filter(Player.game_id == game_id).all()
     current_player_record = None
@@ -1137,6 +1534,7 @@ async def exchange_letters(
         "letter_bag": game_state.letter_bag, # Updated
         "turn_number": game_state.turn_number, # Updated
         "consecutive_passes": game_state.consecutive_passes, # Reset
+        "center_used": game_state.center_used,  # Include center_used flag
         "player_racks_snapshot": {uid: list(rack) for uid, rack in game_state.players.items()},
         "player_scores_snapshot": game_state.scores.copy(),
         # No completion data from exchange
@@ -1345,8 +1743,16 @@ async def auto_start_game(
     if len(players) < 2:
         raise HTTPException(400, "Not enough players to start game")
     
-    # Create letter bag
-    letter_bag = create_letter_bag(game.language)
+    # Get test mode from game state
+    state_data = json.loads(game.state) if game.state else {}
+    short_game = state_data.get("test_mode", False)  # Keep "test_mode" key for backward compatibility
+    
+    # Create letter bag (use short game mode if enabled)
+    letter_bag = create_letter_bag(game.language, short_game=short_game)
+    
+    # Log short game start for debugging
+    if short_game:
+        logger.info(f"🧪 SHORT GAME: Starting game {game_id} in short game mode with {len(letter_bag)}-tile letter bag")
     
     # Deal initial letters to players
     for player in players:

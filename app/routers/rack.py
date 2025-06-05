@@ -1,15 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
+from app.dependencies import get_translation_helper
 from app.models import Player, Game
 from app.auth import get_current_user
+from app.utils.i18n import TranslationHelper
 from app.game_logic.letter_bag import LETTER_DISTRIBUTION
 import random
 
 router = APIRouter(prefix="/rack", tags=["rack"])
 
 @router.get("/")
-def get_rack(db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def get_rack(
+    db: Session = Depends(get_db), 
+    current_user = Depends(get_current_user)
+):
     """Get the current user's rack for all active games."""
     players = db.query(Player).filter(Player.user_id == current_user.id).all()
     
@@ -24,26 +29,36 @@ def get_rack(db: Session = Depends(get_db), current_user = Depends(get_current_u
     }
 
 @router.get("/{game_id}")
-def get_game_rack(game_id: str, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def get_game_rack(
+    game_id: str, 
+    db: Session = Depends(get_db), 
+    current_user = Depends(get_current_user),
+    t: TranslationHelper = Depends(get_translation_helper)
+):
     """Get the current user's rack for a specific game."""
     player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
     
     if not player:
-        raise HTTPException(status_code=404, detail="Spieler nicht gefunden")
+        raise HTTPException(status_code=404, detail=t.error("player_not_found"))
     
     return {"rack": list(player.rack)}
 
 @router.post("/{game_id}/refill")
-def refill_rack(game_id: str, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
+def refill_rack(
+    game_id: str, 
+    db: Session = Depends(get_db), 
+    current_user = Depends(get_current_user),
+    t: TranslationHelper = Depends(get_translation_helper)
+):
     """Refill the rack to 7 letters."""
     # Get both player and game info to know the language
     player = db.query(Player).filter_by(game_id=game_id, user_id=current_user.id).first()
     if not player:
-        raise HTTPException(status_code=404, detail="Spieler nicht gefunden")
+        raise HTTPException(status_code=404, detail=t.error("player_not_found"))
     
     game = db.query(Game).filter_by(id=game_id).first()
     if not game:
-        raise HTTPException(status_code=404, detail="Spiel nicht gefunden")
+        raise HTTPException(status_code=404, detail=t.error("game_not_found"))
     
     needed = 7 - len(player.rack)
     if needed <= 0:

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
 from app.models import Game, ChatMessage, Player
 from app.auth import get_current_user
 from typing import List

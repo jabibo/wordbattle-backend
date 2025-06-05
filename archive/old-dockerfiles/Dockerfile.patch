@@ -1,0 +1,18 @@
+# Use the working image as base
+FROM 598510278922.dkr.ecr.eu-central-1.amazonaws.com/wordbattle-backend:working-tokens
+
+# Switch to root to make changes
+USER root
+
+# Copy only the modified files we need
+COPY app/main.py /app/app/main.py
+COPY app/routers/admin.py /app/app/routers/admin.py
+
+# Fix ownership
+RUN chown -R appuser:appuser /app
+
+# Switch back to app user
+USER appuser
+
+# Keep the same entrypoint as the working image
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 

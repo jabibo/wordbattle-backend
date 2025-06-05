@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Body
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from app.dependencies import get_db
+from app.db import get_db
 from app.models import User
 from app.auth import (
     verify_password, create_access_token, get_user_by_username, 
@@ -144,7 +144,8 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         "user": {
             "id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "language": user.language or "en"
         }
     }
     
@@ -200,7 +201,8 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
         "user": {
             "id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "language": user.language or "en"
         }
     }
 
@@ -223,5 +225,6 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "email": current_user.email,
         "is_email_verified": current_user.is_email_verified,
-        "last_login": current_user.last_login.isoformat() if current_user.last_login else None
+        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+        "language": current_user.language or "en"
     }

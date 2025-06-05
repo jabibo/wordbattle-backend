@@ -1,0 +1,16 @@
+{
+  "ImageRepository": {
+    "ImageIdentifier": "598510278922.dkr.ecr.eu-central-1.amazonaws.com/wordbattle-backend:minimal-email-fix",
+    "ImageConfiguration": {
+      "Port": "8000",
+      "RuntimeEnvironmentVariables": {
+        "DB_HOST": "wordbattle-db.c9wokmyok9ty.eu-central-1.rds.amazonaws.com",
+        "DB_NAME": "wordbattle",
+        "DB_PASSWORD": "Wordbattle2024",
+        "DB_USER": "postgres"
+      }
+    },
+    "ImageRepositoryType": "ECR"
+  },
+  "AutoDeploymentsEnabled": false
+} 
