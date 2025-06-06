@@ -52,19 +52,22 @@ def get_previous_opponents(
     """Get list of players the current user has played with before."""
     
     try:
-        # Use raw SQL to avoid SQLAlchemy subquery issues (fixed JSON GROUP BY)
+        # Use raw SQL approach that works reliably with PostgreSQL
         sql_query = text("""
             SELECT 
                 u.id, 
                 u.username, 
                 u.allow_invites, 
-                u.preferred_languages,
-                opponent_counts.games_together
+                u.preferred_languages, 
+                opponent_counts.games_together,
+                opponent_counts.last_played_together
             FROM (
                 SELECT 
                     p2.user_id,
-                    COUNT(p2.game_id) as games_together
+                    COUNT(p2.game_id) as games_together,
+                    MAX(g.created_at) as last_played_together
                 FROM players p2
+                JOIN games g ON g.id = p2.game_id
                 WHERE p2.game_id IN (
                     SELECT p1.game_id 
                     FROM players p1 
@@ -88,7 +91,8 @@ def get_previous_opponents(
                 "username": opponent.username,
                 "allow_invites": opponent.allow_invites,
                 "preferred_languages": opponent.preferred_languages or ["en", "de"],
-                "games_played_together": opponent.games_together
+                "games_played": opponent.games_together,
+                "last_played": opponent.last_played_together.isoformat() if opponent.last_played_together else None
             })
         
         return {
