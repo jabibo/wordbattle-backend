@@ -17,7 +17,4 @@ RUN mkdir -p data
 RUN if [ -f data/de-words.txt ]; then cp data/de-words.txt data/de_words.txt; else echo -e "HALLO\nWELT\nTEST\nSPIEL\nWORT\nTAG\nTAGE\nBAUM" > data/de_words.txt; fi
 RUN if [ -f data/en-words.txt ] && [ -s data/en-words.txt ]; then cp data/en-words.txt data/en_words.txt; else echo -e "HELLO\nWORLD\nTEST\nGAME\nWORD\nDAY\nDAYS\nTREE" > data/en_words.txt; fi
 
-# Set database host for Docker
-ENV DB_HOST=db
-
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
