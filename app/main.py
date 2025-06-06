@@ -98,52 +98,65 @@ app.add_middleware(
     max_age=600,
 )
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-
 # Startup event to initialize database
 @app.on_event("startup")
 async def startup_event():
-    from app.database_manager import initialize_database_if_needed
-    result = initialize_database_if_needed()
+    from app.database_manager import check_database_status
     
-    if result["success"]:
-        if result["action"] == "skipped":
-            logger.info("Database already initialized - skipping word loading")
-        else:
-            logger.info("Database initialized successfully")
-            # Schedule background word import only if we just initialized
-            import asyncio
-            asyncio.create_task(schedule_background_word_import())
-    else:
-        logger.error(f"Database initialization failed: {result.get('error', 'Unknown error')}")
-
-async def schedule_background_word_import():
-    """Schedule background import of remaining words after startup delay."""
+    # Create database tables first
     try:
-        import asyncio
-        await asyncio.sleep(60)  # Wait 60 seconds after startup
-        logger.info("Starting background import of remaining German words...")
-        
-        # Use the database manager to check and load words
-        from app.database_manager import check_database_status, load_wordlist
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database table creation failed: {e}")
+        return
+    
+    # Only check if database exists, don't load words during startup
+    try:
+        # Ensure user preference columns exist (fallback)
+        from app.database_manager import ensure_user_columns
+        ensure_user_columns()
         
         status = check_database_status()
-        de_count = status["word_counts"].get("de", 0)
         
-        if de_count < 100000:  # If we have less than 100k words, continue importing
-            logger.info(f"Current German word count: {de_count}, loading more...")
-            result = load_wordlist(language="de", skip=de_count, limit=100000)
-            
-            if result["success"]:
-                logger.info(f"Background import completed: {result['words_loaded']} words loaded")
-            else:
-                logger.error(f"Background import failed: {result.get('error', 'Unknown error')}")
+        if status["is_initialized"]:
+            logger.info("Database already initialized - skipping word loading")
         else:
-            logger.info("Word import already complete, skipping background import")
+            logger.info("Database needs initialization - will load words in background")
+            # Schedule immediate background word loading
+            import asyncio
+            asyncio.create_task(initialize_words_background())
             
     except Exception as e:
-        logger.error(f"Error in background word import: {e}")
+        logger.error(f"Database status check failed: {e}")
+
+async def initialize_words_background():
+    """Initialize words in the background without blocking startup."""
+    try:
+        import asyncio
+        await asyncio.sleep(5)  # Short delay to ensure container is ready
+        logger.info("Starting background database initialization...")
+        
+        from app.database_manager import load_wordlist, check_database_status
+        
+        status = check_database_status()
+        word_count = sum(status["word_counts"].values())
+        
+        if word_count < 1000:  # Load words if we have less than 1000
+            logger.info("Loading initial wordlist in background...")
+            result = load_wordlist(language="de", limit=10000)  # Load first 10k words
+            
+            if result["success"]:
+                logger.info(f"Background wordlist loading completed: {result['words_loaded']} words loaded")
+                # Schedule the remaining words
+                asyncio.create_task(schedule_background_word_import())
+            else:
+                logger.error(f"Background wordlist loading failed: {result.get('error', 'Unknown error')}")
+        else:
+            logger.info("Database already has words - skipping initial load")
+            
+    except Exception as e:
+        logger.error(f"Error in background word initialization: {e}")
 
 # Simple rate limiting middleware
 @app.middleware("http")
