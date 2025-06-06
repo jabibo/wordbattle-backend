@@ -123,11 +123,17 @@ python -m pytest
 python -m pytest --cov=app --cov-report=html
 ```
 
-## 📚 API Documentation
+## 📚 Documentation
 
+### API Documentation
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 - **API Spec**: [wordbattle_backend_api_documentation.md](wordbattle_backend_api_documentation.md)
+
+### Admin & Operations
+- **Admin Guide**: [docs/ADMIN.md](docs/ADMIN.md) - Administrative tasks, troubleshooting, and deployment issues
+- **Database Guide**: [docs/DATABASE.md](docs/DATABASE.md) - Database operations and management
+- **Deployment Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Comprehensive deployment instructions
 
 ## 🗃️ Archive Directory
 
