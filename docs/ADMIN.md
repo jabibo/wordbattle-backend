@@ -218,6 +218,49 @@ ORDER BY opponent_counts.games_together DESC
 """
 ```
 
+#### 5. Frontend-Backend Field Name Mismatch
+
+**Problem**: Frontend expects different field names than what backend was returning
+
+**Symptoms**:
+```dart
+// Frontend expects:
+final lastPlayedDate = DateTime.parse(json['last_played']); // ❌ was missing
+gamesPlayed: json['games_played'] ?? 0,  // ❌ was 'games_played_together'
+```
+
+**Root Cause**: Field naming inconsistency between frontend and backend contracts
+
+**Solution Applied**: Updated endpoint to match frontend expectations:
+```python
+# ✅ Fixed response format
+{
+    "id": opponent.id,
+    "username": opponent.username,
+    "allow_invites": opponent.allow_invites,
+    "preferred_languages": opponent.preferred_languages or ["en", "de"],
+    "games_played": opponent.games_together,  # ✅ Changed from games_played_together
+    "last_played": opponent.last_played_together.isoformat() if opponent.last_played_together else None  # ✅ Added missing field
+}
+```
+
+**Expected Response**:
+```json
+{
+  "previous_opponents": [
+    {
+      "id": 2,
+      "username": "player02",
+      "allow_invites": true,
+      "preferred_languages": ["en", "de"],
+      "games_played": 6,
+      "last_played": "2025-06-05T19:19:06.106453+00:00"
+    }
+  ],
+  "total_count": 1
+}
+```
+
 ### Deployment Best Practices
 
 1. **Always test database connectivity** before deploying
