@@ -12,6 +12,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 import logging
 import random
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -51,54 +52,44 @@ def get_previous_opponents(
     """Get list of players the current user has played with before."""
     
     try:
-        # Check if Player table exists and has data
-        player_count = db.query(Player).count()
-        if player_count == 0:
-            return {
-                "previous_opponents": [],
-                "total_count": 0
-            }
+        # Use raw SQL to avoid SQLAlchemy subquery issues (fixed JSON GROUP BY)
+        sql_query = text("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.allow_invites, 
+                u.preferred_languages,
+                opponent_counts.games_together
+            FROM (
+                SELECT 
+                    p2.user_id,
+                    COUNT(p2.game_id) as games_together
+                FROM players p2
+                WHERE p2.game_id IN (
+                    SELECT p1.game_id 
+                    FROM players p1 
+                    WHERE p1.user_id = :current_user_id
+                )
+                AND p2.user_id != :current_user_id
+                GROUP BY p2.user_id
+            ) opponent_counts
+            JOIN users u ON u.id = opponent_counts.user_id
+            WHERE u.allow_invites = true
+            ORDER BY opponent_counts.games_together DESC
+        """)
         
-        # Get all games where current user was a player
-        user_games = db.query(Player.game_id).filter(Player.user_id == current_user.id).subquery()
+        result = db.execute(sql_query, {"current_user_id": current_user.id})
+        opponents = result.fetchall()
         
-        # Get all other players from those games (excluding current user)
-        previous_players_query = db.query(
-            User.id,
-            User.username,
-            User.allow_invites,
-            User.preferred_languages
-        ).join(Player, Player.user_id == User.id)\
-         .filter(
-             Player.game_id.in_(user_games),
-             Player.user_id != current_user.id,
-             User.allow_invites == True  # Only include users who accept invites
-         ).distinct()
-        
-        previous_players = previous_players_query.all()
-        
-        # Count games played with each player
         players_info = []
-        for player in previous_players:
-            # Count how many games they played together
-            games_together = db.query(Game.id).join(Player, Player.game_id == Game.id)\
-                .filter(
-                    Player.user_id == player.id,
-                    Game.id.in_(
-                        db.query(Player.game_id).filter(Player.user_id == current_user.id)
-                    )
-                ).count()
-            
+        for opponent in opponents:
             players_info.append({
-                "id": player.id,
-                "username": player.username,
-                "allow_invites": player.allow_invites,
-                "preferred_languages": player.preferred_languages or ["en", "de"],
-                "games_played_together": games_together
+                "id": opponent.id,
+                "username": opponent.username,
+                "allow_invites": opponent.allow_invites,
+                "preferred_languages": opponent.preferred_languages or ["en", "de"],
+                "games_played_together": opponent.games_together
             })
-        
-        # Sort by number of games played together (most frequent opponents first)
-        players_info.sort(key=lambda x: x["games_played_together"], reverse=True)
         
         return {
             "previous_opponents": players_info,
@@ -107,6 +98,8 @@ def get_previous_opponents(
         
     except Exception as e:
         logger.error(f"Error in get_previous_opponents: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         # Return empty list instead of error for better UX
         return {
             "previous_opponents": [],

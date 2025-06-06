@@ -146,16 +146,16 @@ def reset_via_api():
                 print("   Deleted:")
                 for table, count in result['deleted_counts'].items():
                     print(f"      {table}: {count}")
+            return True
         else:
             print(f"❌ API reset failed: {response.status_code}")
             print(f"   Response: {response.text}")
+            return False
             
     except Exception as e:
         print(f"❌ API reset error: {e}")
         print("   Falling back to direct database method...")
         return False
-    
-    return True
 
 if __name__ == "__main__":
     print("🎮 WordBattle TEST Database Reset Tool")
