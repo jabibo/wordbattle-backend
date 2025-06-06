@@ -20,4 +20,4 @@ RUN if [ -f data/en-words.txt ] && [ -s data/en-words.txt ]; then cp data/en-wor
 # Set database host for Docker
 ENV DB_HOST=db
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
