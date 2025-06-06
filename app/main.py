@@ -413,6 +413,115 @@ async def reset_alembic_to_current():
             "message": "Alembic reset failed"
         }
 
+@app.post("/admin/load-all-words")
+async def load_all_words():
+    """
+    ADMIN ONLY: Load all remaining words into the database.
+    This will complete the wordlist loading for German and English.
+    """
+    try:
+        from app.database_manager import check_database_status, load_wordlist
+        
+        logger.info("🔤 Starting to load all remaining words...")
+        
+        # Check current status
+        status = check_database_status()
+        current_de = status["word_counts"].get("de", 0)
+        current_en = status["word_counts"].get("en", 0)
+        
+        logger.info(f"Current word counts: DE={current_de}, EN={current_en}")
+        
+        results = {
+            "german": {"loaded": 0, "success": True, "message": ""},
+            "english": {"loaded": 0, "success": True, "message": ""}
+        }
+        
+        # Load remaining German words (we know there are ~601,565 total)
+        if current_de < 600000:
+            logger.info(f"Loading remaining German words starting from {current_de}...")
+            
+            # Load in chunks to avoid memory issues
+            chunk_size = 50000
+            total_loaded = 0
+            
+            while current_de + total_loaded < 600000:
+                skip = current_de + total_loaded
+                logger.info(f"Loading German words: skip={skip}, limit={chunk_size}")
+                
+                result = load_wordlist(
+                    language="de", 
+                    skip=skip, 
+                    limit=chunk_size
+                )
+                
+                if not result["success"]:
+                    results["german"]["success"] = False
+                    results["german"]["message"] = f"Failed at skip={skip}: {result.get('error')}"
+                    break
+                    
+                words_loaded = result.get("words_loaded", 0)
+                total_loaded += words_loaded
+                
+                logger.info(f"Loaded {words_loaded} words. Total loaded this session: {total_loaded}")
+                
+                if words_loaded < chunk_size:
+                    # We've reached the end of available words
+                    logger.info("Reached end of available German words")
+                    break
+            
+            results["german"]["loaded"] = total_loaded
+            results["german"]["message"] = f"Loaded {total_loaded} German words"
+            logger.info(f"Finished loading German words. Total loaded: {total_loaded}")
+        else:
+            results["german"]["message"] = "German words already fully loaded"
+        
+        # Check if English needs loading (we know there are ~178,690 total)
+        if current_en < 170000:
+            logger.info("Loading remaining English words...")
+            result = load_wordlist(
+                language="en", 
+                skip=current_en, 
+                limit=200000  # Load all remaining
+            )
+            
+            if result["success"]:
+                results["english"]["loaded"] = result.get("words_loaded", 0)
+                results["english"]["message"] = f"Loaded {results['english']['loaded']} English words"
+                logger.info(f"Loaded {results['english']['loaded']} English words")
+            else:
+                results["english"]["success"] = False
+                results["english"]["message"] = f"Failed to load English words: {result.get('error')}"
+        else:
+            results["english"]["message"] = "English words already fully loaded"
+        
+        # Final status check
+        final_status = check_database_status()
+        final_de = final_status["word_counts"].get("de", 0)
+        final_en = final_status["word_counts"].get("en", 0)
+        
+        logger.info(f"Final word counts: DE={final_de}, EN={final_en}")
+        
+        return {
+            "success": True,
+            "message": "Word loading completed!",
+            "before": {"german": current_de, "english": current_en},
+            "after": {"german": final_de, "english": final_en},
+            "loaded": {
+                "german": results["german"]["loaded"],
+                "english": results["english"]["loaded"]
+            },
+            "results": results,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Word loading failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": "Word loading failed"
+        }
+
 @app.get("/debug/tokens")
 async def debug_tokens():
     """Debug endpoint that provides test tokens for player01 and player02"""
