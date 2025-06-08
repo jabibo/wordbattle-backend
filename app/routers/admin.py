@@ -528,7 +528,8 @@ def get_wordlist_status(
         from app.models import WordList
         
         # Get counts by language
-        languages = db.query(WordList.language, db.func.count(WordList.id)).group_by(WordList.language).all()
+        from sqlalchemy import func
+        languages = db.query(WordList.language, func.count(WordList.id)).group_by(WordList.language).all()
         
         status = {}
         total_words = 0
