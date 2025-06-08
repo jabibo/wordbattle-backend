@@ -20,6 +20,22 @@ class EmailService:
         self.from_email = FROM_EMAIL
         self.use_ssl = SMTP_USE_SSL
         
+        # Common test/dummy domains that might be blocked by SMTP servers
+        self.problematic_domains = {
+            'example.com', 'example.org', 'example.net',
+            'test.com', 'test.org', 'test.net',
+            'dummy.com', 'fake.com', 'invalid.com',
+            'localhost.com', '10minutemail.com'
+        }
+    
+    def _is_problematic_email(self, email: str) -> bool:
+        """Check if email domain might be problematic for SMTP delivery."""
+        try:
+            domain = email.split('@')[1].lower()
+            return domain in self.problematic_domains
+        except (IndexError, AttributeError):
+            return True  # Invalid email format
+    
     def send_verification_code(self, to_email: str, verification_code: str, username: str) -> bool:
         """Send verification code email to user."""
         try:
@@ -27,6 +43,16 @@ class EmailService:
             if os.getenv("TESTING") == "1" or not self.username:
                 logger.info(f"TESTING MODE: Verification code for {to_email}: {verification_code}")
                 return True
+            
+            # Check if SMTP password is configured
+            if not self.password:
+                logger.error("SMTP_PASSWORD not configured - cannot send emails")
+                return False
+            
+            # Warn about potentially problematic email domains
+            if self._is_problematic_email(to_email):
+                logger.warning(f"Sending to potentially problematic email domain: {to_email}")
+                logger.warning("This domain might be blocked by SMTP server policies")
             
             # Create message
             msg = MIMEMultipart()
@@ -51,6 +77,7 @@ WordBattle Team
             msg.attach(MIMEText(body, 'plain'))
             
             # Send email
+            logger.info(f"Attempting to send verification email to {to_email}")
             logger.info(f"Connecting to SMTP server: {self.smtp_server}:{self.smtp_port}, SSL: {self.use_ssl}")
             
             if self.use_ssl:
@@ -63,18 +90,35 @@ WordBattle Team
             
             logger.info(f"Logging in with username: {self.username}")
             server.login(self.username, self.password)
-            logger.info("Login successful")
+            logger.info("SMTP login successful")
             
             text = msg.as_string()
             server.sendmail(self.from_email, to_email, text)
-            logger.info(f"Email sent from {self.from_email} to {to_email}")
+            logger.info(f"Email sent successfully from {self.from_email} to {to_email}")
             server.quit()
             
             logger.info(f"Verification code sent successfully to {to_email}")
             return True
             
+        except smtplib.SMTPRecipientsRefused as e:
+            # Handle SMTP recipient refused errors (like blacklisted domains)
+            logger.error(f"SMTP server refused to send to {to_email}: {str(e)}")
+            logger.error("This might be due to domain blacklisting or SMTP server policies")
+            return False
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(f"SMTP authentication failed: {str(e)}")
+            logger.error("Check SMTP username and password configuration")
+            return False
+        except smtplib.SMTPServerDisconnected as e:
+            logger.error(f"SMTP server disconnected: {str(e)}")
+            logger.error("Check SMTP server and port configuration")
+            return False
+        except smtplib.SMTPException as e:
+            logger.error(f"SMTP error sending verification code to {to_email}: {str(e)}")
+            return False
         except Exception as e:
-            logger.error(f"Failed to send verification code to {to_email}: {str(e)}")
+            logger.error(f"Unexpected error sending verification code to {to_email}: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
             return False
     
     def send_welcome_email(self, to_email: str, username: str) -> bool:
