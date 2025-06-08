@@ -287,7 +287,7 @@ ENV_VARS=(
     "FROM_EMAIL=service@binge-wordbattle.de"
     "SMTP_USE_SSL=true"
     "VERIFICATION_CODE_EXPIRE_MINUTES=10"
-    "CORS_ORIGINS=https://wordbattle.binge-dev.de,https://www.wordbattle.binge-dev.de"
+    "CORS_ORIGINS=https://wordbattle.binge-dev.de"
     "FRONTEND_URL=https://wordbattle.binge-dev.de"
     "RATE_LIMIT=60"
     "DEFAULT_WORDLIST_PATH=data/de_words.txt"
@@ -303,6 +303,12 @@ if [[ -n "$GIT_COMMIT" ]]; then
     )
 fi
 
+# Create environment variables file
+ENV_FILE=$(mktemp)
+for var in "${ENV_VARS[@]}"; do
+    echo "$var" >> "$ENV_FILE"
+done
+
 # Deploy the service
 if ! gcloud run deploy "$SERVICE_NAME" \
     --image="gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG" \
@@ -313,12 +319,16 @@ if ! gcloud run deploy "$SERVICE_NAME" \
     --cpu="$CPU" \
     --min-instances="$MIN_INSTANCES" \
     --max-instances="$MAX_INSTANCES" \
-    --set-env-vars="$(IFS=,; echo "${ENV_VARS[*]}")" \
+    --env-vars-file="$ENV_FILE" \
     --port=8000 \
     --timeout=300; then
     echo "❌ Deployment failed"
+    rm -f "$ENV_FILE"
     exit 1
 fi
+
+# Clean up environment file
+rm -f "$ENV_FILE"
 
 echo "✅ Deployment successful!"
 
