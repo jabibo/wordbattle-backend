@@ -445,3 +445,108 @@ def reset_all_user_data(
         logger.error(f"Error during FULL reset by {current_user.username}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error during full reset: {str(e)}")
+
+@router.post("/database/import-wordlists")
+def import_all_wordlists(
+    db: Session = Depends(get_db)
+):
+    """
+    Import all available wordlists (German and English) without authentication.
+    
+    This endpoint imports the full wordlists:
+    - German: ~601,565 words
+    - English: ~178,690 words
+    - Total: ~780,255 words
+    """
+    try:
+        logger.info("Starting full wordlist import...")
+        
+        # Import German wordlist (full version)
+        import os
+        from app.wordlist import import_wordlist
+        from app.models import WordList
+        
+        imported_counts = {}
+        
+        # Check and import German wordlist
+        de_path = "data/de_words.txt"
+        if os.path.exists(de_path):
+            logger.info("Importing German wordlist...")
+            existing_count = db.query(WordList).filter(WordList.language == "de").count()
+            logger.info(f"Current German words: {existing_count}")
+            
+            # Import full German wordlist
+            import_wordlist("de", de_path)
+            
+            new_count = db.query(WordList).filter(WordList.language == "de").count()
+            imported_counts["German (de)"] = new_count
+            logger.info(f"Imported German wordlist: {new_count} words")
+        else:
+            imported_counts["German (de)"] = 0
+            logger.warning(f"German wordlist file not found: {de_path}")
+        
+        # Check and import English wordlist  
+        en_path = "data/en_words.txt"
+        if os.path.exists(en_path):
+            logger.info("Importing English wordlist...")
+            existing_count = db.query(WordList).filter(WordList.language == "en").count()
+            logger.info(f"Current English words: {existing_count}")
+            
+            # Import full English wordlist
+            import_wordlist("en", en_path)
+            
+            new_count = db.query(WordList).filter(WordList.language == "en").count()
+            imported_counts["English (en)"] = new_count
+            logger.info(f"Imported English wordlist: {new_count} words")
+        else:
+            imported_counts["English (en)"] = 0
+            logger.warning(f"English wordlist file not found: {en_path}")
+        
+        total_words = sum(imported_counts.values())
+        
+        logger.info(f"Wordlist import completed. Total words: {total_words}")
+        
+        return {
+            "message": "Wordlist import completed successfully",
+            "imported_counts": imported_counts,
+            "total_words": total_words,
+            "expected_total": "~780,255 words (601,565 German + 178,690 English)"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during wordlist import: {e}")
+        raise HTTPException(status_code=500, detail=f"Error during wordlist import: {str(e)}")
+
+@router.get("/database/wordlist-status")  
+def get_wordlist_status(
+    db: Session = Depends(get_db)
+):
+    """
+    Get current wordlist status without authentication.
+    """
+    try:
+        from app.models import WordList
+        
+        # Get counts by language
+        languages = db.query(WordList.language, db.func.count(WordList.id)).group_by(WordList.language).all()
+        
+        status = {}
+        total_words = 0
+        
+        for language, count in languages:
+            status[language] = count
+            total_words += count
+        
+        return {
+            "wordlist_status": status,
+            "total_words": total_words,
+            "expected_counts": {
+                "German (de)": "~601,565 words",
+                "English (en)": "~178,690 words",
+                "Total expected": "~780,255 words"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking wordlist status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error checking wordlist status: {str(e)}")
