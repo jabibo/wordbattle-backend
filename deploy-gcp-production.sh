@@ -244,8 +244,9 @@ if [[ -n "$GIT_COMMIT" ]]; then
     )
 fi
 
-# Build the image
+# Build the image for Cloud Run (amd64/linux platform)
 if ! docker build "${BUILD_ARGS[@]}" \
+    --platform linux/amd64 \
     -t "gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG" \
     -t "gcr.io/$PROJECT_ID/$IMAGE_NAME:latest" .; then
     echo "❌ Docker build failed"
