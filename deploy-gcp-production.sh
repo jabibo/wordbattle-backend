@@ -280,7 +280,7 @@ ENV_VARS=(
     "ALGORITHM=HS256"
     "ACCESS_TOKEN_EXPIRE_MINUTES=30"
     "PERSISTENT_TOKEN_EXPIRE_DAYS=30"
-    "DATABASE_URL=postgresql://postgres:wordbattle-prod-2024@/wordbattle?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db"
+    "DATABASE_URL=postgresql://postgres:wordbattle-prod-2024@/wordbattle_db?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db"
     "SMTP_SERVER=smtp.strato.de"
     "SMTP_PORT=465"
     "SMTP_USERNAME=service@binge-wordbattle.de"
