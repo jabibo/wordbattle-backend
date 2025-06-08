@@ -4,9 +4,13 @@ from typing import List, Optional
 from app.auth import get_current_user
 from app.models import User, Game, Player
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, distinct
+from sqlalchemy import and_, distinct, text
 from app.db import get_db
 import json
+import logging
+from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["profile"])
 
@@ -113,51 +117,80 @@ def get_previous_players(
 ):
     """Get list of players the current user has played with before (excluding friends system)."""
     
-    # Get all games where current user was a player
-    user_games = db.query(Player.game_id).filter(Player.user_id == current_user.id).subquery()
-    
-    # Get all other players from those games (excluding current user)
-    previous_players_query = db.query(
-        User.id,
-        User.username,
-        User.allow_invites,
-        User.preferred_languages
-    ).join(Player, Player.user_id == User.id)\
-     .filter(
-         Player.game_id.in_(user_games),
-         Player.user_id != current_user.id,
-         User.allow_invites == True  # Only include users who accept invites
-     ).distinct()
-    
-    previous_players = previous_players_query.all()
-    
-    # Count games played with each player
-    players_info = []
-    for player in previous_players:
-        # Count how many games they played together
-        games_together = db.query(Game.id).join(Player, Player.game_id == Game.id)\
-            .filter(
-                Player.user_id == player.id,
-                Game.id.in_(
-                    db.query(Player.game_id).filter(Player.user_id == current_user.id)
+    try:
+        # Use identical SQL query to the working /users/previous-opponents endpoint
+        sql_query = text("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.allow_invites, 
+                u.preferred_languages, 
+                opponent_counts.games_together,
+                opponent_counts.last_played_together
+            FROM (
+                SELECT 
+                    p2.user_id,
+                    COUNT(p2.game_id) as games_together,
+                    MAX(g.created_at) as last_played_together
+                FROM players p2
+                JOIN games g ON g.id = p2.game_id
+                WHERE p2.game_id IN (
+                    SELECT p1.game_id 
+                    FROM players p1 
+                    WHERE p1.user_id = :current_user_id
                 )
-            ).count()
+                AND p2.user_id != :current_user_id
+                GROUP BY p2.user_id
+            ) opponent_counts
+            JOIN users u ON u.id = opponent_counts.user_id
+            WHERE u.allow_invites = true
+            ORDER BY opponent_counts.games_together DESC
+        """)
         
-        players_info.append({
-            "id": player.id,
-            "username": player.username,
-            "allow_invites": player.allow_invites,
-            "preferred_languages": player.preferred_languages or ["en", "de"],
-            "games_played_together": games_together
-        })
-    
-    # Sort by number of games played together (most frequent opponents first)
-    players_info.sort(key=lambda x: x["games_played_together"], reverse=True)
-    
-    return {
-        "previous_players": players_info,
-        "total_count": len(players_info)
-    }
+        result = db.execute(sql_query, {"current_user_id": current_user.id})
+        players = result.fetchall()
+        
+        players_info = []
+        for player in players:
+            # Get last_login separately if needed for online_status
+            user_obj = db.query(User).filter(User.id == player.id).first()
+            
+            # Determine online status based on last_login
+            online_status = "offline"  # Default to offline
+            if user_obj and user_obj.last_login:
+                now = datetime.now(timezone.utc)
+                last_login = user_obj.last_login.replace(tzinfo=timezone.utc) if user_obj.last_login.tzinfo is None else user_obj.last_login
+                time_since_login = now - last_login
+                
+                if time_since_login <= timedelta(minutes=5):
+                    online_status = "online"
+                elif time_since_login <= timedelta(hours=1):
+                    online_status = "away"
+            
+            players_info.append({
+                "id": player.id,
+                "username": player.username,
+                "allow_invites": player.allow_invites,
+                "preferred_languages": player.preferred_languages or ["en", "de"],
+                "games_played": player.games_together,  # Changed from games_played_together
+                "last_played": player.last_played_together.isoformat() if player.last_played_together else None,
+                "online_status": online_status
+            })
+        
+        return {
+            "previous_players": players_info,
+            "total_count": len(players_info)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_previous_players: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # Return empty list instead of error for better UX
+        return {
+            "previous_players": [],
+            "total_count": 0
+        }
 
 @router.get("/games/mine", status_code=200)
 def games_for_user(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
