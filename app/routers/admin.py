@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.dependencies import get_db
 from app.auth import get_current_user, create_access_token
-from app.models import User, WordList
+from app.models import User, WordList, Game, Player, Move, GameInvitation, ChatMessage
 from app.wordlist import import_wordlist, load_wordlist_from_file
 from passlib.context import CryptContext
 from datetime import timedelta
 import os
 import tempfile
+import logging
+
+logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -189,3 +193,255 @@ def delete_wordlist(
         "language": language,
         "word_count": count
     }
+
+def require_admin(current_user: User = Depends(get_current_user)):
+    """Require the current user to be an admin."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=403, 
+            detail="Admin privileges required"
+        )
+    return current_user
+
+@router.post("/database/reset-games")
+def reset_games_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Reset all game-related data while preserving users and wordlists.
+    
+    ⚠️ WARNING: This will delete:
+    - All games and their state
+    - All player records  
+    - All moves history
+    - All game invitations
+    - All chat messages
+    
+    ✅ This will PRESERVE:
+    - User accounts
+    - WordLists
+    """
+    try:
+        logger.info(f"Admin {current_user.username} initiated game data reset")
+        
+        # Get counts before deletion
+        count_queries = [
+            ("chat_messages", "Chat Messages"),
+            ("moves", "Moves"),
+            ("players", "Players"),
+            ("game_invitations", "Game Invitations"),
+            ("games", "Games")
+        ]
+        
+        before_counts = {}
+        for table, name in count_queries:
+            try:
+                result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                before_counts[name] = result.scalar()
+            except Exception as e:
+                logger.warning(f"Could not count {table}: {e}")
+                before_counts[name] = 0
+        
+        # Delete in order to respect foreign key constraints
+        deleted_counts = {}
+        
+        # Delete chat messages
+        result = db.query(ChatMessage).delete()
+        deleted_counts["Chat Messages"] = result
+        logger.info(f"Deleted {result} chat messages")
+        
+        # Delete moves
+        result = db.query(Move).delete()
+        deleted_counts["Moves"] = result
+        logger.info(f"Deleted {result} moves")
+        
+        # Delete players
+        result = db.query(Player).delete()
+        deleted_counts["Players"] = result
+        logger.info(f"Deleted {result} players")
+        
+        # Delete game invitations
+        result = db.query(GameInvitation).delete()
+        deleted_counts["Game Invitations"] = result
+        logger.info(f"Deleted {result} game invitations")
+        
+        # Delete games
+        result = db.query(Game).delete()
+        deleted_counts["Games"] = result
+        logger.info(f"Deleted {result} games")
+        
+        # Reset sequences
+        sequences = [
+            "chat_messages_id_seq",
+            "moves_id_seq", 
+            "players_id_seq",
+            "game_invitations_id_seq"
+        ]
+        
+        reset_sequences = []
+        for seq in sequences:
+            try:
+                db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
+                reset_sequences.append(seq)
+                logger.info(f"Reset sequence: {seq}")
+            except Exception as e:
+                logger.warning(f"Could not reset sequence {seq}: {e}")
+        
+        # Commit all changes
+        db.commit()
+        
+        # Get final counts
+        after_counts = {}
+        for table, name in count_queries:
+            try:
+                result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                after_counts[name] = result.scalar()
+            except Exception as e:
+                logger.warning(f"Could not count {table} after reset: {e}")
+                after_counts[name] = 0
+        
+        logger.info(f"Game data reset completed successfully by admin {current_user.username}")
+        
+        return {
+            "message": "Game data reset completed successfully",
+            "admin": current_user.username,
+            "before_counts": before_counts,
+            "deleted_counts": deleted_counts,
+            "after_counts": after_counts,
+            "reset_sequences": reset_sequences,
+            "preserved": ["Users", "WordLists"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during game data reset by {current_user.username}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error during reset: {str(e)}")
+
+@router.post("/database/reset-users-and-games")
+def reset_all_user_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """
+    Reset ALL user and game data while preserving wordlists.
+    
+    ⚠️ DANGER: This will delete:
+    - ALL user accounts (including the admin performing this action!)
+    - All games and their state
+    - All player records
+    - All moves history
+    - All game invitations 
+    - All chat messages
+    
+    ✅ This will PRESERVE:
+    - WordLists only
+    
+    Note: After this action, you will need to recreate admin accounts.
+    """
+    
+    # Extra confirmation - require specific header for this dangerous operation
+    try:
+        logger.warning(f"DANGER: Admin {current_user.username} initiated FULL reset (users + games)")
+        
+        # Get counts before deletion
+        count_queries = [
+            ("chat_messages", "Chat Messages"),
+            ("moves", "Moves"),
+            ("players", "Players"),
+            ("game_invitations", "Game Invitations"),
+            ("games", "Games"),
+            ("users", "Users")
+        ]
+        
+        before_counts = {}
+        for table, name in count_queries:
+            try:
+                result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                before_counts[name] = result.scalar()
+            except Exception as e:
+                logger.warning(f"Could not count {table}: {e}")
+                before_counts[name] = 0
+        
+        # Delete in order to respect foreign key constraints
+        deleted_counts = {}
+        
+        # Delete chat messages
+        result = db.query(ChatMessage).delete()
+        deleted_counts["Chat Messages"] = result
+        logger.info(f"Deleted {result} chat messages")
+        
+        # Delete moves
+        result = db.query(Move).delete()
+        deleted_counts["Moves"] = result
+        logger.info(f"Deleted {result} moves")
+        
+        # Delete players
+        result = db.query(Player).delete()
+        deleted_counts["Players"] = result
+        logger.info(f"Deleted {result} players")
+        
+        # Delete game invitations
+        result = db.query(GameInvitation).delete()
+        deleted_counts["Game Invitations"] = result
+        logger.info(f"Deleted {result} game invitations")
+        
+        # Delete games
+        result = db.query(Game).delete()
+        deleted_counts["Games"] = result
+        logger.info(f"Deleted {result} games")
+        
+        # Delete users (this will also delete the admin!)
+        result = db.query(User).delete()
+        deleted_counts["Users"] = result
+        logger.info(f"Deleted {result} users")
+        
+        # Reset sequences
+        sequences = [
+            "chat_messages_id_seq",
+            "moves_id_seq", 
+            "players_id_seq",
+            "game_invitations_id_seq",
+            "users_id_seq"
+        ]
+        
+        reset_sequences = []
+        for seq in sequences:
+            try:
+                db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
+                reset_sequences.append(seq)
+                logger.info(f"Reset sequence: {seq}")
+            except Exception as e:
+                logger.warning(f"Could not reset sequence {seq}: {e}")
+        
+        # Commit all changes
+        db.commit()
+        
+        # Get final counts
+        after_counts = {}
+        for table, name in count_queries:
+            try:
+                result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                after_counts[name] = result.scalar()
+            except Exception as e:
+                logger.warning(f"Could not count {table} after reset: {e}")
+                after_counts[name] = 0
+        
+        logger.warning(f"FULL reset completed - all users deleted by former admin {current_user.username}")
+        
+        return {
+            "message": "FULL reset completed - all users and games deleted",
+            "warning": "All user accounts have been deleted, including admin accounts",
+            "performed_by": current_user.username,
+            "before_counts": before_counts,
+            "deleted_counts": deleted_counts,
+            "after_counts": after_counts,
+            "reset_sequences": reset_sequences,
+            "preserved": ["WordLists"],
+            "next_steps": "You will need to recreate admin accounts using debug endpoints or database access"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error during FULL reset by {current_user.username}: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error during full reset: {str(e)}")
