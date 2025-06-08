@@ -276,6 +276,23 @@ echo "Deploying to Google Cloud Run ($ENVIRONMENT environment)..."
 # Create environment variables for the service
 ENV_VARS=(
     "ENVIRONMENT=$ENVIRONMENT"
+    "SECRET_KEY=prod-$(openssl rand -hex 32)"
+    "ALGORITHM=HS256"
+    "ACCESS_TOKEN_EXPIRE_MINUTES=30"
+    "PERSISTENT_TOKEN_EXPIRE_DAYS=30"
+    "SMTP_SERVER=smtp.strato.de"
+    "SMTP_PORT=465"
+    "SMTP_USERNAME=service@binge-wordbattle.de"
+    "SMTP_PASSWORD=xowmap-majgIm-5qapka"
+    "FROM_EMAIL=service@binge-wordbattle.de"
+    "SMTP_USE_SSL=true"
+    "VERIFICATION_CODE_EXPIRE_MINUTES=10"
+    "CORS_ORIGINS=https://wordbattle.binge-dev.de,https://www.wordbattle.binge-dev.de"
+    "FRONTEND_URL=https://wordbattle.binge-dev.de"
+    "RATE_LIMIT=60"
+    "DEFAULT_WORDLIST_PATH=data/de_words.txt"
+    "LETTER_POOL_SIZE=7"
+    "GAME_INACTIVE_DAYS=7"
 )
 
 if [[ -n "$GIT_COMMIT" ]]; then
