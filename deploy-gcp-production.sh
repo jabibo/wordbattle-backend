@@ -303,10 +303,12 @@ if [[ -n "$GIT_COMMIT" ]]; then
     )
 fi
 
-# Create environment variables file
-ENV_FILE=$(mktemp)
+# Create environment variables YAML file
+ENV_FILE=$(mktemp --suffix=.yaml)
 for var in "${ENV_VARS[@]}"; do
-    echo "$var" >> "$ENV_FILE"
+    key=$(echo "$var" | cut -d'=' -f1)
+    value=$(echo "$var" | cut -d'=' -f2-)
+    echo "$key: \"$value\"" >> "$ENV_FILE"
 done
 
 # Deploy the service
