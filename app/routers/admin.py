@@ -320,7 +320,8 @@ def reset_games_data(
 
 @router.post("/database/reset-users-and-games")
 def reset_all_user_data(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
 ):
     """
     Reset ALL user and game data while preserving wordlists.
@@ -341,7 +342,7 @@ def reset_all_user_data(
     
     # Extra confirmation - require specific header for this dangerous operation
     try:
-        logger.warning(f"DANGER: Unauthenticated FULL reset initiated (users + games)")
+        logger.warning(f"DANGER: Admin {current_user.username} initiated FULL reset (users + games)")
         
         # Get counts before deletion
         count_queries = [
@@ -426,12 +427,12 @@ def reset_all_user_data(
                 logger.warning(f"Could not count {table} after reset: {e}")
                 after_counts[name] = 0
         
-        logger.warning(f"FULL reset completed - all users deleted")
+        logger.warning(f"FULL reset completed - all users deleted by former admin {current_user.username}")
         
         return {
             "message": "FULL reset completed - all users and games deleted",
             "warning": "All user accounts have been deleted, including admin accounts",
-            "performed_by": "unauthenticated_reset",
+            "performed_by": current_user.username,
             "before_counts": before_counts,
             "deleted_counts": deleted_counts,
             "after_counts": after_counts,
@@ -441,6 +442,6 @@ def reset_all_user_data(
         }
         
     except Exception as e:
-        logger.error(f"Error during FULL reset: {e}")
+        logger.error(f"Error during FULL reset by {current_user.username}: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error during full reset: {str(e)}")
