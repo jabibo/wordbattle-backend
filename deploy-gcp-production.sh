@@ -304,7 +304,7 @@ if [[ -n "$GIT_COMMIT" ]]; then
 fi
 
 # Create environment variables YAML file
-ENV_FILE=$(mktemp --suffix=.yaml)
+ENV_FILE=$(mktemp)
 for var in "${ENV_VARS[@]}"; do
     key=$(echo "$var" | cut -d'=' -f1)
     value=$(echo "$var" | cut -d'=' -f2-)
