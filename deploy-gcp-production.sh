@@ -280,6 +280,11 @@ ENV_VARS=(
     "ALGORITHM=HS256"
     "ACCESS_TOKEN_EXPIRE_MINUTES=30"
     "PERSISTENT_TOKEN_EXPIRE_DAYS=30"
+    "DB_HOST=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db"
+    "DB_PORT=5432"
+    "DB_USER=postgres"
+    "DB_PASSWORD=wordbattle-prod-2024"
+    "DB_NAME=wordbattle"
     "SMTP_SERVER=smtp.strato.de"
     "SMTP_PORT=465"
     "SMTP_USERNAME=service@binge-wordbattle.de"
@@ -322,6 +327,7 @@ if ! gcloud run deploy "$SERVICE_NAME" \
     --min-instances="$MIN_INSTANCES" \
     --max-instances="$MAX_INSTANCES" \
     --env-vars-file="$ENV_FILE" \
+    --add-cloudsql-instances="wordbattle-1748668162:europe-west1:wordbattle-db" \
     --port=8000 \
     --timeout=300; then
     echo "❌ Deployment failed"
