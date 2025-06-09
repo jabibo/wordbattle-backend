@@ -114,15 +114,17 @@ git checkout main
 
 ### Production Environment
 - **Service**: `wordbattle-backend-prod`
-- **Database**: Cloud SQL PostgreSQL
+- **Database**: Cloud SQL PostgreSQL (`wordbattle_db`)
 - **Email**: SMTP configuration
 - **CORS**: Configured for mobile app
 
 ### Test Environment  
 - **Service**: `wordbattle-backend-test`
-- **Database**: Separate test database (if configured)
+- **Database**: Cloud SQL PostgreSQL (`wordbattle_test`)
 - **Email**: Same SMTP (test emails)
 - **CORS**: Same as production
+
+**Database Separation**: Test and production use separate databases (`wordbattle_test` vs `wordbattle_db`) on the same Cloud SQL instance for proper data isolation.
 
 ## 📊 Monitoring Deployments
 
