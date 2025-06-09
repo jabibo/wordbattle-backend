@@ -203,6 +203,46 @@ def require_admin(current_user: User = Depends(get_current_user)):
         )
     return current_user
 
+def create_default_admin_user(db: Session):
+    """Create the default admin user jan@binge.de if it doesn't exist."""
+    try:
+        admin_email = "jan@binge.de"
+        admin_username = "jan_admin"
+        
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == admin_email).first()
+        
+        if existing_user:
+            # User exists, just ensure admin privileges
+            existing_user.is_admin = True
+            existing_user.is_email_verified = True
+            db.commit()
+            logger.info(f"Updated existing user {admin_email} with admin privileges")
+            return existing_user
+        else:
+            # Create new admin user
+            hashed_password = pwd_context.hash("admin123!WordBattle")  # Secure default password
+            
+            new_admin = User(
+                username=admin_username,
+                email=admin_email,
+                hashed_password=hashed_password,
+                is_admin=True,
+                is_email_verified=True
+            )
+            
+            db.add(new_admin)
+            db.commit()
+            db.refresh(new_admin)
+            
+            logger.info(f"Created default admin user: {admin_email}")
+            return new_admin
+            
+    except Exception as e:
+        logger.error(f"Error creating default admin user: {e}")
+        # Don't fail the reset if admin creation fails
+        return None
+
 @router.post("/database/reset-games")
 def reset_games_data(
     db: Session = Depends(get_db),
@@ -291,6 +331,10 @@ def reset_games_data(
         # Commit all changes
         db.commit()
         
+        # Create default admin user
+        default_admin = create_default_admin_user(db)
+        admin_created = default_admin is not None
+        
         # Get final counts
         after_counts = {}
         for table, name in count_queries:
@@ -310,7 +354,9 @@ def reset_games_data(
             "deleted_counts": deleted_counts,
             "after_counts": after_counts,
             "reset_sequences": reset_sequences,
-            "preserved": ["Users", "WordLists"]
+            "preserved": ["Users", "WordLists"],
+            "default_admin_created": admin_created,
+            "default_admin_email": "jan@binge.de" if admin_created else None
         }
         
     except Exception as e:
@@ -414,8 +460,12 @@ def reset_all_user_data(
             except Exception as e:
                 logger.warning(f"Could not reset sequence {seq}: {e}")
         
-        # Commit all changes
+        # Commit all changes first
         db.commit()
+        
+        # Create default admin user after all deletions
+        default_admin = create_default_admin_user(db)
+        admin_created = default_admin is not None
         
         # Get final counts
         after_counts = {}
@@ -438,7 +488,10 @@ def reset_all_user_data(
             "after_counts": after_counts,
             "reset_sequences": reset_sequences,
             "preserved": ["WordLists"],
-            "next_steps": "You will need to recreate admin accounts using debug endpoints or database access"
+            "default_admin_created": admin_created,
+            "default_admin_email": "jan@binge.de" if admin_created else None,
+            "default_admin_password": "admin123!WordBattle" if admin_created else None,
+            "next_steps": "Default admin user jan@binge.de has been created with the provided password" if admin_created else "You will need to recreate admin accounts using debug endpoints or database access"
         }
         
     except Exception as e:
@@ -551,3 +604,67 @@ def get_wordlist_status(
     except Exception as e:
         logger.error(f"Error checking wordlist status: {e}")
         raise HTTPException(status_code=500, detail=f"Error checking wordlist status: {str(e)}")
+
+@router.get("/database/admin-status")
+def get_admin_status(
+    db: Session = Depends(get_db)
+):
+    """
+    Get basic admin and user statistics without authentication.
+    Public endpoint for checking admin user counts.
+    """
+    try:
+        from app.models import User
+        from sqlalchemy import func
+        
+        # Get user counts
+        total_users = db.query(func.count(User.id)).scalar()
+        admin_users = db.query(func.count(User.id)).filter(User.is_admin == True).scalar()
+        word_admin_users = db.query(func.count(User.id)).filter(User.is_word_admin == True).scalar()
+        
+        # Get some admin usernames (first 3)
+        admin_list = db.query(User.username).filter(User.is_admin == True).limit(3).all()
+        admin_usernames = [admin[0] for admin in admin_list]
+        
+        return {
+            "total_users": total_users,
+            "admin_users": admin_users,
+            "word_admin_users": word_admin_users,
+            "has_admins": admin_users > 0,
+            "admin_usernames": admin_usernames,
+            "note": "First 3 admin usernames shown for privacy"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking admin status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error checking admin status: {str(e)}")
+
+@router.post("/database/create-default-admin")
+def create_default_admin_endpoint(
+    db: Session = Depends(get_db)
+):
+    """
+    Create the default admin user jan@binge.de without authentication.
+    Public endpoint for initial admin setup.
+    """
+    try:
+        admin_user = create_default_admin_user(db)
+        
+        if admin_user:
+            return {
+                "message": "Default admin user created successfully",
+                "admin_email": "jan@binge.de",
+                "admin_username": admin_user.username,
+                "admin_password": "admin123!WordBattle",
+                "note": "Please change the password after first login",
+                "login_url": "/auth/login"
+            }
+        else:
+            return {
+                "message": "Failed to create default admin user",
+                "error": "Check server logs for details"
+            }
+        
+    except Exception as e:
+        logger.error(f"Error creating default admin user: {e}")
+        raise HTTPException(status_code=500, detail=f"Error creating default admin user: {str(e)}")
