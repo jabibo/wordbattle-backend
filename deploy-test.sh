@@ -5,6 +5,15 @@
 
 set -e
 
+# Check if a specific branch was requested
+DEPLOY_BRANCH=${1:-"current"}
+
+if [ "$DEPLOY_BRANCH" != "current" ]; then
+    echo "🌿 Switching to branch: $DEPLOY_BRANCH"
+    git checkout "$DEPLOY_BRANCH"
+    git pull origin "$DEPLOY_BRANCH" 2>/dev/null || echo "⚠️  Could not pull from remote (branch might be local only)"
+fi
+
 echo "🧪 Deploying WordBattle Backend to Test Environment..."
 
 # Configuration
@@ -27,12 +36,14 @@ if ! git diff --quiet || ! git diff --staged --quiet; then
 fi
 
 # Get current commit for deployment tagging
+CURRENT_BRANCH=$(git branch --show-current)
 COMMIT_HASH=$(git rev-parse --short HEAD)
 COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s")
 DEPLOY_TAG="deploy-test-$(date +%Y%m%d-%H%M%S)"
 
 echo "📋 Test Deployment Info:"
 echo "   🏷️  Tag: $DEPLOY_TAG" 
+echo "   🌿 Branch: $CURRENT_BRANCH"
 echo "   🔗 Commit: $COMMIT_HASH"
 echo "   📝 Message: $COMMIT_MESSAGE"
 echo "   🧪 Environment: TEST"
