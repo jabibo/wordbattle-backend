@@ -70,6 +70,8 @@ gcloud run deploy $SERVICE_NAME \
   --set-env-vars="SMTP_PASSWORD=q2NvW4J1%tcAyJSg8" \
   --set-env-vars="FROM_EMAIL=jan@binge-dev.de" \
   --set-env-vars="CORS_ORIGINS=*" \
+  --add-cloudsql-instances="wordbattle-1748668162:europe-west1:wordbattle-db" \
+  --set-env-vars="DATABASE_URL=postgresql://postgres:8G9kH2mP4vN1qR7sT6eW@/wordbattle_db?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db" \
   --execution-environment gen2
 
 echo "✅ Test deployment completed!"
