@@ -18,10 +18,33 @@ CONCURRENCY="100"
 MIN_INSTANCES="0"
 MAX_INSTANCES="10"
 
+# Check git status (warning only for test)
+if ! git diff --quiet || ! git diff --staged --quiet; then
+    echo "⚠️  NOTE: You have uncommitted changes - this is OK for test deployment"
+    echo "Uncommitted files will be included in the test deployment:"
+    git status --short
+    echo ""
+fi
+
+# Get current commit for deployment tagging
+COMMIT_HASH=$(git rev-parse --short HEAD)
+COMMIT_MESSAGE=$(git log -1 --pretty=format:"%s")
+DEPLOY_TAG="deploy-test-$(date +%Y%m%d-%H%M%S)"
+
+echo "📋 Test Deployment Info:"
+echo "   🏷️  Tag: $DEPLOY_TAG" 
+echo "   🔗 Commit: $COMMIT_HASH"
+echo "   📝 Message: $COMMIT_MESSAGE"
+echo "   🧪 Environment: TEST"
+echo ""
+
 # Generate a secure SECRET_KEY for test
 echo "🔐 Generating secure SECRET_KEY for test..."
 SECRET_KEY=$(openssl rand -base64 64 | tr -d "=+/" | cut -c1-64)
 echo "✅ SECRET_KEY generated: ${SECRET_KEY:0:20}..."
+
+# Tag the test deployment (local only, don't push test tags)
+git tag "$DEPLOY_TAG" -m "Test deployment: $COMMIT_MESSAGE"
 
 # Deploy to Cloud Run (test environment)
 echo "📦 Building and deploying test service..."
