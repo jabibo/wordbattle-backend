@@ -206,3 +206,133 @@ Error: relation "users" does not exist
 4. **Document the chosen setup method** for future reference
 
 Once the test database is properly configured, both environments will work independently with full functionality. 
+
+## ⚡ IMMEDIATE FIX: Test Database Permissions Issue
+
+### THE PROPER SOLUTION: Alembic Migrations
+
+**You're absolutely right!** The correct approach is to use Alembic migrations, not manual permission grants.
+
+#### Why Alembic is the Right Solution:
+- ✅ **Proper Database Management**: Alembic is designed for database schema management
+- ✅ **Consistent Schema**: Ensures test and production databases have identical structure  
+- ✅ **Version Control**: All database changes are tracked and versioned
+- ✅ **Correct Ownership**: Tables created by Alembic have proper ownership automatically
+- ✅ **Reproducible**: Same commands work across all environments
+
+#### Current Alembic Setup:
+```bash
+# Check migration status
+alembic current
+
+# View migration history  
+alembic history --verbose
+
+# Apply all pending migrations
+alembic upgrade head
+```
+
+#### The Challenge:
+The issue is that Alembic needs to run **inside the Cloud Run environment** where:
+1. Cloud SQL Proxy is available
+2. Proper network access to the database exists
+3. SSL connections work correctly
+
+#### Three Approaches to Fix with Alembic:
+
+### Approach 1: Add Migration Step to Deployment Script
+
+**RECOMMENDED**: Modify `deploy-test.sh` to run Alembic migrations automatically:
+
+```bash
+# Add this to deploy-test.sh after the deployment
+echo "Running Alembic migrations on test database..."
+gcloud run services replace service-test.yaml --region=europe-west1
+
+# Wait for deployment
+sleep 30
+
+# Run migrations via Cloud Run job
+gcloud run jobs create alembic-migrate-test \
+  --image=$IMAGE_URL \
+  --task-timeout=600 \
+  --set-env-vars="DATABASE_URL=postgresql://postgres:8G9kH2mP4vN1qR7sT6eW@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db&sslmode=require" \
+  --add-cloudsql-instances=wordbattle-1748668162:europe-west1:wordbattle-db \
+  --region=europe-west1 \
+  --command=alembic \
+  --args=upgrade,head
+
+gcloud run jobs execute alembic-migrate-test --region=europe-west1 --wait
+```
+
+### Approach 2: Manual Migration via Cloud Run
+
+Create a one-time job to run migrations:
+
+```bash
+# Create migration job
+gcloud run jobs create test-db-migrate \
+  --image=europe-west1-docker.pkg.dev/wordbattle-1748668162/wordbattle/backend:latest \
+  --task-timeout=600 \
+  --set-env-vars="DATABASE_URL=postgresql://postgres:8G9kH2mP4vN1qR7sT6eW@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db&sslmode=require" \
+  --add-cloudsql-instances=wordbattle-1748668162:europe-west1:wordbattle-db \
+  --region=europe-west1 \
+  --command=alembic \
+  --args=upgrade,head
+
+# Execute the migration
+gcloud run jobs execute test-db-migrate --region=europe-west1 --wait
+```
+
+### Approach 3: Interactive Container Session
+
+Run an interactive session in Cloud Run to execute Alembic:
+
+```bash
+# Deploy first (to ensure image is available)
+./deploy-test.sh
+
+# Create interactive job
+gcloud run jobs create test-db-shell \
+  --image=europe-west1-docker.pkg.dev/wordbattle-1748668162/wordbattle/backend:latest \
+  --task-timeout=600 \
+  --set-env-vars="DATABASE_URL=postgresql://postgres:8G9kH2mP4vN1qR7sT6eW@/wordbattle_test?host=/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db&sslmode=require" \
+  --add-cloudsql-instances=wordbattle-1748668162:europe-west1:wordbattle-db \
+  --region=europe-west1 \
+  --command=bash
+
+# Execute interactive session  
+gcloud run jobs execute test-db-shell --region=europe-west1 --wait
+
+# Then inside the container:
+# alembic current
+# alembic upgrade head
+```
+
+#### Verification After Alembic Migration:
+
+```bash
+# Test the fix
+curl -s "https://wordbattle-backend-test-441752988736.europe-west1.run.app/admin/database/admin-status"
+
+# Should return proper JSON instead of permission errors
+```
+
+#### Future Database Changes:
+
+Always use Alembic for schema changes:
+
+```bash
+# Create new migration
+alembic revision --autogenerate -m "description of change"
+
+# Review the generated migration file
+# Apply to test first
+alembic upgrade head
+
+# Test thoroughly, then apply to production
+```
+
+---
+
+## Legacy Fix (Manual Permissions) - NOT RECOMMENDED 
