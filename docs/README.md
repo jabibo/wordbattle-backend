@@ -9,6 +9,7 @@ Welcome to the WordBattle Backend documentation. This directory contains compreh
 - **[Branch-Based Workflow](BRANCH_WORKFLOW.md)** - Alternative branch-based deployment strategy
 - **[Deployment Scripts](DEPLOYMENT_SCRIPTS.md)** - Quick reference for all deployment commands
 - **[Database Setup](DATABASE_SETUP.md)** - Database configuration and troubleshooting
+- **[Security Status](SECURITY_STATUS.md)** - Current security configuration and improvements
 - **[Admin Endpoints](ADMIN_ENDPOINTS.md)** - Administrative API endpoints and usage
 
 ### 🔧 Quick Start
