@@ -73,9 +73,42 @@ curl -X POST "https://wordbattle-backend-test-441752988736.europe-west1.run.app/
 
 ### Test Environment ⚠️
 - **Database**: `wordbattle_test`
-- **Status**: Needs permissions setup
-- **Issue**: Tables exist but postgres user lacks permissions
-- **Solution**: Run database initialization script
+- **Status**: **PERMISSION ISSUE** - Tables exist but postgres user lacks access
+- **Issue**: `permission denied for table users`
+- **Solution**: Grant proper permissions via Google Cloud Console
+
+#### 🔧 **IMMEDIATE FIX for Test Database Permissions:**
+
+**Problem**: Test environment shows `permission denied for table users` errors.
+
+**Quick Solution**:
+1. Open [Google Cloud Console](https://console.cloud.google.com/sql/instances/wordbattle-db/overview?project=wordbattle-1748668162)
+2. Click "Connect to this instance" → "Open Cloud Shell"  
+3. Connect to `wordbattle_test` database as `postgres` user
+4. Run these SQL commands:
+
+```sql
+-- Connect to test database
+\c wordbattle_test;
+
+-- Grant all privileges to postgres user
+GRANT ALL PRIVILEGES ON DATABASE wordbattle_test TO postgres;
+GRANT ALL PRIVILEGES ON SCHEMA public TO postgres;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO postgres;
+GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO postgres;
+
+-- Set default privileges for future objects
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON TABLES TO postgres;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL PRIVILEGES ON SEQUENCES TO postgres;
+
+-- Verify the fix
+SELECT 'Permissions fixed!' as status;
+\dt
+```
+
+5. Test the fix: `./test_fix.sh`
+
+**Alternative**: Run `./scripts/fix-test-permissions-via-console.sh` for detailed instructions.
 
 ## 🛠️ Fixing Test Environment
 
