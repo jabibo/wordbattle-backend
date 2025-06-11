@@ -352,6 +352,7 @@ def grant_word_admin_privilege(
         "user": {
             "id": target_user.id,
             "username": target_user.username,
+            "is_admin": target_user.is_admin,
             "is_word_admin": target_user.is_word_admin
         }
     }

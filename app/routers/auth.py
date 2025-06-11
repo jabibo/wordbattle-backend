@@ -145,7 +145,9 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "language": user.language or "en"
+            "language": user.language or "en",
+            "is_admin": user.is_admin,
+            "is_word_admin": user.is_word_admin
         }
     }
     
@@ -202,7 +204,9 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "language": user.language or "en"
+            "language": user.language or "en",
+            "is_admin": user.is_admin,
+            "is_word_admin": user.is_word_admin
         }
     }
 
@@ -226,5 +230,7 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "is_email_verified": current_user.is_email_verified,
         "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
-        "language": current_user.language or "en"
+        "language": current_user.language or "en",
+        "is_admin": current_user.is_admin,
+        "is_word_admin": current_user.is_word_admin
     }

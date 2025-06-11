@@ -30,7 +30,9 @@ def read_me(current_user: User = Depends(get_current_user)):
         "username": current_user.username,
         "language": current_user.language,
         "allow_invites": current_user.allow_invites,
-        "preferred_languages": current_user.preferred_languages or ["en", "de"]
+        "preferred_languages": current_user.preferred_languages or ["en", "de"],
+        "is_admin": current_user.is_admin,
+        "is_word_admin": current_user.is_word_admin
     }
 
 @router.put("/me/settings")
@@ -70,7 +72,9 @@ def update_profile_settings(
             "username": current_user.username,
             "language": current_user.language,
             "allow_invites": current_user.allow_invites,
-            "preferred_languages": current_user.preferred_languages
+            "preferred_languages": current_user.preferred_languages,
+            "is_admin": current_user.is_admin,
+            "is_word_admin": current_user.is_word_admin
         }
     }
 
