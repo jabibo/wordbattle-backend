@@ -9,7 +9,7 @@ import random
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from app.game_logic.game_state import GameState, GamePhase, MoveType, Position, PlacedTile
-from app.game_logic.board_utils import find_word_placements, is_valid_word_placement
+from app.game_logic.board_utils import find_word_placements
 from app.game_logic.letter_bag import draw_letters
 from app.utils.wordlist_utils import load_wordlist
 from sqlalchemy.orm import Session
