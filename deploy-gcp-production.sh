@@ -216,7 +216,7 @@ if [[ -n "$GIT_COMMIT" ]]; then
     DOCKER_BUILD_ARGS="$DOCKER_BUILD_ARGS --label deploy.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 
-docker build -f Dockerfile.cloudrun -t gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG $DOCKER_BUILD_ARGS .
+DOCKER_BUILDKIT=0 docker build $DOCKER_BUILD_ARGS -f Dockerfile.cloudrun -t gcr.io/$PROJECT_ID/$IMAGE_NAME:$IMAGE_TAG .
 
 if [ $? -ne 0 ]; then
     echo "❌ Docker build failed"
