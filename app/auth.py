@@ -58,10 +58,15 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except JWTError:
         raise credentials_exception
     
-    # Try to find user by email first (for email-based tokens), then by username
-    user = get_user_by_email(db, subject)
-    if not user:
-        user = get_user_by_username(db, subject)
+    # Try to find user by ID first (for ID-based tokens), then by email, then by username
+    try:
+        user_id = int(subject)
+        user = db.query(User).filter(User.id == user_id).first()
+    except ValueError:
+        # If subject is not an integer, try email then username
+        user = get_user_by_email(db, subject)
+        if not user:
+            user = get_user_by_username(db, subject)
     
     if not user:
         raise credentials_exception
@@ -87,10 +92,15 @@ def get_user_from_token(token: str, db: Session = None) -> Optional[User]:
         if subject is None:
             return None
         if db:
-            # Try to find user by email first, then by username
-            user = get_user_by_email(db, subject)
-            if not user:
-                user = get_user_by_username(db, subject)
+            # Try to find user by ID first (for ID-based tokens), then by email, then by username
+            try:
+                user_id = int(subject)
+                user = db.query(User).filter(User.id == user_id).first()
+            except ValueError:
+                # If subject is not an integer, try email then username
+                user = get_user_by_email(db, subject)
+                if not user:
+                    user = get_user_by_username(db, subject)
             return user
         return None
     except JWTError:
