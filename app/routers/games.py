@@ -32,6 +32,7 @@ from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
 import secrets
 from app.utils.cache import cache_response
+from app.computer_player import create_computer_player, add_computer_player_to_game
 
 logger = logging.getLogger(__name__)
 
@@ -869,19 +870,37 @@ def get_game(
     if game.status in [GameStatus.IN_PROGRESS, GameStatus.READY, GameStatus.COMPLETED]:
         db_players = db.query(Player).filter(Player.game_id == game_id).all()
         for p in db_players:
+            # Handle computer player (user_id = -1)
+            if p.user_id == -1:
+                username = "Computer"
+                is_computer = True
+            else:
+                username = p.user.username
+                is_computer = False
+            
             player_info[p.user_id] = {
-                "username": p.user.username, # Add username for better display
+                "username": username,
                 "rack": list(p.rack) if (p.user_id == current_user.id or game.status == GameStatus.COMPLETED) and p.rack else [], # Only show own rack unless game over
-                "score": p.score
+                "score": p.score,
+                "is_computer": is_computer
             }
     
     # If game is in setup, invitees might be relevant, but players list from Player table is key
     if game.status == GameStatus.SETUP:
         db_players = db.query(Player).filter(Player.game_id == game_id).all() # Should only be creator initially
         for p in db_players:
-             player_info[p.user_id] = {
-                "username": p.user.username,
-                "score": p.score # Score is 0 at setup
+            # Handle computer player (user_id = -1)
+            if p.user_id == -1:
+                username = "Computer"
+                is_computer = True
+            else:
+                username = p.user.username
+                is_computer = False
+                
+            player_info[p.user_id] = {
+                "username": username,
+                "score": p.score, # Score is 0 at setup
+                "is_computer": is_computer
             }
 
 
@@ -2053,4 +2072,261 @@ def search_users_for_invitation(
         "total_found": len(results),
         "query": username_query,
         "language_filter": language
+    }
+
+
+# Computer Player Endpoints
+
+class AddComputerPlayerRequest(BaseModel):
+    difficulty: str = "medium"  # easy, medium, hard
+
+@router.post("/{game_id}/add-computer-player")
+def add_computer_player_endpoint(
+    game_id: str,
+    request: AddComputerPlayerRequest = AddComputerPlayerRequest(),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Add a computer player to the game."""
+    
+    # Validate difficulty
+    if request.difficulty not in ["easy", "medium", "hard"]:
+        raise HTTPException(400, "Invalid difficulty. Must be 'easy', 'medium', or 'hard'")
+    
+    # Check if game exists and user is the creator
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can add computer players")
+    
+    if game.status != GameStatus.SETUP:
+        raise HTTPException(400, f"Can only add computer players during game setup, current status: {game.status.value}")
+    
+    # Check if there's already a computer player
+    existing_computer = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == -1
+    ).first()
+    if existing_computer:
+        raise HTTPException(400, "Game already has a computer player")
+    
+    # Check if there's room for another player
+    current_players = db.query(Player).filter(Player.game_id == game_id).count()
+    if current_players >= game.max_players:
+        raise HTTPException(400, "Game is already full")
+    
+    try:
+        # Add computer player to game
+        computer_info = add_computer_player_to_game(game_id, db, request.difficulty)
+        
+        logger.info(f"Computer player added to game {game_id} with difficulty {request.difficulty}")
+        
+        return {
+            "message": f"Computer player added with {request.difficulty} difficulty",
+            "computer_player": computer_info,
+            "game_id": game_id
+        }
+        
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Failed to add computer player to game {game_id}: {e}")
+        raise HTTPException(500, "Failed to add computer player")
+
+
+@router.post("/{game_id}/computer-move")
+async def trigger_computer_move(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Trigger a computer player move (for testing or manual triggering)."""
+    
+    # Get game
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Check if user is part of the game
+    user_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == current_user.id
+    ).first()
+    if not user_player:
+        raise HTTPException(403, "You are not part of this game")
+    
+    if game.status != GameStatus.IN_PROGRESS:
+        raise HTTPException(400, f"Game is not in progress, current status: {game.status.value}")
+    
+    # Check if it's the computer player's turn
+    if game.current_player_id != -1:
+        raise HTTPException(400, "It's not the computer player's turn")
+    
+    # Get computer player
+    computer_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == -1
+    ).first()
+    if not computer_player:
+        raise HTTPException(400, "No computer player in this game")
+    
+    try:
+        # Parse game state
+        game_state_data = json.loads(game.state)
+        
+        # Load wordlist for the game language
+        wordlist = load_wordlist(game.language, db)
+        if not wordlist:
+            raise HTTPException(500, f"Wordlist not available for language {game.language}")
+        
+        # Create computer player instance
+        computer = create_computer_player("medium")  # Default to medium difficulty
+        
+        # Make computer move
+        move_result = computer.make_move(
+            game_state_data=game_state_data,
+            rack=computer_player.rack,
+            wordlist=wordlist,
+            db=db
+        )
+        
+        if move_result["type"] == "pass":
+            # Computer is passing
+            # Update game state for pass
+            game_state_data["consecutive_passes"] = game_state_data.get("consecutive_passes", 0) + 1
+            game_state_data["turn_number"] = game_state_data.get("turn_number", 0) + 1
+            
+            # Move to next player
+            all_players = db.query(Player).filter(Player.game_id == game_id).all()
+            next_player = get_next_player(all_players, game.current_player_id)
+            game.current_player_id = next_player.user_id
+            
+            # Create pass move record
+            move = Move(
+                game_id=game_id,
+                player_id=computer_player.id,
+                move_type=MoveType.PASS,
+                tiles_placed="",
+                score=0,
+                rack_after="",
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(move)
+            
+        else:
+            # Computer placed tiles
+            tiles_data = move_result.get("tiles", [])
+            
+            # Update board in game state
+            for tile in tiles_data:
+                game_state_data["board"][tile["row"]][tile["col"]] = {
+                    "letter": tile["letter"],
+                    "is_blank": False,
+                    "tile_id": f"comp_{uuid.uuid4().hex[:8]}"
+                }
+            
+            # Update computer player's rack (remove used letters)
+            rack_letters = list(computer_player.rack)
+            for tile in tiles_data:
+                if tile["letter"] in rack_letters:
+                    rack_letters.remove(tile["letter"])
+            
+            # Draw new letters to fill rack
+            letter_bag = game_state_data.get("letter_bag", {})
+            new_letters = draw_letters(letter_bag, 7 - len(rack_letters))
+            rack_letters.extend(new_letters)
+            computer_player.rack = "".join(rack_letters)
+            
+            # Update score
+            computer_player.score += move_result.get("score", 0)
+            
+            # Reset consecutive passes
+            game_state_data["consecutive_passes"] = 0
+            game_state_data["turn_number"] = game_state_data.get("turn_number", 0) + 1
+            
+            # Move to next player
+            all_players = db.query(Player).filter(Player.game_id == game_id).all()
+            next_player = get_next_player(all_players, game.current_player_id)
+            game.current_player_id = next_player.user_id
+            
+            # Create move record
+            move = Move(
+                game_id=game_id,
+                player_id=computer_player.id,
+                move_type=MoveType.PLACE_TILES,
+                tiles_placed=json.dumps(tiles_data),
+                score=move_result.get("score", 0),
+                rack_after=computer_player.rack,
+                created_at=datetime.now(timezone.utc)
+            )
+            db.add(move)
+        
+        # Update game state
+        game.state = json.dumps(game_state_data, cls=GameStateEncoder)
+        
+        db.commit()
+        
+        # Notify via WebSocket
+        await manager.broadcast_to_game(game_id, {
+            "type": "computer_move",
+            "move": move_result,
+            "next_player_id": game.current_player_id,
+            "game_state": game_state_data
+        })
+        
+        logger.info(f"Computer player made move in game {game_id}: {move_result['type']}")
+        
+        return {
+            "message": f"Computer player {move_result['type']}",
+            "move": move_result,
+            "next_player_id": game.current_player_id,
+            "computer_score": computer_player.score
+        }
+        
+    except Exception as e:
+        logger.error(f"Computer move failed in game {game_id}: {e}")
+        db.rollback()
+        raise HTTPException(500, f"Computer move failed: {str(e)}")
+
+
+@router.get("/{game_id}/computer-player-info")
+def get_computer_player_info(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get information about the computer player in the game."""
+    
+    # Check if user is part of the game
+    user_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == current_user.id
+    ).first()
+    if not user_player:
+        raise HTTPException(403, "You are not part of this game")
+    
+    # Get computer player
+    computer_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == -1
+    ).first()
+    
+    if not computer_player:
+        return {
+            "has_computer_player": False,
+            "message": "No computer player in this game"
+        }
+    
+    return {
+        "has_computer_player": True,
+        "computer_player": {
+            "id": computer_player.id,
+            "user_id": -1,
+            "username": "Computer",
+            "display_name": "Computer Player",
+            "score": computer_player.score,
+            "is_computer": True
+        }
     }
