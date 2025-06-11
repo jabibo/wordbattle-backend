@@ -468,9 +468,9 @@ async def reset_all_data(
             "timestamp": "2025-06-11T12:43:55.629953Z"
         }
         
-         except Exception as e:
-         db.rollback()
-         raise HTTPException(status_code=500, detail=f"Error during nuclear reset: {str(e)}")
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error during nuclear reset: {str(e)}")
 
 @router.get("/database/admin-status")
 async def admin_status(
@@ -664,8 +664,8 @@ async def get_performance_stats(
             "cache": cache_stats,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
-         except Exception as e:
-         raise HTTPException(status_code=500, detail=f"Error getting performance stats: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting performance stats: {str(e)}")
 
 @router.post("/database/create-default-admin")
 async def create_default_admin(
