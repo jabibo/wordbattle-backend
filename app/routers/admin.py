@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app.dependencies import get_db
 from app.auth import get_current_user, create_access_token
 from app.models import User, WordList
@@ -156,7 +157,7 @@ def list_wordlists(
         raise HTTPException(status_code=403, detail="Not authorized")
     
     # Get language counts
-    result = db.query(WordList.language, db.func.count(WordList.id)).group_by(WordList.language).all()
+    result = db.query(WordList.language, func.count(WordList.id)).group_by(WordList.language).all()
     
     return [
         {"language": language, "word_count": count}
@@ -209,7 +210,7 @@ def get_admin_dashboard(
         word_admin_users = db.query(User).filter(User.is_word_admin == True).count()
         
         # Get wordlist statistics
-        wordlist_stats = db.query(WordList.language, db.func.count(WordList.id)).group_by(WordList.language).all()
+        wordlist_stats = db.query(WordList.language, func.count(WordList.id)).group_by(WordList.language).all()
         total_words = sum(count for _, count in wordlist_stats)
         
         # Get game statistics (if Game model exists)
