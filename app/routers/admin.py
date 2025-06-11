@@ -63,9 +63,9 @@ async def create_test_tokens(
                 else:
                     print(f"✅ Test user already exists: {username}")
             
-            # Create token for the user
+            # Create token for the user (using email like the main auth system)
             access_token = create_access_token(
-                data={"sub": str(user.id)},
+                data={"sub": user.email},
                 expires_delta=timedelta(days=30)  # Long-lived token for testing
             )
             
