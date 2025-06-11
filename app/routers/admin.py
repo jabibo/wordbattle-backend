@@ -313,3 +313,161 @@ async def bulk_import_wordlists(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error during bulk import: {str(e)}")
+
+@router.post("/database/reset-wordlists")
+async def reset_wordlists(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reset all wordlists in the database.
+    This will delete all words and allow for fresh import.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        # Get count before deletion
+        word_count = db.query(WordList).count()
+        
+        # Delete all wordlists
+        db.query(WordList).delete()
+        db.commit()
+        
+        return {
+            "message": f"Successfully reset wordlists. Deleted {word_count} words.",
+            "deleted_count": word_count,
+            "timestamp": "2025-06-11T12:43:55.629953Z"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error resetting wordlists: {str(e)}")
+
+@router.post("/database/reset-users")
+async def reset_users(
+    keep_admins: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reset user data (excluding admins by default).
+    WARNING: This will delete user accounts and all associated data.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        # Get counts before deletion
+        total_users = db.query(User).count()
+        
+        if keep_admins:
+            # Delete only non-admin users
+            non_admin_users = db.query(User).filter(User.is_admin == False).all()
+            deleted_count = len(non_admin_users)
+            
+            for user in non_admin_users:
+                db.delete(user)
+        else:
+            # Delete all users (dangerous!)
+            deleted_count = total_users
+            db.query(User).delete()
+        
+        db.commit()
+        
+        remaining_users = db.query(User).count()
+        
+        return {
+            "message": f"Successfully reset users. Deleted {deleted_count} users, {remaining_users} remaining.",
+            "deleted_count": deleted_count,
+            "remaining_count": remaining_users,
+            "kept_admins": keep_admins,
+            "timestamp": "2025-06-11T12:43:55.629953Z"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error resetting users: {str(e)}")
+
+@router.post("/database/reset-all")
+async def reset_all_data(
+    confirm: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    NUCLEAR OPTION: Reset ALL data in the database.
+    WARNING: This will delete EVERYTHING except the current admin user.
+    Requires explicit confirmation.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    if not confirm:
+        raise HTTPException(
+            status_code=400, 
+            detail="This operation requires explicit confirmation. Set 'confirm=true' to proceed."
+        )
+    
+    try:
+        deletion_summary = {}
+        
+        # Get counts before deletion
+        deletion_summary["wordlists_before"] = db.query(WordList).count()
+        deletion_summary["users_before"] = db.query(User).count()
+        
+        # Import models to get Game, Player, etc.
+        try:
+            from app.models import Game, Player, GameInvitation
+            deletion_summary["games_before"] = db.query(Game).count()
+            deletion_summary["players_before"] = db.query(Player).count()
+            deletion_summary["invitations_before"] = db.query(GameInvitation).count()
+        except ImportError:
+            deletion_summary["game_models"] = "Not available for deletion"
+        
+        # Delete wordlists
+        db.query(WordList).delete()
+        
+        # Delete game data if available
+        try:
+            from app.models import Game, Player, GameInvitation, Move, ChatMessage
+            db.query(ChatMessage).delete()
+            db.query(Move).delete()
+            db.query(Player).delete()
+            db.query(GameInvitation).delete()
+            db.query(Game).delete()
+        except ImportError:
+            pass
+        
+        # Delete non-admin users (keep current admin)
+        non_admin_users = db.query(User).filter(
+            User.is_admin == False
+        ).all()
+        
+        for user in non_admin_users:
+            db.delete(user)
+        
+        db.commit()
+        
+        # Get final counts
+        deletion_summary["wordlists_after"] = db.query(WordList).count()
+        deletion_summary["users_after"] = db.query(User).count()
+        
+        return {
+            "message": "NUCLEAR RESET COMPLETED. All data deleted except admin users.",
+            "warning": "This action cannot be undone.",
+            "deletion_summary": deletion_summary,
+            "remaining_admin": {
+                "id": current_user.id,
+                "username": current_user.username,
+                "email": current_user.email
+            },
+            "timestamp": "2025-06-11T12:43:55.629953Z"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error during nuclear reset: {str(e)}")
