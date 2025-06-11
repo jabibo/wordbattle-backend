@@ -9,10 +9,57 @@ import json
 from datetime import datetime, timezone, timedelta
 from app.database import engine, Base
 import jwt
+from contextlib import asynccontextmanager
+import asyncio
+from collections import defaultdict
+from sqlalchemy import text, inspect
+from app.database_manager import check_database_status, ensure_user_columns
+from app.middleware.performance import PerformanceMiddleware, monitor
+from app.utils.cache import cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Performance monitoring
+response_times = []
+request_counts = defaultdict(int)
+
+# Create FastAPI app with performance monitoring lifespan
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("🚀 WordBattle Backend starting up...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database table creation failed: {e}")
+    
+    try:
+        ensure_user_columns()
+        await ensure_default_admin_exists()
+        
+        status = check_database_status()
+        if status["is_initialized"]:
+            logger.info("Database already initialized - skipping word loading")
+        else:
+            logger.info("Database needs initialization - will load words in background")
+            asyncio.create_task(initialize_words_background())
+    except Exception as e:
+        logger.error(f"Database status check failed: {e}")
+    
+    yield
+    
+    # Shutdown
+    print("🛑 WordBattle Backend shutting down...")
+    print(f"📊 Performance Summary:")
+    if response_times:
+        avg_response = sum(response_times) / len(response_times)
+        max_response = max(response_times)
+        print(f"   Average response time: {avg_response:.3f}s")
+        print(f"   Max response time: {max_response:.3f}s")
+        print(f"   Total requests: {sum(request_counts.values())}")
 
 app = FastAPI(
     title="WordBattle API",
@@ -76,27 +123,22 @@ app = FastAPI(
             "name": "chat",
             "description": "Chat operations",
         },
-    ]
+    ],
+    lifespan=lifespan
 )
 
-# Add CORS middleware with environment-based configuration
+# Configure CORS with performance headers
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,  # Use configured origins, not wildcard
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=[
-        "Accept",
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-    ],
-    expose_headers=[
-        "Access-Control-Allow-Origin",
-        "Access-Control-Allow-Credentials",
-    ],
-    max_age=600,
+    allow_headers=["Authorization", "Content-Type", "Accept", "Cache-Control"],
+    expose_headers=["X-Response-Time", "X-Request-ID"]
 )
+
+# Add performance monitoring middleware
+app.add_middleware(PerformanceMiddleware)
 
 # Startup event to initialize database
 @app.on_event("startup")
@@ -117,6 +159,9 @@ async def startup_event():
         from app.database_manager import ensure_user_columns
         ensure_user_columns()
         
+        # Always ensure jan@binge.de exists as admin user
+        await ensure_default_admin_exists()
+        
         status = check_database_status()
         
         if status["is_initialized"]:
@@ -124,11 +169,62 @@ async def startup_event():
         else:
             logger.info("Database needs initialization - will load words in background")
             # Schedule immediate background word loading
-            import asyncio
             asyncio.create_task(initialize_words_background())
             
     except Exception as e:
         logger.error(f"Database status check failed: {e}")
+
+async def ensure_default_admin_exists():
+    """Ensure the default admin user jan@binge.de always exists."""
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        from app.auth import get_password_hash
+        from datetime import datetime, timezone
+        
+        db = SessionLocal()
+        try:
+            # Debug: First list all users to see what exists
+            all_users = db.query(User).all()
+            logger.info(f"🔍 Debug: Found {len(all_users)} total users in database")
+            for user in all_users:
+                logger.info(f"🔍 Debug: User: {user.username}, Email: {user.email}, Admin: {user.is_admin}")
+            
+            # Check if jan@binge.de exists
+            admin_user = db.query(User).filter(User.email == "jan@binge.de").first()
+            logger.info(f"🔍 Debug: Query for jan@binge.de returned: {admin_user}")
+            
+            if not admin_user:
+                logger.info("🔧 Creating default admin user jan@binge.de...")
+                # Create the admin user
+                admin_user = User(
+                    username="jan",
+                    email="jan@binge.de", 
+                    hashed_password=get_password_hash("admin123"),  # Default password
+                    is_admin=True,
+                    is_email_verified=True,
+                    created_at=datetime.now(timezone.utc)
+                )
+                db.add(admin_user)
+                db.commit()
+                db.refresh(admin_user)
+                logger.info(f"✅ Created default admin user: jan@binge.de (ID: {admin_user.id})")
+            else:
+                # Ensure the user is admin (in case it was changed)
+                if not admin_user.is_admin:
+                    admin_user.is_admin = True
+                    db.commit()
+                    logger.info("✅ Promoted jan@binge.de to admin")
+                else:
+                    logger.info(f"✅ Default admin user jan@binge.de already exists (ID: {admin_user.id})")
+                    
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Failed to ensure default admin exists: {e}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
 
 async def initialize_words_background():
     """Initialize words in the background without blocking startup."""
@@ -223,6 +319,104 @@ async def database_status():
     """Get detailed database status information"""
     from app.database_manager import get_database_info
     return get_database_info()
+
+@app.get("/admin/database/admin-status")
+async def admin_status():
+    """Get admin user status information for the database"""
+    from app.database import SessionLocal
+    from app.models import User
+    
+    db = SessionLocal()
+    try:
+        # Count total users
+        total_users = db.query(User).count()
+        
+        # Count admin users
+        admin_users = db.query(User).filter(User.is_admin == True).all()
+        admin_count = len(admin_users)
+        
+        # Count word admin users
+        word_admin_count = db.query(User).filter(User.is_word_admin == True).count()
+        
+        # Get first few admin usernames for display (privacy-conscious)
+        admin_usernames = [admin.username for admin in admin_users[:3]]
+        
+        return {
+            "total_users": total_users,
+            "admin_users": admin_count,
+            "word_admin_users": word_admin_count,
+            "has_admins": admin_count > 0,
+            "admin_usernames": admin_usernames,
+            "note": "First 3 admin usernames shown for privacy"
+        }
+    finally:
+        db.close()
+
+@app.post("/admin/database/create-default-admin")
+async def create_default_admin():
+    """Create a default admin user for testing purposes"""
+    from app.database import SessionLocal
+    from app.models import User
+    from app.auth import get_password_hash
+    from datetime import datetime, timezone
+    
+    db = SessionLocal()
+    try:
+        # Check if an admin already exists
+        existing_admin = db.query(User).filter(User.is_admin == True).first()
+        if existing_admin:
+            return {
+                "message": "Admin user already exists",
+                "admin_username": existing_admin.username,
+                "action": "none"
+            }
+        
+        # Create default admin user
+        admin_username = "jan_admin"
+        admin_password = "admin123"  # In production, use a secure password
+        
+        # Check if user with this username already exists
+        existing_user = db.query(User).filter(User.username == admin_username).first()
+        if existing_user:
+            # Promote existing user to admin
+            existing_user.is_admin = True
+            db.commit()
+            return {
+                "message": f"Promoted existing user '{admin_username}' to admin",
+                "admin_username": admin_username,
+                "action": "promoted"
+            }
+        
+        # Create new admin user
+        admin_user = User(
+            username=admin_username,
+            email="jan@binge-dev.de",
+            hashed_password=get_password_hash(admin_password),
+            is_admin=True,
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+        
+        return {
+            "message": f"Created default admin user: {admin_username}",
+            "admin_username": admin_username,
+            "admin_id": admin_user.id,
+            "password": admin_password,
+            "action": "created",
+            "note": "This is for testing only - change password in production!"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        return {
+            "error": f"Failed to create admin user: {str(e)}",
+            "action": "failed"
+        }
+    finally:
+        db.close()
 
 @app.post("/admin/database/reset-games")
 async def reset_games():
@@ -753,3 +947,15 @@ async def websocket_endpoint(
         await websocket.close(code=1008)
     finally:
         db.close()
+
+@app.get("/admin/performance")
+async def get_performance_stats():
+    """Get application performance statistics."""
+    stats = monitor.get_stats()
+    cache_stats = cache.stats()
+    
+    return {
+        "performance": stats,
+        "cache": cache_stats,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }

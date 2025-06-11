@@ -1,8 +1,8 @@
 # app/routers/games.py
 
-from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, text, and_
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
@@ -31,6 +31,7 @@ from app.game_logic.board_utils import find_word_placements
 from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
 import secrets
+from app.utils.cache import cache_response
 
 logger = logging.getLogger(__name__)
 
@@ -628,9 +629,11 @@ def list_user_games(
                       If not provided, shows all games.
     """
     
-    # Get all games where the user is a player
+    # Optimized query with eager loading to prevent N+1 queries
     query = db.query(Game).join(Player).filter(
         Player.user_id == current_user.id
+    ).options(
+        selectinload(Game.players).joinedload(Player.user)
     )
     
     # Add filter for specific statuses if requested
