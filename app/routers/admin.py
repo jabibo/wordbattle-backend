@@ -189,3 +189,127 @@ def delete_wordlist(
         "language": language,
         "word_count": count
     }
+
+@router.get("/dashboard")
+def get_admin_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get admin dashboard data including system stats and overview.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        # Get user statistics
+        total_users = db.query(User).count()
+        admin_users = db.query(User).filter(User.is_admin == True).count()
+        word_admin_users = db.query(User).filter(User.is_word_admin == True).count()
+        
+        # Get wordlist statistics
+        wordlist_stats = db.query(WordList.language, db.func.count(WordList.id)).group_by(WordList.language).all()
+        total_words = sum(count for _, count in wordlist_stats)
+        
+        # Get game statistics (if Game model exists)
+        try:
+            from app.models import Game
+            total_games = db.query(Game).count()
+        except ImportError:
+            total_games = 0
+        
+        return {
+            "system_stats": {
+                "total_users": total_users,
+                "admin_users": admin_users,
+                "word_admin_users": word_admin_users,
+                "total_games": total_games,
+                "total_words": total_words
+            },
+            "wordlist_stats": [
+                {"language": language, "word_count": count}
+                for language, count in wordlist_stats
+            ],
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "timestamp": "2025-06-11T12:43:55.629953Z"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching dashboard data: {str(e)}")
+
+@router.post("/database/import-wordlists")
+async def bulk_import_wordlists(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Bulk import all available wordlists from the data directory.
+    This endpoint imports all .txt files found in the data/ directory.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        data_dir = "data"
+        if not os.path.exists(data_dir):
+            raise HTTPException(status_code=404, detail="Data directory not found")
+        
+        imported_files = []
+        errors = []
+        
+        # Find all .txt files in data directory
+        for filename in os.listdir(data_dir):
+            if filename.endswith('.txt'):
+                file_path = os.path.join(data_dir, filename)
+                
+                # Extract language from filename (e.g., "de_words.txt" -> "de")
+                language = filename.split('_')[0] if '_' in filename else filename.replace('.txt', '')
+                
+                try:
+                    # Check if words already exist for this language
+                    existing_count = db.query(WordList).filter(WordList.language == language).count()
+                    if existing_count > 0:
+                        # Delete existing words for this language
+                        db.query(WordList).filter(WordList.language == language).delete()
+                        db.commit()
+                    
+                    # Load words from file
+                    words = load_wordlist_from_file(file_path)
+                    
+                    # Batch insert for better performance
+                    batch_size = 1000
+                    word_list = list(words)
+                    total_words = len(word_list)
+                    
+                    for i in range(0, total_words, batch_size):
+                        batch = [WordList(word=word, language=language) for word in word_list[i:i+batch_size]]
+                        db.add_all(batch)
+                        db.commit()
+                    
+                    imported_files.append({
+                        "filename": filename,
+                        "language": language,
+                        "word_count": total_words
+                    })
+                    
+                except Exception as e:
+                    errors.append({
+                        "filename": filename,
+                        "error": str(e)
+                    })
+        
+        if not imported_files and not errors:
+            raise HTTPException(status_code=404, detail="No .txt files found in data directory")
+        
+        return {
+            "message": f"Bulk import completed. {len(imported_files)} files imported successfully.",
+            "imported_files": imported_files,
+            "errors": errors,
+            "total_imported": len(imported_files),
+            "total_errors": len(errors)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during bulk import: {str(e)}")
