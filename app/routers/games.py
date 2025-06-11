@@ -175,26 +175,6 @@ def create_game(
             rack=""  # Will be dealt when game starts
         )
         db.add(computer_player)
-        
-        # Auto-start single-player computer games (no invitees, just human vs computer)
-        game.status = GameStatus.IN_PROGRESS
-        game.started_at = datetime.now(timezone.utc)
-        game.current_player_id = current_user.id  # Human player starts first
-        
-        # Deal initial racks to both players
-        from app.game_logic.letter_bag import draw_letters
-        game_state_data = json.loads(game.state)
-        letter_bag = game_state_data.get("letter_bag", {})
-        
-        # Deal 7 letters to human player
-        player.rack = "".join(draw_letters(letter_bag, 7))
-        
-        # Deal 7 letters to computer player  
-        computer_player.rack = "".join(draw_letters(letter_bag, 7))
-        
-        # Update game state with new letter bag
-        game_state_data["letter_bag"] = letter_bag
-        game.state = json.dumps(game_state_data, cls=GameStateEncoder)
     
     db.commit()
     db.refresh(game)
@@ -224,9 +204,9 @@ def create_game_with_invitations(
     if not (2 <= game_data.max_players <= 4):
         raise HTTPException(400, "Max players must be between 2 and 4")
     
-    # Validate invitees count (unless creating single-player with computer)
-    if len(game_data.invitees) == 0 and not game_data.add_computer_player:
-        raise HTTPException(400, "At least one invitee is required (unless adding a computer player)")
+    # Validate invitees count
+    if len(game_data.invitees) == 0:
+        raise HTTPException(400, "At least one invitee is required")
     
     if len(game_data.invitees) >= game_data.max_players:
         raise HTTPException(400, f"Too many invitees. Maximum {game_data.max_players - 1} invitees for {game_data.max_players} player game")
@@ -294,27 +274,6 @@ def create_game_with_invitations(
             rack=""  # Will be dealt when game starts
         )
         db.add(computer_player)
-        
-        # Auto-start single-player computer games (no invitees, just human vs computer)  
-        if len(game_data.invitees) == 0:
-            game.status = GameStatus.IN_PROGRESS
-            game.started_at = datetime.now(timezone.utc)
-            game.current_player_id = current_user.id  # Human player starts first
-            
-            # Deal initial racks to both players
-            from app.game_logic.letter_bag import draw_letters
-            game_state_data = json.loads(game.state)
-            letter_bag = game_state_data.get("letter_bag", {})
-            
-            # Deal 7 letters to human player
-            creator_player.rack = "".join(draw_letters(letter_bag, 7))
-            
-            # Deal 7 letters to computer player  
-            computer_player.rack = "".join(draw_letters(letter_bag, 7))
-            
-            # Update game state with new letter bag
-            game_state_data["letter_bag"] = letter_bag
-            game.state = json.dumps(game_state_data, cls=GameStateEncoder)
     
     # Process invitations
     invitations_created = []
@@ -394,13 +353,13 @@ def create_game_with_invitations(
             # Don't fail the invitation creation due to email issues
             invitations_sent += 1
     
-    # Check if we have any valid invitations (unless it's an auto-started computer game)
-    if len(invitations_created) == 0 and game.status != GameStatus.IN_PROGRESS:
+    # Check if we have any valid invitations
+    if len(invitations_created) == 0:
         db.rollback()
         raise HTTPException(400, f"No valid invitations could be created. Errors: {failed_invitations}")
     
-    # Update game status to WAITING if we have invitations (unless already started)
-    if len(invitations_created) > 0 and game.status != GameStatus.IN_PROGRESS:
+    # Update game status to WAITING if we have invitations
+    if len(invitations_created) > 0:
         game.status = GameStatus.SETUP  # Will change to READY when players accept
     
     db.commit()
