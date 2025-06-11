@@ -180,6 +180,39 @@ def create_game(
     db.refresh(game)
     db.refresh(player)
     
+    # Auto-start single-player computer games immediately
+    if game_data.add_computer_player:
+        logger.info(f"🤖 AUTO-START: Starting single-player computer game {game.id} immediately")
+        
+        # Get all players for the game
+        all_players = db.query(Player).filter(Player.game_id == game.id).all()
+        
+        # Set game status to IN_PROGRESS
+        game.status = GameStatus.IN_PROGRESS
+        game.started_at = datetime.now(timezone.utc)
+        
+        # Set current player to the human player (they go first)
+        game.current_player_id = current_user.id
+        
+        # Deal initial racks to all players
+        from app.game_state import GameState
+        game_state = GameState.from_json(game.state)
+        
+        for player_obj in all_players:
+            rack = game_state.deal_rack()
+            player_obj.rack = "".join(rack)
+            logger.info(f"🎯 Dealt rack to player {player_obj.user_id}: {player_obj.rack}")
+        
+        # Update game state
+        from app.models import GamePhase
+        game_state.phase = GamePhase.IN_PROGRESS
+        game.state = json.dumps(game_state.to_dict(), cls=GameStateEncoder)
+        
+        db.commit()
+        db.refresh(game)
+        
+        logger.info(f"✅ AUTO-START: Computer game {game.id} started. Human player goes first.")
+    
     return {
         "id": game.id,
         "creator_id": game.creator_id,
