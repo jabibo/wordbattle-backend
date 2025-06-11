@@ -6,6 +6,21 @@ import urllib.parse
 if os.getenv("ENVIRONMENT") != "testing" and not os.getenv("DATABASE_URL"):
     load_dotenv()
 
+# Database settings - always available for import
+DB_HOST = os.environ.get("DB_HOST", "localhost")  # Changed default from "db" to "localhost"
+DB_PORT = os.environ.get("DB_PORT", "5432")
+DB_USER = os.environ.get("DB_USER", "postgres")
+DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
+DB_NAME = os.environ.get("DB_NAME", "wordbattle")
+
+# Test database settings
+TEST_DB_NAME = os.environ.get("TEST_DB_NAME", "wordbattle_test")
+
+def get_database_url(is_test=False):
+    """Get database URL with proper encoding."""
+    db_name = TEST_DB_NAME if is_test else DB_NAME
+    return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{db_name}"
+
 # Priority 1: Check for DATABASE_URL (Cloud Run environment)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -14,20 +29,6 @@ if DATABASE_URL:
     print(f"Database configured: {DATABASE_URL.split('@')[0]}@{DATABASE_URL.split('@')[1].split('?')[0] if '@' in DATABASE_URL else 'unknown'}")
 else:
     # Priority 2: Construct from individual environment variables (development)
-    DB_HOST = os.environ.get("DB_HOST", "localhost")  # Changed default from "db" to "localhost"
-    DB_PORT = os.environ.get("DB_PORT", "5432")
-    DB_USER = os.environ.get("DB_USER", "postgres")
-    DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
-    DB_NAME = os.environ.get("DB_NAME", "wordbattle")
-    
-    # Test database settings
-    TEST_DB_NAME = os.environ.get("TEST_DB_NAME", "wordbattle_test")
-    
-    def get_database_url(is_test=False):
-        """Get database URL with proper encoding."""
-        db_name = TEST_DB_NAME if is_test else DB_NAME
-        return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{db_name}"
-    
     DATABASE_URL = get_database_url()
     print(f"Using database: {DATABASE_URL}")
 
