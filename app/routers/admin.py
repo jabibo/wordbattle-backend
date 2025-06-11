@@ -468,6 +468,261 @@ async def reset_all_data(
             "timestamp": "2025-06-11T12:43:55.629953Z"
         }
         
+         except Exception as e:
+         db.rollback()
+         raise HTTPException(status_code=500, detail=f"Error during nuclear reset: {str(e)}")
+
+@router.get("/database/admin-status")
+async def admin_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get admin user status information for the database"""
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        # Count total users
+        total_users = db.query(User).count()
+        
+        # Count admin users
+        admin_users = db.query(User).filter(User.is_admin == True).all()
+        admin_count = len(admin_users)
+        
+        # Count word admin users
+        word_admin_count = db.query(User).filter(User.is_word_admin == True).count()
+        
+        # Get first few admin usernames for display (privacy-conscious)
+        admin_usernames = [admin.username for admin in admin_users[:3]]
+        
+        return {
+            "total_users": total_users,
+            "admin_users": admin_count,
+            "word_admin_users": word_admin_count,
+            "has_admins": admin_count > 0,
+            "admin_usernames": admin_usernames,
+            "note": "First 3 admin usernames shown for privacy"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting admin status: {str(e)}")
+
+@router.post("/database/reset-games")
+async def reset_games(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    ADMIN ONLY: Reset all game-related data while preserving users and wordlists.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        from sqlalchemy import text
+        
+        deleted_counts = {}
+        
+        # Get counts before deletion
+        tables_to_reset = [
+            ("chat_messages", "Chat Messages"),
+            ("moves", "Moves"),
+            ("players", "Players"),
+            ("game_invitations", "Game Invitations"),
+            ("games", "Games")
+        ]
+        
+        # Delete in order to respect foreign key constraints
+        for table, name in tables_to_reset:
+            try:
+                # Get count before deletion
+                count_result = db.execute(text(f"SELECT COUNT(*) FROM {table}"))
+                count_before = count_result.scalar()
+                
+                # Delete all records
+                delete_result = db.execute(text(f"DELETE FROM {table}"))
+                deleted_counts[table] = delete_result.rowcount
+                
+            except Exception as e:
+                deleted_counts[table] = f"Error: {str(e)}"
+        
+        # Reset sequences
+        sequences = [
+            "chat_messages_id_seq",
+            "moves_id_seq", 
+            "players_id_seq",
+            "game_invitations_id_seq",
+            "games_id_seq"
+        ]
+        
+        reset_sequences = []
+        for seq in sequences:
+            try:
+                db.execute(text(f"ALTER SEQUENCE IF EXISTS {seq} RESTART WITH 1"))
+                reset_sequences.append(seq)
+            except Exception as e:
+                pass  # Sequence might not exist
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Game data reset completed successfully",
+            "deleted_counts": deleted_counts,
+            "reset_sequences": reset_sequences,
+            "timestamp": "2025-06-11T12:43:55.629953Z"
+        }
+        
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Error during nuclear reset: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error resetting games: {str(e)}")
+
+@router.post("/load-all-words")
+async def load_all_words(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    ADMIN ONLY: Load all remaining words into the database.
+    This will complete the wordlist loading for German and English.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        from app.wordlist import load_wordlists_from_files
+        
+        # Check current word counts
+        current_german = db.query(WordList).filter(WordList.language == "de").count()
+        current_english = db.query(WordList).filter(WordList.language == "en").count()
+        
+        # Expected total counts
+        expected_german = 601565
+        expected_english = 178691
+        
+        if current_german >= expected_german and current_english >= expected_english:
+            return {
+                "success": True,
+                "message": "All words already loaded",
+                "current_counts": {
+                    "german": current_german,
+                    "english": current_english
+                },
+                "expected_counts": {
+                    "german": expected_german,
+                    "english": expected_english
+                }
+            }
+        
+        # Load all words from files (this will add missing words)
+        loaded_counts = load_wordlists_from_files(db)
+        
+        # Get final counts
+        final_german = db.query(WordList).filter(WordList.language == "de").count()
+        final_english = db.query(WordList).filter(WordList.language == "en").count()
+        
+        return {
+            "success": True,
+            "message": "Word loading completed successfully",
+            "before_counts": {
+                "german": current_german,
+                "english": current_english
+            },
+            "after_counts": {
+                "german": final_german,
+                "english": final_english
+            },
+            "loaded_this_session": loaded_counts,
+            "total_words": final_german + final_english
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Error loading words: {str(e)}")
+
+@router.get("/performance")
+async def get_performance_stats(
+    current_user: User = Depends(get_current_user)
+):
+    """Get application performance statistics."""
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        from app.middleware.performance import monitor
+        from app.utils.cache import cache
+        from datetime import datetime, timezone
+        
+        stats = monitor.get_stats()
+        cache_stats = cache.stats()
+        
+        return {
+            "performance": stats,
+            "cache": cache_stats,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+         except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Error getting performance stats: {str(e)}")
+
+@router.post("/database/create-default-admin")
+async def create_default_admin(
+    db: Session = Depends(get_db)
+):
+    """Create a default admin user for testing purposes"""
+    try:
+        from app.auth import get_password_hash
+        from datetime import datetime, timezone
+        
+        # Check if an admin already exists
+        existing_admin = db.query(User).filter(User.is_admin == True).first()
+        if existing_admin:
+            return {
+                "message": "Admin user already exists",
+                "admin_username": existing_admin.username,
+                "action": "none"
+            }
+        
+        # Create default admin user
+        admin_username = "jan_admin"
+        admin_password = "admin123"  # In production, use a secure password
+        
+        # Check if user with this username already exists
+        existing_user = db.query(User).filter(User.username == admin_username).first()
+        if existing_user:
+            # Promote existing user to admin
+            existing_user.is_admin = True
+            db.commit()
+            return {
+                "message": f"Promoted existing user '{admin_username}' to admin",
+                "admin_username": admin_username,
+                "action": "promoted"
+            }
+        
+        # Create new admin user
+        admin_user = User(
+            username=admin_username,
+            email="jan@binge-dev.de",
+            hashed_password=get_password_hash(admin_password),
+            is_admin=True,
+            created_at=datetime.now(timezone.utc)
+        )
+        
+        db.add(admin_user)
+        db.commit()
+        db.refresh(admin_user)
+        
+        return {
+            "message": f"Created default admin user: {admin_username}",
+            "admin_username": admin_username,
+            "admin_id": admin_user.id,
+            "password": admin_password,
+            "action": "created",
+            "note": "This is for testing only - change password in production!"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create admin user: {str(e)}")
