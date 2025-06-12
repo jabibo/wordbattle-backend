@@ -2,12 +2,11 @@ import os
 from dotenv import load_dotenv
 import urllib.parse
 
-# Only load .env file in development, not in Cloud Run
-if os.getenv("ENVIRONMENT") != "testing" and not os.getenv("DATABASE_URL"):
-    load_dotenv()
+# Load environment variables from .env file
+load_dotenv()
 
-# Database settings - always available for import
-DB_HOST = os.environ.get("DB_HOST", "localhost")  # Changed default from "db" to "localhost"
+# Database settings
+DB_HOST = os.environ.get("DB_HOST", "db")
 DB_PORT = os.environ.get("DB_PORT", "5432")
 DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
@@ -21,16 +20,10 @@ def get_database_url(is_test=False):
     db_name = TEST_DB_NAME if is_test else DB_NAME
     return f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{db_name}"
 
-# Priority 1: Check for DATABASE_URL (Cloud Run environment)
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-if DATABASE_URL:
-    print("✅ Using DATABASE_URL from environment")
-    print(f"Database configured: {DATABASE_URL.split('@')[0]}@{DATABASE_URL.split('@')[1].split('?')[0] if '@' in DATABASE_URL else 'unknown'}")
-else:
-    # Priority 2: Construct from individual environment variables (development)
-    DATABASE_URL = get_database_url()
-    print(f"Using database: {DATABASE_URL}")
+# Use the function to get the main database URL
+# Check if we're in testing mode to use test database
+is_testing = os.environ.get("TESTING") == "1"
+DATABASE_URL = os.environ.get("DATABASE_URL", get_database_url(is_test=is_testing))
 
 # Security settings - CRITICAL: These must be set via environment variables in production
 SECRET_KEY = os.getenv("SECRET_KEY")
@@ -40,6 +33,8 @@ if not SECRET_KEY:
     else:
         print("⚠️  WARNING: Using default SECRET_KEY for development only!")
         SECRET_KEY = "dev-only-secret-key-change-in-production"
+
+print(f"✅ Loaded SECRET_KEY starting with: {SECRET_KEY[:8]}...")
 
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))

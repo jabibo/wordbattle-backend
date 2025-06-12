@@ -36,6 +36,18 @@ from app.computer_player import create_computer_player, add_computer_player_to_g
 
 logger = logging.getLogger(__name__)
 
+def is_computer_player(player, db):
+    """Check if a player is a computer player."""
+    if hasattr(player, 'user_id'):
+        user = db.query(User).filter(User.id == player.user_id).first()
+        return user and user.username == "computer_player"
+    return False
+
+def get_computer_user_id(db):
+    """Get the computer player's user ID."""
+    computer_user = db.query(User).filter(User.username == "computer_player").first()
+    return computer_user.id if computer_user else None
+
 class CreateGameRequest(BaseModel):
     language: str = "en"
     max_players: int = 2
@@ -147,8 +159,7 @@ def create_game(
         "letter_bag": game_state.letter_bag,
         "turn_number": 0,
         "consecutive_passes": 0,
-        "test_mode": game_data.short_game,  # Store short_game flag as test_mode for backward compatibility
-        "computer_difficulty": game_data.computer_difficulty if game_data.add_computer_player else None
+        "test_mode": game_data.short_game  # Store short_game flag as test_mode for backward compatibility
     }
     game.state = json.dumps(initial_state, cls=GameStateEncoder)
     
@@ -168,9 +179,14 @@ def create_game(
         if game_data.computer_difficulty not in ["easy", "medium", "hard"]:
             raise HTTPException(400, "Invalid computer difficulty. Must be easy, medium, or hard")
         
+        # Get computer user (created during startup)
+        computer_user = db.query(User).filter(User.username == "computer_player").first()
+        if not computer_user:
+            raise HTTPException(500, "Computer player user not found. Please restart the service.")
+        
         computer_player = Player(
             game_id=game.id,
-            user_id=-1,  # Special ID for computer player
+            user_id=computer_user.id,
             score=0,
             rack=""  # Will be dealt when game starts
         )
@@ -195,7 +211,6 @@ def create_game(
         game.current_player_id = current_user.id
         
         # Deal initial racks to all players
-        from app.game_state import GameState
         game_state = GameState.from_json(game.state)
         
         for player_obj in all_players:
@@ -279,8 +294,7 @@ def create_game_with_invitations(
         "letter_bag": game_state.letter_bag,
         "turn_number": 0,
         "consecutive_passes": 0,
-        "test_mode": game_data.short_game,  # Store short_game flag as test_mode for backward compatibility
-        "computer_difficulty": game_data.computer_difficulty if game_data.add_computer_player else None
+        "test_mode": game_data.short_game  # Store short_game flag as test_mode for backward compatibility
     }
     game.state = json.dumps(initial_state, cls=GameStateEncoder)
     
@@ -294,19 +308,6 @@ def create_game_with_invitations(
     
     db.add(game)
     db.add(creator_player)
-    
-    # Add computer player if requested
-    if game_data.add_computer_player:
-        if game_data.computer_difficulty not in ["easy", "medium", "hard"]:
-            raise HTTPException(400, "Invalid computer difficulty. Must be easy, medium, or hard")
-        
-        computer_player = Player(
-            game_id=game.id,
-            user_id=-1,  # Special ID for computer player
-            score=0,
-            rack=""  # Will be dealt when game starts
-        )
-        db.add(computer_player)
     
     # Process invitations
     invitations_created = []
@@ -2142,7 +2143,64 @@ def search_users_for_invitation(
 
 
 # Computer Player Endpoints
-# Note: Computer players can only be added during game creation, not after
+
+class AddComputerPlayerRequest(BaseModel):
+    difficulty: str = "medium"  # easy, medium, hard
+
+@router.post("/{game_id}/add-computer-player")
+def add_computer_player_endpoint(
+    game_id: str,
+    request: AddComputerPlayerRequest = AddComputerPlayerRequest(),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Add a computer player to the game."""
+    
+    # Validate difficulty
+    if request.difficulty not in ["easy", "medium", "hard"]:
+        raise HTTPException(400, "Invalid difficulty. Must be 'easy', 'medium', or 'hard'")
+    
+    # Check if game exists and user is the creator
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    if game.creator_id != current_user.id:
+        raise HTTPException(403, "Only the game creator can add computer players")
+    
+    if game.status != GameStatus.SETUP:
+        raise HTTPException(400, f"Can only add computer players during game setup, current status: {game.status.value}")
+    
+    # Check if there's already a computer player
+    existing_computer = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == -1
+    ).first()
+    if existing_computer:
+        raise HTTPException(400, "Game already has a computer player")
+    
+    # Check if there's room for another player
+    current_players = db.query(Player).filter(Player.game_id == game_id).count()
+    if current_players >= game.max_players:
+        raise HTTPException(400, "Game is already full")
+    
+    try:
+        # Add computer player to game
+        computer_info = add_computer_player_to_game(game_id, db, request.difficulty)
+        
+        logger.info(f"Computer player added to game {game_id} with difficulty {request.difficulty}")
+        
+        return {
+            "message": f"Computer player added with {request.difficulty} difficulty",
+            "computer_player": computer_info,
+            "game_id": game_id
+        }
+        
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.error(f"Failed to add computer player to game {game_id}: {e}")
+        raise HTTPException(500, "Failed to add computer player")
 
 
 @router.post("/{game_id}/computer-move")
@@ -2190,9 +2248,8 @@ async def trigger_computer_move(
         if not wordlist:
             raise HTTPException(500, f"Wordlist not available for language {game.language}")
         
-        # Create computer player instance with stored difficulty
-        computer_difficulty = game_state_data.get("computer_difficulty", "medium")
-        computer = create_computer_player(computer_difficulty)
+        # Create computer player instance
+        computer = create_computer_player("medium")  # Default to medium difficulty
         
         # Make computer move
         move_result = computer.make_move(
@@ -2329,16 +2386,6 @@ def get_computer_player_info(
             "message": "No computer player in this game"
         }
     
-    # Get game state to retrieve difficulty
-    game = db.query(Game).filter(Game.id == game_id).first()
-    difficulty = "medium"  # default
-    if game and game.state:
-        try:
-            game_state_data = json.loads(game.state)
-            difficulty = game_state_data.get("computer_difficulty", "medium")
-        except:
-            pass
-    
     return {
         "has_computer_player": True,
         "computer_player": {
@@ -2347,7 +2394,6 @@ def get_computer_player_info(
             "username": "Computer",
             "display_name": "Computer Player",
             "score": computer_player.score,
-            "difficulty": difficulty,
             "is_computer": True
         }
     }

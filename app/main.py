@@ -30,9 +30,24 @@ request_counts = defaultdict(int)
 async def lifespan(app: FastAPI):
     # Startup
     print("🚀 WordBattle Backend starting up...")
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database table creation failed: {e}")
     
-    # Schedule database initialization in the background - don't block startup
-    asyncio.create_task(initialize_database_background())
+    try:
+        ensure_user_columns()
+        await ensure_default_admin_exists()
+        
+        status = check_database_status()
+        if status["is_initialized"]:
+            logger.info("Database already initialized - skipping word loading")
+        else:
+            logger.info("Database needs initialization - will load words in background")
+            asyncio.create_task(initialize_words_background())
+    except Exception as e:
+        logger.error(f"Database status check failed: {e}")
     
     yield
     
@@ -45,66 +60,6 @@ async def lifespan(app: FastAPI):
         print(f"   Average response time: {avg_response:.3f}s")
         print(f"   Max response time: {max_response:.3f}s")
         print(f"   Total requests: {sum(request_counts.values())}")
-
-async def is_database_ready():
-    """Check if database connection is working."""
-    try:
-        from app.database import SessionLocal
-        db = SessionLocal()
-        try:
-            # Simple connectivity test
-            db.execute(text("SELECT 1"))
-            return True
-        finally:
-            db.close()
-    except Exception as e:
-        logger.error(f"Database not ready: {e}")
-        return False
-
-async def initialize_database_background():
-    """Initialize database in background, waiting for connection to be ready."""
-    logger.info("🔄 Starting background database initialization...")
-    
-    # Wait for database to be ready with exponential backoff
-    max_retries = 10
-    retry_delay = 1
-    
-    for attempt in range(max_retries):
-        if await is_database_ready():
-            logger.info("✅ Database connection established")
-            break
-        
-        logger.info(f"⏳ Database not ready, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
-        await asyncio.sleep(retry_delay)
-        retry_delay = min(retry_delay * 2, 30)  # Max 30 seconds
-    else:
-        logger.error("❌ Failed to establish database connection after all retries")
-        return
-    
-    # Now safely run database operations
-    try:
-        # Create tables
-        Base.metadata.create_all(bind=engine)
-        logger.info("✅ Database tables created successfully")
-        
-        # Ensure user columns exist
-        ensure_user_columns()
-        logger.info("✅ User columns verified")
-        
-        # Create default admin user
-        await ensure_default_admin_exists()
-        logger.info("✅ Default admin user ensured")
-        
-        # Check if words need to be loaded
-        status = check_database_status()
-        if status["is_initialized"]:
-            logger.info("✅ Database already initialized - skipping word loading")
-        else:
-            logger.info("🔄 Database needs initialization - loading words...")
-            asyncio.create_task(initialize_words_background())
-            
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
 
 app = FastAPI(
     title="WordBattle API",
@@ -185,7 +140,39 @@ app.add_middleware(
 # Add performance monitoring middleware
 app.add_middleware(PerformanceMiddleware)
 
-# Database startup is now handled in the lifespan function above
+# Startup event to initialize database
+@app.on_event("startup")
+async def startup_event():
+    from app.database_manager import check_database_status
+    
+    # Create database tables first
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Database table creation failed: {e}")
+        return
+    
+    # Only check if database exists, don't load words during startup
+    try:
+        # Ensure user preference columns exist (fallback)
+        from app.database_manager import ensure_user_columns
+        ensure_user_columns()
+        
+        # Always ensure jan@binge.de exists as admin user
+        await ensure_default_admin_exists()
+        
+        status = check_database_status()
+        
+        if status["is_initialized"]:
+            logger.info("Database already initialized - skipping word loading")
+        else:
+            logger.info("Database needs initialization - will load words in background")
+            # Schedule immediate background word loading
+            asyncio.create_task(initialize_words_background())
+            
+    except Exception as e:
+        logger.error(f"Database status check failed: {e}")
 
 async def ensure_default_admin_exists():
     """Ensure the default admin user jan@binge.de always exists."""
@@ -230,6 +217,27 @@ async def ensure_default_admin_exists():
                     logger.info("✅ Promoted jan@binge.de to admin")
                 else:
                     logger.info(f"✅ Default admin user jan@binge.de already exists (ID: {admin_user.id})")
+            
+            # Ensure computer player user exists
+            computer_user = db.query(User).filter(User.username == "computer_player").first()
+            if not computer_user:
+                logger.info("🤖 Creating computer player user...")
+                computer_user = User(
+                    username="computer_player",
+                    email="computer@wordbattle.com",
+                    hashed_password="",  # No password needed
+                    full_name="Computer Player",
+                    is_admin=False,
+                    is_active=True,
+                    is_email_verified=True,
+                    created_at=datetime.now(timezone.utc)
+                )
+                db.add(computer_user)
+                db.commit()
+                db.refresh(computer_user)
+                logger.info(f"✅ Created computer player user (ID: {computer_user.id})")
+            else:
+                logger.info(f"✅ Computer player user already exists (ID: {computer_user.id})")
                     
         finally:
             db.close()
