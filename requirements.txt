@@ -1,0 +1,31 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.4.2
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+python-jose==3.3.0
+passlib==1.7.4
+python-multipart==0.0.6
+python-dotenv==1.0.0
+pg8000==1.30.3
+asyncpg==0.29.0
+
+# AWS Dependencies
+boto3==1.29.3
+botocore==1.32.3
+
+# GCP Dependencies
+google-cloud-storage==2.13.0
+google-cloud-secret-manager==2.16.4
+google-cloud-run==0.10.0
+
+
+# Common Dependencies
+requests==2.31.0
+aiohttp==3.9.0
+python-json-logger==2.0.7
+structlog==23.2.0
+
+cloud-sql-python-connector[asyncpg]==1.5.0
+email-validator==2.1.0

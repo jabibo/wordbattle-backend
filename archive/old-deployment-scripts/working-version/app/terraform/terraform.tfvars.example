@@ -1,0 +1,23 @@
+# AWS Configuration
+aws_region  = "eu-central-1"
+environment = "production"
+
+# Database Configuration
+db_instance_class           = "db.t3.small"
+db_allocated_storage        = 20
+db_max_allocated_storage    = 100
+db_backup_retention_period  = 30
+
+# App Runner Configuration
+app_runner_cpu              = "0.5 vCPU"
+app_runner_memory           = "1 GB"
+auto_deployments_enabled    = true
+
+# Email Configuration (REQUIRED)
+smtp_username = "your-email@domain.com"
+smtp_password = "your-email-password"
+from_email    = "your-email@domain.com"
+
+# Application Configuration
+cors_origins        = "https://yourdomain.com,https://www.yourdomain.com"
+log_retention_days  = 30

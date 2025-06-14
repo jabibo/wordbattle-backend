@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_DB=${DB_NAME:-wordbattle}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-wordbattle}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - db
+    restart: always
+    command: >
+      bash -c "
+        echo 'Waiting for PostgreSQL...'
+        sleep 15
+        echo 'Creating database tables...'
+        python -m app.create_tables
+        echo 'Starting application...'
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
+
+volumes:
+  postgres_data:
