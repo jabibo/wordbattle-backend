@@ -153,55 +153,61 @@ class ComputerPlayer:
         """Find all possible moves for the current board state and rack."""
         possible_moves = []
         
-        logger.info(f"Computer player: Starting move search with rack {rack_letters}")
+        logger.info(f"🤖 Computer player: Starting move search with rack {rack_letters}")
+        
+        # PERFORMANCE OPTIMIZATION: Limit wordlist size for faster processing
+        # Use only a subset of the dictionary for computer player moves
+        max_words_to_check = 5000  # Drastically reduce from 600k+ words
+        if len(wordlist) > max_words_to_check:
+            # Prioritize shorter words (3-6 letters) as they're more likely to be playable
+            filtered_words = [w for w in wordlist if 3 <= len(w) <= 6]
+            if len(filtered_words) > max_words_to_check:
+                # Take a random sample of reasonable-length words
+                import random
+                wordlist = random.sample(filtered_words, max_words_to_check)
+            else:
+                wordlist = filtered_words
+        
+        logger.info(f"🤖 Computer player: Checking {len(wordlist)} words (reduced for performance)")
         
         # First, filter words that can actually be made with our rack
-        # This is much more efficient than random sampling
         makeable_words = []
+        words_checked = 0
         for word in wordlist:
+            words_checked += 1
             if len(word) < 2 or len(word) > 7:  # Reasonable word length limits
                 continue
             if self._can_make_word(word.upper(), rack_letters):
                 makeable_words.append(word.upper())
+            
+            # Early exit if we've found enough makeable words
+            if len(makeable_words) >= 50:  # Stop after finding 50 makeable words
+                logger.info(f"🤖 Computer player: Early exit after checking {words_checked} words")
+                break
         
-        logger.info(f"Computer player: Found {len(makeable_words)} words that can be made from rack")
+        logger.info(f"🤖 Computer player: Found {len(makeable_words)} makeable words from {words_checked} checked")
         
-        # Sample from makeable words based on difficulty (reduced for performance)
+        # Sample from makeable words based on difficulty (very aggressive reduction)
         if self.difficulty == "easy":
-            sample_size = min(5, len(makeable_words))  # Very aggressive reduction
+            sample_size = min(3, len(makeable_words))  # Only 3 words for easy
         elif self.difficulty == "medium":
-            sample_size = min(8, len(makeable_words))  # Very aggressive reduction
+            sample_size = min(5, len(makeable_words))  # Only 5 words for medium
         else:  # hard
-            sample_size = min(12, len(makeable_words))  # Very aggressive reduction
+            sample_size = min(8, len(makeable_words))  # Only 8 words for hard
         
         if len(makeable_words) > sample_size:
             # Prioritize longer words (they typically score more)
             makeable_words.sort(key=len, reverse=True)
-            sampled_words = makeable_words[:sample_size//2]  # Take top half by length
-            # Add random selection from remaining words
-            remaining_words = makeable_words[sample_size//2:]
-            if remaining_words:
-                sampled_words.extend(random.sample(remaining_words, min(sample_size//2, len(remaining_words))))
+            sampled_words = makeable_words[:sample_size]
         else:
             sampled_words = makeable_words
         
-        logger.info(f"Computer player: Testing {len(sampled_words)} makeable words: {sampled_words[:10]}{'...' if len(sampled_words) > 10 else ''}")
-        
-        # Track what we're testing for debugging
-        words_with_placements = 0
+        logger.info(f"🤖 Computer player: Testing {len(sampled_words)} words: {sampled_words}")
         
         # Try each makeable word
         for word in sampled_words:
             # Try to place the word on the board
             placements = self._find_word_placements_on_board(board, word, rack_letters, language, wordlist)
-            
-            if placements:
-                words_with_placements += 1
-                # Log the first few successful placements
-                if words_with_placements <= 5:
-                    # Safely access score - placements should have score but check to be safe
-                    first_score = placements[0].get('score', 0) if placements else 0
-                    logger.info(f"Computer player: Found {len(placements)} placements for '{word}' (score: {first_score})")
             
             for placement in placements:
                 possible_moves.append({
@@ -212,17 +218,17 @@ class ComputerPlayer:
                     "direction": placement["direction"]
                 })
             
-            # Early termination: if we have enough good moves, stop searching
-            if len(possible_moves) >= 3:  # Stop when we have just 3 valid moves (much more aggressive)
-                logger.info(f"Computer player: Early termination - found {len(possible_moves)} moves")
+            # Early termination: if we have any valid moves, stop searching
+            if len(possible_moves) >= 1:  # Stop as soon as we find 1 valid move
+                logger.info(f"🤖 Computer player: Found move - stopping search early")
                 break
         
-        logger.info(f"Computer player: Found {len(possible_moves)} total possible moves from {words_with_placements} words")
+        logger.info(f"🤖 Computer player: Found {len(possible_moves)} total moves")
         
         # Sort by score (best moves first)
         possible_moves.sort(key=lambda x: x["score"], reverse=True)
         
-        return possible_moves[:50]  # Limit to top 50 moves for performance
+        return possible_moves[:10]  # Return only top 10 moves
     
     def _can_make_word(self, word: str, rack_letters: List[str]) -> bool:
         """Check if a word can be made with the available rack letters."""
@@ -247,48 +253,44 @@ class ComputerPlayer:
         # Get strategic positions where moves are actually possible
         strategic_positions = self._get_strategic_positions(board)
         
-        logger.info(f"Computer AI: Trying to place '{word}' at {len(strategic_positions)} strategic positions")
+        # PERFORMANCE OPTIMIZATION: Limit the number of positions to check
+        max_positions = 10  # Only check first 10 strategic positions
+        if len(strategic_positions) > max_positions:
+            strategic_positions = strategic_positions[:max_positions]
+        
+        logger.info(f"🤖 Computer AI: Trying '{word}' at {len(strategic_positions)} positions")
         
         # Try each strategic position for both horizontal and vertical placement
         attempts = 0
+        max_attempts = 20  # Limit total attempts per word
+        
         for row, col in strategic_positions:
+            if attempts >= max_attempts:
+                logger.info(f"🤖 Computer AI: Max attempts reached for '{word}'")
+                break
+                
             # Try horizontal placement starting at this position
             if col + len(word) <= 15:  # Word fits horizontally
                 attempts += 1
                 placement = self._try_placement(board, word, row, col, "horizontal", rack_letters, language, wordlist)
                 if placement:
-                    logger.info(f"Computer AI: Found valid horizontal placement for '{word}' at ({row},{col})")
+                    logger.info(f"🤖 Computer AI: Found horizontal placement for '{word}' at ({row},{col})")
                     placements.append(placement)
+                    # Stop after finding first valid placement for this word
+                    return placements
             
             # Try vertical placement starting at this position  
             if row + len(word) <= 15:  # Word fits vertically
                 attempts += 1
                 placement = self._try_placement(board, word, row, col, "vertical", rack_letters, language, wordlist)
                 if placement:
-                    logger.info(f"Computer AI: Found valid vertical placement for '{word}' at ({row},{col})")
+                    logger.info(f"🤖 Computer AI: Found vertical placement for '{word}' at ({row},{col})")
                     placements.append(placement)
-            
-            # Also try placing word so it ENDS at this strategic position
-            # Horizontal (word ends at strategic position)
-            start_col = col - len(word) + 1
-            if start_col >= 0:
-                attempts += 1
-                placement = self._try_placement(board, word, row, start_col, "horizontal", rack_letters, language, wordlist)
-                if placement:
-                    logger.info(f"Computer AI: Found valid horizontal placement (ending) for '{word}' at ({row},{start_col})")
-                    placements.append(placement)
-            
-            # Vertical (word ends at strategic position)
-            start_row = row - len(word) + 1
-            if start_row >= 0:
-                attempts += 1
-                placement = self._try_placement(board, word, start_row, col, "vertical", rack_letters, language, wordlist)
-                if placement:
-                    logger.info(f"Computer AI: Found valid vertical placement (ending) for '{word}' at ({start_row},{col})")
-                    placements.append(placement)
+                    # Stop after finding first valid placement for this word
+                    return placements
         
-        if not placements and attempts > 0:
-            logger.info(f"Computer AI: No valid placements found for '{word}' after {attempts} attempts")
+        if not placements:
+            logger.info(f"🤖 Computer AI: No placements found for '{word}' after {attempts} attempts")
         
         return placements
     
@@ -303,11 +305,18 @@ class ComputerPlayer:
             # First move: only center position matters
             strategic_positions.add((7, 7))
         else:
-            # Find all positions adjacent to existing tiles
+            # Find positions adjacent to existing tiles (limited for performance)
+            tiles_found = 0
+            max_tiles_to_check = 5  # Only check first 5 existing tiles
+            
             for row in range(15):
                 for col in range(15):
                     if board[row][col] is not None:
-                        # Add all adjacent empty positions
+                        tiles_found += 1
+                        if tiles_found > max_tiles_to_check:
+                            break
+                            
+                        # Add only immediate adjacent empty positions
                         for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
                             adj_row, adj_col = row + dr, col + dc
                             if (0 <= adj_row < 15 and 0 <= adj_col < 15 and 
@@ -316,9 +325,16 @@ class ComputerPlayer:
                         
                         # Also add the tile position itself (for words that go through existing tiles)
                         strategic_positions.add((row, col))
+                
+                if tiles_found > max_tiles_to_check:
+                    break
         
         result = list(strategic_positions)
-        logger.info(f"Computer AI: Found {len(result)} strategic positions on board: {result[:10]}{'...' if len(result) > 10 else ''}")
+        # Limit to first 15 strategic positions for performance
+        if len(result) > 15:
+            result = result[:15]
+            
+        logger.info(f"🤖 Computer AI: Found {len(result)} strategic positions")
         return result
     
     def _try_placement(self, board: List[List], word: str, start_row: int, start_col: int, 

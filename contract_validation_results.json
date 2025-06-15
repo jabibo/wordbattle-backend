@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-06-15T20:16:28.800815",
+  "timestamp": "2025-06-15T20:20:35.988589",
   "target_url": "https://wordbattle-backend-test-skhco4fxoq-ew.a.run.app",
   "contracts_dir": "/Users/janbinge/git/wordbattle/wordbattle-contracts",
   "results": {
@@ -7,27 +7,27 @@
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.093911
+        "response_time": 0.085672
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.07617
+        "response_time": 0.067982
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.133259
+        "response_time": 0.123372
       },
       "/admin/contracts/info": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.079734
+        "response_time": 0.084487
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.082705
+        "response_time": 0.075814
       }
     },
     "contracts": {
@@ -46,7 +46,7 @@
             "middleware_active": false,
             "error": "Import error: No module named 'jsonschema'"
           },
-          "timestamp": "2025-06-15T18:16:29.497058+00:00"
+          "timestamp": "2025-06-15T18:20:36.640068+00:00"
         },
         "validation_enabled": false
       }
