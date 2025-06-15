@@ -38,6 +38,7 @@ from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
 import secrets
 from app.utils.cache import cache_response
+from app.simple_computer_player import SimpleComputerPlayer
 from app.computer_player import create_computer_player, add_computer_player_to_game
 
 logger = logging.getLogger(__name__)
@@ -2356,49 +2357,35 @@ async def trigger_computer_move(
         # Parse game state
         game_state_data = json.loads(game.state)
         
-        # Load wordlist for the game language
-        wordlist = load_wordlist(game.language)
-        if not wordlist:
-            raise HTTPException(500, f"Wordlist not available for language {game.language}")
-        
-        # PERFORMANCE FIX: Don't convert entire 600k+ wordlist to list!
-        # Pre-filter to reasonable words before conversion
-        rack_letters = set(computer_player.rack.upper())
-        
-        # Much more lenient pre-filter: prioritize finding moves over extreme optimization
-        filtered_words = []
-        count = 0
-        for word in wordlist:
-            if count >= 10000:  # Increase to 10k words to ensure we find moves
-                break
-            if 2 <= len(word) <= 10:  # Allow longer words too
-                word_upper = word.upper()
-                word_letters = set(word_upper)
-                # Very lenient check: include most words that could possibly work
-                if (len(word) <= 5 or  # Always include words 5 letters or shorter
-                    len(word_letters & rack_letters) >= 1 or  # Share at least 1 letter
-                    word_letters.issubset(rack_letters | {'?', '*', 'A', 'E', 'I', 'O', 'U'})):  # Include vowel-heavy words
-                    filtered_words.append(word_upper)
-                    count += 1
-        
-        logger.info(f"🚀 PERFORMANCE: Filtered wordlist from {len(wordlist)} to {len(filtered_words)} words")
-        wordlist_list = filtered_words
-        
-        # Create computer player instance
-        computer = create_computer_player("medium")  # Default to medium difficulty
-        
-        # Log rack information for debugging
-        logger.info(f"Computer player rack: '{computer_player.rack}' (length: {len(computer_player.rack)})")
-        
-        # Make computer move
-        move_result = computer.make_move(
-            game_state_data=game_state_data,
-            rack=computer_player.rack,
-            wordlist=wordlist_list,
-            db=db
+        # Create simple computer player instance
+        simple_computer = SimpleComputerPlayer(
+            rack=list(computer_player.rack),
+            difficulty="medium"
         )
         
-        if move_result["type"] == "pass":
+        # Parse board from game state
+        board_data = game_state_data.get("board", [])
+        board = reconstruct_board_from_json(board_data)
+        
+        # Convert board to simple format for SimpleComputerPlayer
+        simple_board = []
+        for row in board:
+            simple_row = []
+            for cell in row:
+                if cell is None:
+                    simple_row.append(None)
+                else:
+                    simple_row.append({
+                        "letter": cell.letter,
+                        "is_blank": cell.is_blank,
+                        "tile_id": getattr(cell, 'tile_id', None)
+                    })
+            simple_board.append(simple_row)
+        
+        # Make computer move
+        move_result = simple_computer.make_move(simple_board, game.language)
+        
+        if move_result is None:
             # Computer is passing
             # Update game state for pass
             game_state_data["consecutive_passes"] = game_state_data.get("consecutive_passes", 0) + 1
@@ -2419,6 +2406,8 @@ async def trigger_computer_move(
             )
             db.add(move)
             
+            move_type = "pass"
+            
         else:
             # Computer placed tiles
             tiles_data = move_result.get("tiles", [])
@@ -2427,8 +2416,8 @@ async def trigger_computer_move(
             for tile in tiles_data:
                 game_state_data["board"][tile["row"]][tile["col"]] = {
                     "letter": tile["letter"],
-                    "is_blank": False,
-                    "tile_id": f"comp_{uuid.uuid4().hex[:8]}"
+                    "is_blank": tile.get("is_blank", False),
+                    "tile_id": tile.get("tile_id", f"comp_{uuid.uuid4().hex[:8]}")
                 }
             
             # Update computer player's rack (remove used letters)
@@ -2473,6 +2462,8 @@ async def trigger_computer_move(
                 timestamp=datetime.now(timezone.utc)
             )
             db.add(move)
+            
+            move_type = "place"
         
         # Update game state
         game.state = json.dumps(game_state_data, cls=GameStateEncoder)
@@ -2482,16 +2473,16 @@ async def trigger_computer_move(
         # Notify via WebSocket
         await manager.broadcast_to_game(game_id, {
             "type": "computer_move",
-            "move": move_result,
+            "move": move_result or {"type": "pass"},
             "next_player_id": game.current_player_id,
             "game_state": game_state_data
         })
         
-        logger.info(f"Computer player made move in game {game_id}: {move_result['type']}")
+        logger.info(f"Computer player made move in game {game_id}: {move_type}")
         
         return {
-            "message": f"Computer player {move_result['type']}",
-            "move": move_result,
+            "message": f"Computer player {move_type}",
+            "move": move_result or {"type": "pass"},
             "next_player_id": game.current_player_id,
             "computer_score": computer_player.score
         }

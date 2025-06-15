@@ -29,3 +29,6 @@ structlog==23.2.0
 
 cloud-sql-python-connector[asyncpg]==1.5.0
 email-validator==2.1.0
+
+# OpenAI dependency
+openai>=1.0.0
