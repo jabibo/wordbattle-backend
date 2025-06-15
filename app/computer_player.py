@@ -130,13 +130,13 @@ class ComputerPlayer:
         
         logger.info(f"Computer player: Found {len(makeable_words)} words that can be made from rack")
         
-        # Sample from makeable words based on difficulty
+        # Sample from makeable words based on difficulty (reduced for performance)
         if self.difficulty == "easy":
-            sample_size = min(50, len(makeable_words))
+            sample_size = min(20, len(makeable_words))  # Reduced from 50
         elif self.difficulty == "medium":
-            sample_size = min(100, len(makeable_words))
+            sample_size = min(30, len(makeable_words))  # Reduced from 100
         else:  # hard
-            sample_size = min(200, len(makeable_words))
+            sample_size = min(50, len(makeable_words))  # Reduced from 200
         
         if len(makeable_words) > sample_size:
             # Prioritize longer words (they typically score more)
@@ -173,6 +173,11 @@ class ComputerPlayer:
                     "start_pos": placement["start_pos"],
                     "direction": placement["direction"]
                 })
+            
+            # Early termination: if we have enough good moves, stop searching
+            if len(possible_moves) >= 20:  # Stop when we have 20 valid moves
+                logger.info(f"Computer player: Early termination - found {len(possible_moves)} moves")
+                break
         
         logger.info(f"Computer player: Found {len(possible_moves)} total possible moves from {words_with_placements} words")
         
@@ -298,19 +303,15 @@ class ComputerPlayer:
         
         # Use the same validation that human players use
         try:
-            from app.utils.wordlist_utils import load_wordlist
             from app.game_logic.validate_move import validate_move
             
-            # Get dictionary for validation
+            # Use the wordlist that was already passed in (much more efficient)
             if wordlist is None:
-                try:
-                    wordlist_set = load_wordlist(language)
-                    dictionary = wordlist_set if wordlist_set else set()
-                except Exception as e:
-                    logger.error(f"Computer AI: Could not load {language} dictionary: {e}")
-                    return None  # Reject move if we can't validate
-            else:
-                dictionary = set(word.upper() for word in wordlist)
+                logger.error(f"Computer AI: No wordlist provided for validation")
+                return None  # Reject move if we can't validate
+            
+            # Convert wordlist to dictionary set (wordlist is already loaded)
+            dictionary = set(word.upper() for word in wordlist)
             
             # Validate using the standard validation function
             is_valid, error_msg = validate_move(board, move_letters, rack_letters, dictionary)
