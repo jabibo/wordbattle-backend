@@ -49,12 +49,38 @@ class ComputerPlayer:
             Move data dictionary or None if passing
         """
         try:
+            # Enhanced debugging - log critical information
+            logger.info(f"🤖 COMPUTER PLAYER DEBUG START 🤖")
+            logger.info(f"🤖 Rack: '{rack}' (length: {len(rack)})")
+            logger.info(f"🤖 Wordlist size: {len(wordlist) if wordlist else 'None/Empty'}")
+            logger.info(f"🤖 Game state keys: {list(game_state_data.keys()) if game_state_data else 'None'}")
+            
             # Parse game state
             board = game_state_data.get("board", [[None for _ in range(15)] for _ in range(15)])
             language = game_state_data.get("language", "en")
             
             # Convert rack string to list
-            rack_letters = list(rack)
+            rack_letters = list(rack) if rack else []
+            
+            # Enhanced rack debugging
+            if not rack_letters:
+                logger.error(f"🤖 CRITICAL: Computer player has EMPTY RACK!")
+                return {
+                    "type": "pass",
+                    "message": "Computer player passes - empty rack"
+                }
+            
+            # Enhanced wordlist debugging
+            if not wordlist:
+                logger.error(f"🤖 CRITICAL: Computer player has NO WORDLIST!")
+                return {
+                    "type": "pass",
+                    "message": "Computer player passes - no wordlist"
+                }
+            
+            # Sample some words from wordlist for debugging
+            sample_words = wordlist[:10] if len(wordlist) >= 10 else wordlist
+            logger.info(f"🤖 Sample words from wordlist: {sample_words}")
             
             # Debug: Log board format
             tiles_on_board = 0
@@ -63,31 +89,37 @@ class ComputerPlayer:
                     if cell is not None:
                         tiles_on_board += 1
                         if tiles_on_board <= 3:  # Log first few tiles for debugging
-                            logger.info(f"Computer player: Board cell example: {cell} (type: {type(cell)})")
+                            logger.info(f"🤖 Board cell example: {cell} (type: {type(cell)})")
             
             # Check if board is empty (first move)
             board_is_empty = tiles_on_board == 0
-            logger.info(f"Computer player: Board has {tiles_on_board} tiles, Rack: {rack_letters}, Language: {language}")
-            logger.info(f"Computer player: Wordlist size: {len(wordlist)}")
+            logger.info(f"🤖 Board has {tiles_on_board} tiles, Rack: {rack_letters}, Language: {language}")
             
             # Test if we can make some basic words
-            test_words = ["KRAFT", "FAKT", "TRAF"]
+            test_words = ["KRAFT", "FAKT", "TRAF", "AUS", "IST", "DAS"]
+            logger.info(f"🤖 Testing basic word formation:")
             for test_word in test_words:
                 if test_word in wordlist:
                     can_make = self._can_make_word(test_word, rack_letters)
-                    logger.info(f"Computer player: Can make '{test_word}': {can_make}")
+                    logger.info(f"🤖   '{test_word}': can_make={can_make}")
+                    if can_make:
+                        logger.info(f"🤖   ✅ Found makeable word: {test_word}")
+                        break
                 else:
-                    logger.info(f"Computer player: '{test_word}' not in wordlist")
+                    logger.info(f"🤖   '{test_word}': not in wordlist")
             
             # Find possible word placements
+            logger.info(f"🤖 Starting move search...")
             possible_moves = self._find_possible_moves(board, rack_letters, wordlist, language)
             
-            logger.info(f"Computer player: Found {len(possible_moves)} possible moves")
+            logger.info(f"🤖 RESULT: Found {len(possible_moves)} possible moves")
             if possible_moves:
-                logger.info(f"Computer player: Top 3 moves: {possible_moves[:3]}")
+                logger.info(f"🤖 Top 3 moves: {possible_moves[:3]}")
+            else:
+                logger.error(f"🤖 CRITICAL: NO MOVES FOUND - Computer will pass!")
             
             if not possible_moves:
-                logger.info(f"Computer player: No moves found, passing turn")
+                logger.info(f"🤖 COMPUTER PLAYER DEBUG END - PASSING 🤖")
                 return {
                     "type": "pass",
                     "message": "Computer player passes"
@@ -96,7 +128,8 @@ class ComputerPlayer:
             # Select best move based on difficulty
             selected_move = self._select_move_by_difficulty(possible_moves)
             
-            logger.info(f"Computer player making move: {selected_move['word']} for {selected_move['score']} points")
+            logger.info(f"🤖 SELECTED MOVE: {selected_move['word']} for {selected_move['score']} points")
+            logger.info(f"🤖 COMPUTER PLAYER DEBUG END - PLACING TILES 🤖")
             
             return {
                 "type": "place_tiles",
@@ -107,7 +140,10 @@ class ComputerPlayer:
             }
             
         except Exception as e:
-            logger.error(f"Computer player move generation failed: {e}")
+            logger.error(f"🤖 CRITICAL ERROR: Computer player move generation failed: {e}")
+            logger.error(f"🤖 Exception details: {type(e).__name__}: {str(e)}")
+            import traceback
+            logger.error(f"🤖 Traceback: {traceback.format_exc()}")
             return {
                 "type": "pass",
                 "message": "Computer player passes due to error"
