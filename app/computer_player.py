@@ -132,11 +132,11 @@ class ComputerPlayer:
         
         # Sample from makeable words based on difficulty (reduced for performance)
         if self.difficulty == "easy":
-            sample_size = min(20, len(makeable_words))  # Reduced from 50
+            sample_size = min(5, len(makeable_words))  # Very aggressive reduction
         elif self.difficulty == "medium":
-            sample_size = min(30, len(makeable_words))  # Reduced from 100
+            sample_size = min(8, len(makeable_words))  # Very aggressive reduction
         else:  # hard
-            sample_size = min(50, len(makeable_words))  # Reduced from 200
+            sample_size = min(12, len(makeable_words))  # Very aggressive reduction
         
         if len(makeable_words) > sample_size:
             # Prioritize longer words (they typically score more)
@@ -175,7 +175,7 @@ class ComputerPlayer:
                 })
             
             # Early termination: if we have enough good moves, stop searching
-            if len(possible_moves) >= 20:  # Stop when we have 20 valid moves
+            if len(possible_moves) >= 3:  # Stop when we have just 3 valid moves (much more aggressive)
                 logger.info(f"Computer player: Early termination - found {len(possible_moves)} moves")
                 break
         
@@ -203,24 +203,71 @@ class ComputerPlayer:
         return True
     
     def _find_word_placements_on_board(self, board: List[List], word: str, rack_letters: List[str], language: str = "en", wordlist: List[str] = None) -> List[Dict[str, Any]]:
-        """Find valid placements for a word on the board."""
+        """Find valid placements for a word on the board - only try strategic positions."""
         placements = []
         
-        # Try horizontal placements
-        for row in range(15):
-            for col in range(15 - len(word) + 1):
+        # Get strategic positions where moves are actually possible
+        strategic_positions = self._get_strategic_positions(board)
+        
+        # Try each strategic position for both horizontal and vertical placement
+        for row, col in strategic_positions:
+            # Try horizontal placement starting at this position
+            if col + len(word) <= 15:  # Word fits horizontally
                 placement = self._try_placement(board, word, row, col, "horizontal", rack_letters, language, wordlist)
                 if placement:
                     placements.append(placement)
-        
-        # Try vertical placements
-        for row in range(15 - len(word) + 1):
-            for col in range(15):
+            
+            # Try vertical placement starting at this position  
+            if row + len(word) <= 15:  # Word fits vertically
                 placement = self._try_placement(board, word, row, col, "vertical", rack_letters, language, wordlist)
+                if placement:
+                    placements.append(placement)
+            
+            # Also try placing word so it ENDS at this strategic position
+            # Horizontal (word ends at strategic position)
+            start_col = col - len(word) + 1
+            if start_col >= 0:
+                placement = self._try_placement(board, word, row, start_col, "horizontal", rack_letters, language, wordlist)
+                if placement:
+                    placements.append(placement)
+            
+            # Vertical (word ends at strategic position)
+            start_row = row - len(word) + 1
+            if start_row >= 0:
+                placement = self._try_placement(board, word, start_row, col, "vertical", rack_letters, language, wordlist)
                 if placement:
                     placements.append(placement)
         
         return placements
+    
+    def _get_strategic_positions(self, board: List[List]) -> List[Tuple[int, int]]:
+        """Get positions where moves are actually possible (adjacent to existing tiles or center)."""
+        strategic_positions = set()
+        
+        # Check if board is empty (first move)
+        board_has_tiles = any(any(cell is not None for cell in row) for row in board)
+        
+        if not board_has_tiles:
+            # First move: only center position matters
+            strategic_positions.add((7, 7))
+        else:
+            # Find all positions adjacent to existing tiles
+            for row in range(15):
+                for col in range(15):
+                    if board[row][col] is not None:
+                        # Add all adjacent empty positions
+                        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                            adj_row, adj_col = row + dr, col + dc
+                            if (0 <= adj_row < 15 and 0 <= adj_col < 15 and 
+                                board[adj_row][adj_col] is None):
+                                strategic_positions.add((adj_row, adj_col))
+                        
+                        # Also add the tile position itself (for words that go through existing tiles)
+                        strategic_positions.add((row, col))
+        
+        result = list(strategic_positions)
+        logger.debug(f"Computer AI: Found {len(result)} strategic positions: {result[:10]}...")  # Log first 10
+        return result
     
     def _try_placement(self, board: List[List], word: str, start_row: int, start_col: int, 
                       direction: str, rack_letters: List[str], language: str = "en", wordlist: List[str] = None) -> Optional[Dict[str, Any]]:
