@@ -199,7 +199,9 @@ class ComputerPlayer:
                 words_with_placements += 1
                 # Log the first few successful placements
                 if words_with_placements <= 5:
-                    logger.info(f"Computer player: Found {len(placements)} placements for '{word}' (score: {placements[0]['score']})")
+                    # Safely access score - placements should have score but check to be safe
+                    first_score = placements[0].get('score', 0) if placements else 0
+                    logger.info(f"Computer player: Found {len(placements)} placements for '{word}' (score: {first_score})")
             
             for placement in placements:
                 possible_moves.append({
