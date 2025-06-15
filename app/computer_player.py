@@ -334,6 +334,8 @@ class ComputerPlayer:
             
             # Convert board format for game state validation
             temp_game_state.board = [[None for _ in range(15)] for _ in range(15)]
+            center_has_tile = False
+            
             for row_idx, row in enumerate(board):
                 for col_idx, cell in enumerate(row):
                     if cell is not None:
@@ -350,6 +352,13 @@ class ComputerPlayer:
                                 letter=str(cell),
                                 is_blank=False
                             )
+                        
+                        # Check if center square (7,7) has a tile
+                        if row_idx == 7 and col_idx == 7:
+                            center_has_tile = True
+            
+            # Set center_used flag based on whether center square has a tile
+            temp_game_state.center_used = center_has_tile
             
             # Use the game state validation
             dictionary = set(word.upper() for word in wordlist) if wordlist else set()
