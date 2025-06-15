@@ -209,34 +209,48 @@ class ComputerPlayer:
         # Get strategic positions where moves are actually possible
         strategic_positions = self._get_strategic_positions(board)
         
+        logger.info(f"Computer AI: Trying to place '{word}' at {len(strategic_positions)} strategic positions")
+        
         # Try each strategic position for both horizontal and vertical placement
+        attempts = 0
         for row, col in strategic_positions:
             # Try horizontal placement starting at this position
             if col + len(word) <= 15:  # Word fits horizontally
+                attempts += 1
                 placement = self._try_placement(board, word, row, col, "horizontal", rack_letters, language, wordlist)
                 if placement:
+                    logger.info(f"Computer AI: Found valid horizontal placement for '{word}' at ({row},{col})")
                     placements.append(placement)
             
             # Try vertical placement starting at this position  
             if row + len(word) <= 15:  # Word fits vertically
+                attempts += 1
                 placement = self._try_placement(board, word, row, col, "vertical", rack_letters, language, wordlist)
                 if placement:
+                    logger.info(f"Computer AI: Found valid vertical placement for '{word}' at ({row},{col})")
                     placements.append(placement)
             
             # Also try placing word so it ENDS at this strategic position
             # Horizontal (word ends at strategic position)
             start_col = col - len(word) + 1
             if start_col >= 0:
+                attempts += 1
                 placement = self._try_placement(board, word, row, start_col, "horizontal", rack_letters, language, wordlist)
                 if placement:
+                    logger.info(f"Computer AI: Found valid horizontal placement (ending) for '{word}' at ({row},{start_col})")
                     placements.append(placement)
             
             # Vertical (word ends at strategic position)
             start_row = row - len(word) + 1
             if start_row >= 0:
+                attempts += 1
                 placement = self._try_placement(board, word, start_row, col, "vertical", rack_letters, language, wordlist)
                 if placement:
+                    logger.info(f"Computer AI: Found valid vertical placement (ending) for '{word}' at ({start_row},{col})")
                     placements.append(placement)
+        
+        if not placements and attempts > 0:
+            logger.info(f"Computer AI: No valid placements found for '{word}' after {attempts} attempts")
         
         return placements
     
@@ -266,7 +280,7 @@ class ComputerPlayer:
                         strategic_positions.add((row, col))
         
         result = list(strategic_positions)
-        logger.debug(f"Computer AI: Found {len(result)} strategic positions: {result[:10]}...")  # Log first 10
+        logger.info(f"Computer AI: Found {len(result)} strategic positions on board: {result[:10]}{'...' if len(result) > 10 else ''}")
         return result
     
     def _try_placement(self, board: List[List], word: str, start_row: int, start_col: int, 
