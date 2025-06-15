@@ -2361,8 +2361,25 @@ async def trigger_computer_move(
         if not wordlist:
             raise HTTPException(500, f"Wordlist not available for language {game.language}")
         
-        # Convert Set to List for computer player
-        wordlist_list = list(wordlist)
+        # PERFORMANCE FIX: Don't convert entire 600k+ wordlist to list!
+        # Pre-filter to reasonable words before conversion
+        rack_letters = set(computer_player.rack.upper())
+        
+        # Quick pre-filter: only words 2-7 letters that could possibly be made
+        filtered_words = []
+        count = 0
+        for word in wordlist:
+            if count >= 1000:  # Limit to first 1000 words for ultra-fast processing
+                break
+            if 2 <= len(word) <= 7:
+                word_letters = set(word.upper())
+                # Quick check: word uses only letters we might have (including blanks)
+                if word_letters.issubset(rack_letters | {'?', '*'}) or len(word_letters & rack_letters) >= len(word) // 2:
+                    filtered_words.append(word.upper())
+                    count += 1
+        
+        logger.info(f"🚀 PERFORMANCE: Filtered wordlist from {len(wordlist)} to {len(filtered_words)} words")
+        wordlist_list = filtered_words
         
         # Create computer player instance
         computer = create_computer_player("medium")  # Default to medium difficulty
@@ -2560,7 +2577,25 @@ async def debug_computer_move(
         
         # Load wordlist for the game language
         wordlist = load_wordlist(game.language)
-        wordlist_list = list(wordlist)
+        
+        # PERFORMANCE FIX: Don't convert entire 600k+ wordlist to list!
+        # Pre-filter to reasonable words before conversion
+        rack_letters = set(computer_player.rack.upper())
+        
+        # Quick pre-filter: only words 2-7 letters that could possibly be made
+        filtered_words = []
+        count = 0
+        for word in wordlist:
+            if count >= 1000:  # Limit to first 1000 words for ultra-fast processing
+                break
+            if 2 <= len(word) <= 7:
+                word_letters = set(word.upper())
+                # Quick check: word uses only letters we might have (including blanks)
+                if word_letters.issubset(rack_letters | {'?', '*'}) or len(word_letters & rack_letters) >= len(word) // 2:
+                    filtered_words.append(word.upper())
+                    count += 1
+        
+        wordlist_list = filtered_words
         
         # Create computer player instance
         computer = create_computer_player("medium")

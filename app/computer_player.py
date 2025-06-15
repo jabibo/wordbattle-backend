@@ -155,52 +155,57 @@ class ComputerPlayer:
         
         logger.info(f"🤖 Computer player: Starting move search with rack {rack_letters}")
         
-        # PERFORMANCE OPTIMIZATION: Limit wordlist size for faster processing
-        # Use only a subset of the dictionary for computer player moves
-        max_words_to_check = 5000  # Drastically reduce from 600k+ words
-        if len(wordlist) > max_words_to_check:
-            # Prioritize shorter words (3-6 letters) as they're more likely to be playable
-            filtered_words = [w for w in wordlist if 3 <= len(w) <= 6]
-            if len(filtered_words) > max_words_to_check:
-                # Take a random sample of reasonable-length words
-                import random
-                wordlist = random.sample(filtered_words, max_words_to_check)
-            else:
-                wordlist = filtered_words
+        # ULTRA AGGRESSIVE PERFORMANCE OPTIMIZATION: Drastically reduce wordlist
+        max_words_to_check = 500  # Reduce from 5000 to 500 words only!
         
-        logger.info(f"🤖 Computer player: Checking {len(wordlist)} words (reduced for performance)")
+        # Pre-filter by length and common letters to avoid expensive operations
+        rack_set = set(rack_letters)
+        quick_filtered = []
+        
+        # Only check first 2000 words to avoid expensive iteration
+        check_limit = min(2000, len(wordlist))
+        for i, word in enumerate(wordlist[:check_limit]):
+            if i >= max_words_to_check:
+                break
+                
+            # Quick length filter
+            if not (2 <= len(word) <= 6):
+                continue
+                
+            # Quick letter filter - word must use letters we have
+            word_upper = word.upper()
+            word_letters = set(word_upper)
+            
+            # Skip if word needs letters we don't have (quick check)
+            if not word_letters.issubset(rack_set | {'?', '*'}):  # Allow blanks
+                continue
+                
+            quick_filtered.append(word_upper)
+        
+        logger.info(f"🤖 Computer player: Quick filtered to {len(quick_filtered)} words")
         
         # First, filter words that can actually be made with our rack
         makeable_words = []
-        words_checked = 0
-        for word in wordlist:
-            words_checked += 1
-            if len(word) < 2 or len(word) > 7:  # Reasonable word length limits
-                continue
-            if self._can_make_word(word.upper(), rack_letters):
-                makeable_words.append(word.upper())
+        for word in quick_filtered:
+            if self._can_make_word(word, rack_letters):
+                makeable_words.append(word)
             
-            # Early exit if we've found enough makeable words
-            if len(makeable_words) >= 50:  # Stop after finding 50 makeable words
-                logger.info(f"🤖 Computer player: Early exit after checking {words_checked} words")
+            # Ultra early exit - stop after finding just 10 makeable words
+            if len(makeable_words) >= 10:
+                logger.info(f"🤖 Computer player: Ultra early exit - found 10 makeable words")
                 break
         
-        logger.info(f"🤖 Computer player: Found {len(makeable_words)} makeable words from {words_checked} checked")
+        logger.info(f"🤖 Computer player: Found {len(makeable_words)} makeable words")
         
-        # Sample from makeable words based on difficulty (very aggressive reduction)
+        # Sample from makeable words based on difficulty (ultra aggressive)
         if self.difficulty == "easy":
-            sample_size = min(3, len(makeable_words))  # Only 3 words for easy
+            sample_size = min(2, len(makeable_words))  # Only 2 words for easy
         elif self.difficulty == "medium":
-            sample_size = min(5, len(makeable_words))  # Only 5 words for medium
+            sample_size = min(3, len(makeable_words))  # Only 3 words for medium
         else:  # hard
-            sample_size = min(8, len(makeable_words))  # Only 8 words for hard
+            sample_size = min(5, len(makeable_words))  # Only 5 words for hard
         
-        if len(makeable_words) > sample_size:
-            # Prioritize longer words (they typically score more)
-            makeable_words.sort(key=len, reverse=True)
-            sampled_words = makeable_words[:sample_size]
-        else:
-            sampled_words = makeable_words
+        sampled_words = makeable_words[:sample_size]  # Take first N words
         
         logger.info(f"🤖 Computer player: Testing {len(sampled_words)} words: {sampled_words}")
         
@@ -218,9 +223,9 @@ class ComputerPlayer:
                     "direction": placement["direction"]
                 })
             
-            # Early termination: if we have any valid moves, stop searching
-            if len(possible_moves) >= 1:  # Stop as soon as we find 1 valid move
-                logger.info(f"🤖 Computer player: Found move - stopping search early")
+            # Ultra early termination: stop as soon as we find 1 valid move
+            if len(possible_moves) >= 1:
+                logger.info(f"🤖 Computer player: Found move - stopping search immediately")
                 break
         
         logger.info(f"🤖 Computer player: Found {len(possible_moves)} total moves")
@@ -228,7 +233,7 @@ class ComputerPlayer:
         # Sort by score (best moves first)
         possible_moves.sort(key=lambda x: x["score"], reverse=True)
         
-        return possible_moves[:10]  # Return only top 10 moves
+        return possible_moves[:5]  # Return only top 5 moves
     
     def _can_make_word(self, word: str, rack_letters: List[str]) -> bool:
         """Check if a word can be made with the available rack letters."""
