@@ -2357,6 +2357,11 @@ async def trigger_computer_move(
         # Parse game state
         game_state_data = json.loads(game.state)
         
+        # Load wordlist for validation
+        wordlist = load_wordlist(game.language)
+        if not wordlist:
+            raise HTTPException(500, f"Wordlist not available for language {game.language}")
+        
         # Create simple computer player instance
         simple_computer = SimpleComputerPlayer(
             rack=list(computer_player.rack),
@@ -2382,8 +2387,8 @@ async def trigger_computer_move(
                     })
             simple_board.append(simple_row)
         
-        # Make computer move
-        move_result = simple_computer.make_move(simple_board, game.language)
+        # Make computer move with wordlist for validation
+        move_result = simple_computer.make_move(simple_board, game.language, wordlist)
         
         if move_result is None:
             # Computer is passing
