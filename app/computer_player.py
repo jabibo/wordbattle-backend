@@ -344,33 +344,61 @@ class ComputerPlayer:
             if not center_covered:
                 return None
         
-        # *** USE STANDARD VALIDATION INSTEAD OF CUSTOM LOGIC ***
-        # Convert tiles to the format expected by standard validation
-        move_letters = [(tile["row"], tile["col"], tile["letter"]) for tile in tiles]
-        
-        # Use the same validation that human players use
+        # *** USE STANDARD VALIDATION FROM GAME_STATE ***
+        # Create a temporary game state for validation
         try:
-            from app.game_logic.validate_move import validate_move
+            from app.game_logic.game_state import GameState, Position, PlacedTile
             
-            # Use the wordlist that was already passed in (much more efficient)
+            # Convert wordlist to dictionary set
             if wordlist is None:
                 logger.error(f"Computer AI: No wordlist provided for validation")
-                return None  # Reject move if we can't validate
-            
-            # Convert wordlist to dictionary set (wordlist is already loaded)
+                return None
             dictionary = set(word.upper() for word in wordlist)
             
-            # Validate using the standard validation function
-            is_valid, error_msg = validate_move(board, move_letters, rack_letters, dictionary)
+            # Create temporary game state with current board
+            temp_game_state = GameState(language=language)
+            
+            # Convert board format for game state
+            # Handle both tile objects and simple letters
+            temp_game_state.board = [[None for _ in range(15)] for _ in range(15)]
+            for row_idx, row in enumerate(board):
+                for col_idx, cell in enumerate(row):
+                    if cell is not None:
+                        if isinstance(cell, dict):
+                            # Convert dict format to PlacedTile
+                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
+                                letter=cell.get("letter", ""),
+                                is_blank=cell.get("is_blank", False),
+                                tile_id=cell.get("tile_id")
+                            )
+                        else:
+                            # Convert simple letter to PlacedTile
+                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
+                                letter=str(cell),
+                                is_blank=False
+                            )
+            
+            # Convert move data to the format expected by game state validation
+            word_positions = []
+            for tile in tiles:
+                pos = Position(row=tile["row"], col=tile["col"])
+                placed_tile = PlacedTile(
+                    letter=tile["letter"],
+                    is_blank=False  # For now, computer doesn't use blank tiles
+                )
+                word_positions.append((pos, placed_tile))
+            
+            # Use the proper game state validation method
+            is_valid, error_msg, words_formed = temp_game_state.validate_word_placement(word_positions, dictionary)
             
             if not is_valid:
-                logger.debug(f"Computer AI: Move rejected by standard validation: {error_msg}")
+                logger.debug(f"Computer AI: Move rejected by game state validation: {error_msg}")
                 return None
             
-            logger.debug(f"Computer AI: Move validated successfully by standard validation")
+            logger.debug(f"Computer AI: Move validated successfully, words formed: {words_formed}")
             
         except Exception as e:
-            logger.error(f"Computer AI: Error in standard validation: {e}")
+            logger.error(f"Computer AI: Error in game state validation: {e}")
             return None  # Reject move if validation fails
         
         # Calculate proper score using letter point values
