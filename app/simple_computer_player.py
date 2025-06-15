@@ -39,11 +39,16 @@ class SimpleComputerPlayer:
             "MANN", "FRAU", "KIND", "BABY", "HUND", "KATZE", "BAUM", "BLUME"
         ]
         
-        # Filter words that are actually in the dictionary
+        # Filter words that are actually in the dictionary - STRICT validation
         valid_simple_words = []
         for word in simple_words:
-            if word.upper() in wordlist or word.lower() in wordlist:
+            # Check both uppercase and lowercase versions
+            if (word.upper() in wordlist or word.lower() in wordlist or 
+                word.capitalize() in wordlist or word in wordlist):
                 valid_simple_words.append(word)
+                logger.info(f"🤖 Simple AI: '{word}' is valid in dictionary")
+            else:
+                logger.warning(f"🤖 Simple AI: '{word}' NOT found in dictionary")
         
         logger.info(f"🤖 Simple AI: {len(valid_simple_words)} of {len(simple_words)} words are in dictionary")
         
@@ -61,12 +66,15 @@ class SimpleComputerPlayer:
             logger.info("🤖 Simple AI: No words possible, passing")
             return None
             
-        # Try each word on the board with proper validation
+        # Try each word on the board with ENHANCED validation
         for word in possible_words[:10]:  # Only try first 10 words
-            move = self._try_place_word_with_validation(board, word, rack_letters, wordlist)
+            logger.info(f"🤖 Simple AI: Attempting to place word '{word}'")
+            move = self._try_place_word_with_enhanced_validation(board, word, rack_letters, wordlist)
             if move:
                 logger.info(f"🤖 Simple AI: Successfully placed '{word}' for {move.get('score', 0)} points")
                 return move
+            else:
+                logger.info(f"🤖 Simple AI: Could not place '{word}' - validation failed")
                 
         logger.info("🤖 Simple AI: Could not place any words, passing")
         return None
@@ -82,8 +90,13 @@ class SimpleComputerPlayer:
                 return False
         return True
     
-    def _try_place_word_with_validation(self, board: List[List], word: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
-        """Try to place a word on the board with proper validation."""
+    def _try_place_word_with_enhanced_validation(self, board: List[List], word: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
+        """Try to place a word on the board with enhanced validation."""
+        
+        # FIRST: Validate that the main word is in the dictionary
+        if not self._is_word_in_dictionary(word, wordlist):
+            logger.warning(f"🤖 Simple AI: Main word '{word}' not in dictionary!")
+            return None
         
         # Check if board is empty (first move)
         board_empty = all(all(cell is None for cell in row) for row in board)
@@ -92,8 +105,15 @@ class SimpleComputerPlayer:
             # First move: place horizontally through center
             return self._place_first_move_validated(word, rack_letters)
         else:
-            # Subsequent moves: try to connect to existing tiles with validation
-            return self._place_connecting_move_validated(board, word, rack_letters, wordlist)
+            # Subsequent moves: try to connect to existing tiles with enhanced validation
+            return self._place_connecting_move_enhanced_validation(board, word, rack_letters, wordlist)
+    
+    def _is_word_in_dictionary(self, word: str, wordlist: set) -> bool:
+        """Check if a word is in the dictionary with multiple case variations."""
+        return (word.upper() in wordlist or 
+                word.lower() in wordlist or 
+                word.capitalize() in wordlist or 
+                word in wordlist)
     
     def _place_first_move_validated(self, word: str, rack_letters: List[str]) -> Dict[str, Any]:
         """Place the first move through the center star."""
@@ -124,8 +144,8 @@ class SimpleComputerPlayer:
             "direction": "horizontal"
         }
     
-    def _place_connecting_move_validated(self, board: List[List], word: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
-        """Try to place word connecting to existing tiles with proper validation."""
+    def _place_connecting_move_enhanced_validation(self, board: List[List], word: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
+        """Try to place word connecting to existing tiles with enhanced validation."""
         
         # Find existing tiles
         existing_positions = []
@@ -142,32 +162,32 @@ class SimpleComputerPlayer:
             
             # Try horizontal placement to the right
             if col + len(word) < 15:
-                move = self._try_placement_at_position(board, word, row, col + 1, "horizontal", rack_letters, wordlist)
+                move = self._try_placement_with_enhanced_validation(board, word, row, col + 1, "horizontal", rack_letters, wordlist)
                 if move:
                     return move
             
             # Try vertical placement downward  
             if row + len(word) < 15:
-                move = self._try_placement_at_position(board, word, row + 1, col, "vertical", rack_letters, wordlist)
+                move = self._try_placement_with_enhanced_validation(board, word, row + 1, col, "vertical", rack_letters, wordlist)
                 if move:
                     return move
                     
             # Try horizontal placement to the left
             if col - len(word) >= 0:
-                move = self._try_placement_at_position(board, word, row, col - len(word), "horizontal", rack_letters, wordlist)
+                move = self._try_placement_with_enhanced_validation(board, word, row, col - len(word), "horizontal", rack_letters, wordlist)
                 if move:
                     return move
             
             # Try vertical placement upward
             if row - len(word) >= 0:
-                move = self._try_placement_at_position(board, word, row - len(word), col, "vertical", rack_letters, wordlist)
+                move = self._try_placement_with_enhanced_validation(board, word, row - len(word), col, "vertical", rack_letters, wordlist)
                 if move:
                     return move
         
         return None
     
-    def _try_placement_at_position(self, board: List[List], word: str, start_row: int, start_col: int, direction: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
-        """Try placing word at specific position with full validation."""
+    def _try_placement_with_enhanced_validation(self, board: List[List], word: str, start_row: int, start_col: int, direction: str, rack_letters: List[str], wordlist: set) -> Optional[Dict[str, Any]]:
+        """Try placing word at specific position with enhanced validation."""
         
         # Check basic bounds and connectivity
         if not self._is_valid_placement_basic(board, word, start_row, start_col, direction):
@@ -177,8 +197,8 @@ class SimpleComputerPlayer:
         if not self._placement_connects_to_board(board, word, start_row, start_col, direction):
             return None
             
-        # Check cross-words formed (simplified check)
-        if not self._check_cross_words_simple(board, word, start_row, start_col, direction, wordlist):
+        # ENHANCED: Check ALL cross-words formed with strict validation
+        if not self._check_all_cross_words_strict(board, word, start_row, start_col, direction, wordlist):
             return None
             
         return self._create_move(word, start_row, start_col, direction, rack_letters)
@@ -213,11 +233,8 @@ class SimpleComputerPlayer:
                         return True
         return False
     
-    def _check_cross_words_simple(self, board: List[List], word: str, start_row: int, start_col: int, direction: str, wordlist: set) -> bool:
-        """Simple cross-word validation - check if any cross-words formed are valid."""
-        # For simplicity, just check that we don't form obvious invalid 2-letter combinations
-        # This is a simplified version - full validation would be more complex
-        
+    def _check_all_cross_words_strict(self, board: List[List], word: str, start_row: int, start_col: int, direction: str, wordlist: set) -> bool:
+        """Strict cross-word validation - check if all cross-words formed are valid."""
         for i in range(len(word)):
             if direction == "horizontal":
                 row, col = start_row, start_col + i
@@ -229,9 +246,14 @@ class SimpleComputerPlayer:
                 cross_word = self._get_cross_word_at_position(board, row, col, "horizontal", word[i])
                 
             if cross_word and len(cross_word) > 1:
-                if cross_word.upper() not in wordlist and cross_word.lower() not in wordlist:
-                    logger.info(f"🤖 Simple AI: Invalid cross-word '{cross_word}' formed")
+                # STRICT validation: cross-word must be in dictionary
+                if not self._is_word_in_dictionary(cross_word, wordlist):
+                    logger.warning(f"🤖 Simple AI: Invalid cross-word '{cross_word}' would be formed at ({row},{col})")
                     return False
+                else:
+                    logger.info(f"🤖 Simple AI: Valid cross-word '{cross_word}' formed at ({row},{col})")
+        
+        logger.info(f"🤖 Simple AI: All cross-words validated successfully")
         return True
     
     def _get_cross_word_at_position(self, board: List[List], row: int, col: int, direction: str, new_letter: str) -> str:
@@ -273,6 +295,8 @@ class SimpleComputerPlayer:
     
     def _create_move(self, word: str, start_row: int, start_col: int, direction: str, rack_letters: List[str]) -> Dict[str, Any]:
         """Create a move dictionary."""
+        logger.info(f"🤖 Simple AI: Creating move for word '{word}' at ({start_row},{start_col}) {direction}")
+        
         tiles = []
         for i, letter in enumerate(word):
             if direction == "horizontal":
@@ -287,10 +311,13 @@ class SimpleComputerPlayer:
                 "is_blank": False
             })
         
-        return {
+        move_result = {
             "word": word,
             "tiles": tiles,
             "score": len(word) * 2,  # Simple scoring
             "start_pos": {"row": start_row, "col": start_col},
             "direction": direction
-        } 
+        }
+        
+        logger.info(f"🤖 Simple AI: Move created successfully - word: '{word}', tiles: {len(tiles)}, score: {move_result['score']}")
+        return move_result 
