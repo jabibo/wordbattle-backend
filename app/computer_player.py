@@ -303,7 +303,12 @@ class ComputerPlayer:
             
             if board[row][col] is not None:
                 # Position occupied by existing tile
-                existing_letter = board[row][col].letter.upper()
+                # Handle dict format from the game state
+                if isinstance(board[row][col], dict):
+                    existing_letter = board[row][col].get("letter", "").upper()
+                else:
+                    existing_letter = str(board[row][col]).upper()
+                
                 if existing_letter != letter.upper():
                     logger.debug(f"Computer AI: Word '{word}' conflicts with existing tile '{existing_letter}' at ({row},{col}), needed '{letter}'")
                     return None
