@@ -94,42 +94,42 @@ class GameState:
         self.current_player_id = first_player_id
         self.phase = GamePhase.IN_PROGRESS
 
-    def validate_word_placement(self, word_positions: List[Tuple[Position, PlacedTile]], dictionary: Set[str]) -> Tuple[bool, str]:
-        """Validate a word placement according to Scrabble rules."""
+    def validate_word_placement(self, word_positions: List[Tuple[Position, PlacedTile]], dictionary: Set[str]) -> Tuple[bool, str, List[str]]:
+        """Validate a word placement according to Scrabble rules. Returns (success, message, words_formed)."""
         if not word_positions:
-            return False, "No tiles were placed. Please place at least one tile to make a move."
+            return False, "No tiles were placed. Please place at least one tile to make a move.", []
             
         # Validate word direction and connectivity
         valid_direction, direction_msg = self._validate_word_direction(word_positions)
         if not valid_direction:
-            return False, direction_msg
+            return False, direction_msg, []
             
         # Check if it's the first move
         if not self.center_used:
             center_used = any(pos.row == 7 and pos.col == 7 for pos, _ in word_positions)
             if not center_used:
-                return False, "The first word must pass through the center star square (H8). Please place at least one tile on the center square."
+                return False, "The first word must pass through the center star square (H8). Please place at least one tile on the center square.", []
             
         # Validate all positions are within bounds
         for pos, tile in word_positions:
             if not (0 <= pos.row < 15 and 0 <= pos.col < 15):
                 col_letter = chr(65 + pos.col)
-                return False, f"Tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) is outside the board boundaries. All tiles must be placed within the 15x15 grid."
+                return False, f"Tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) is outside the board boundaries. All tiles must be placed within the 15x15 grid.", []
                 
         # Validate no overlapping with existing tiles
         for pos, tile in word_positions:
             if self.board[pos.row][pos.col] is not None:
                 existing_tile = self.board[pos.row][pos.col]
                 col_letter = chr(65 + pos.col)
-                return False, f"Cannot place tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) - there is already a '{existing_tile.letter}' tile there."
+                return False, f"Cannot place tile '{tile.letter}' at position ({pos.row + 1}, {col_letter}) - there is already a '{existing_tile.letter}' tile there.", []
 
         # Validate all formed words with optimized blank tile handling
         all_words_patterns = self._get_all_formed_words(word_positions)
         if not all_words_patterns:
             if len(word_positions) == 1:
-                return False, "Single tile placement must form a word of at least 2 letters by connecting to existing tiles."
+                return False, "Single tile placement must form a word of at least 2 letters by connecting to existing tiles.", []
             else:
-                return False, "The placed tiles do not form any valid words. Make sure tiles are connected and form complete words."
+                return False, "The placed tiles do not form any valid words. Make sure tiles are connected and form complete words.", []
         
         # Batch validate patterns to avoid redundant checks
         unique_patterns = list(set(all_words_patterns))
@@ -152,13 +152,13 @@ class GameState:
         
         if invalid_words:
             if len(invalid_words) == 1:
-                return False, f"'{invalid_words[0]}' is not a valid word in the dictionary."
+                return False, f"'{invalid_words[0]}' is not a valid word in the dictionary.", []
             else:
-                return False, f"Invalid words formed: {', '.join(invalid_words)}. All words must be valid dictionary words."
+                return False, f"Invalid words formed: {', '.join(invalid_words)}. All words must be valid dictionary words.", []
 
         # Validate connection to existing words (except first move)
         if self.center_used and not self._is_connected_to_existing(word_positions):
-            return False, "New tiles must connect to existing words on the board. Place at least one tile adjacent to an existing tile."
+            return False, "New tiles must connect to existing words on the board. Place at least one tile adjacent to an existing tile.", []
             
         # If we get here, the move is valid - provide success message with details
         points = self._calculate_points(word_positions)
@@ -176,7 +176,7 @@ class GameState:
         
         success_msg = f"Valid move! {word_info}. Points scored: {points}{bonus_info}."
         
-        return True, success_msg
+        return True, success_msg, valid_words
 
     def make_move(self, player_id: int, move_type: MoveType, move_data: List[Tuple[Position, PlacedTile]], dictionary: Set[str], skip_turn_validation: bool = False) -> Tuple[bool, str, int]:
         """Make a move and return (success, message, points)."""
@@ -232,7 +232,7 @@ class GameState:
                 else:
                     return False, f"You don't have these letters in your rack: {', '.join(missing_letters)}.", 0
             
-            success, msg = self.validate_word_placement(move_data, dictionary)
+            success, msg, words_formed = self.validate_word_placement(move_data, dictionary)
             if not success:
                 return False, msg, 0
             

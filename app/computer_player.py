@@ -207,7 +207,7 @@ class ComputerPlayer:
                 possible_moves.append({
                     "word": word,
                     "tiles": placement["tiles"],
-                    "score": placement["score"],
+                    "score": placement.get("points", placement.get("score", 0)),
                     "start_pos": placement["start_pos"],
                     "direction": placement["direction"]
                 })

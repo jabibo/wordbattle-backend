@@ -214,6 +214,125 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
         "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0)
     }
 
+def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> List[Dict[str, Any]]:
+    """
+    Get recent moves for last move highlighting feature.
+    Returns moves from all players EXCEPT the current user, ordered by most recent first.
+    
+    For multi-player support:
+    - 2 players: Returns 1 recent move (opponent's last move)
+    - 3 players: Returns 2 recent moves (other players' last moves)
+    - 4 players: Returns 3 recent moves (other players' last moves)
+    
+    Fully implements contract specification for recent_moves field.
+    
+    Args:
+        game_id: Game ID
+        current_user_id: Current user ID (to exclude their moves)
+        db: Database session
+        
+    Returns:
+        List of recent move data matching contract specification
+    """
+    # Get recent moves from all players except current user
+    # Only include PLACE moves (not EXCHANGE or PASS) for highlighting
+    recent_moves = db.query(Move)\
+        .filter(Move.game_id == game_id)\
+        .filter(Move.player_id != current_user_id)\
+        .order_by(Move.timestamp.desc())\
+        .limit(15)  # Get more than needed, then filter to get last move per player
+    
+    moves_data = []
+    seen_players = set()  # Track players we've seen to get only last move per player
+    
+    for move in recent_moves:
+        # Skip if we already have this player's most recent move
+        if move.player_id in seen_players:
+            continue
+            
+        try:
+            move_data = json.loads(move.move_data) if move.move_data else {}
+            move_type = move_data.get("type", "unknown")
+            
+            # Only include PLACE moves for highlighting (contract requirement)
+            if move_type != "PLACE":
+                seen_players.add(move.player_id)  # Mark as seen but don't include
+                continue
+            
+            # Get player info
+            player = db.query(User).filter(User.id == move.player_id).first()
+            if not player:
+                continue
+                
+            # Extract move positions from move data with enhanced tile information
+            positions = []
+            move_positions = move_data.get("data", [])
+            
+            for pos_data in move_positions:
+                if isinstance(pos_data, dict):
+                    # Calculate tile points based on letter and blank status
+                    letter = pos_data.get("letter", "")
+                    is_blank = pos_data.get("is_blank", False)
+                    
+                    # Basic point values for tiles (enhanced from simple default)
+                    tile_points = 1  # Default for blanks
+                    if not is_blank and letter:
+                        # Standard Scrabble point values
+                        point_values = {
+                            'A': 1, 'E': 1, 'I': 1, 'O': 1, 'U': 1, 'L': 1, 'N': 1, 'S': 1, 'T': 1, 'R': 1,
+                            'D': 2, 'G': 2,
+                            'B': 3, 'C': 3, 'M': 3, 'P': 3,
+                            'F': 4, 'H': 4, 'V': 4, 'W': 4, 'Y': 4,
+                            'K': 5,
+                            'J': 8, 'X': 8,
+                            'Q': 10, 'Z': 10
+                        }
+                        tile_points = point_values.get(letter.upper(), 1)
+                    
+                    position = {
+                        "row": pos_data.get("row", 0),
+                        "col": pos_data.get("col", 0),
+                        "letter": letter.upper(),
+                        "points": tile_points,
+                        "is_blank": is_blank
+                    }
+                    positions.append(position)
+            
+            # Only include moves that actually placed tiles
+            if positions:
+                # Extract additional move information for full contract compliance
+                turn_number = move_data.get("turn_number", 0)
+                points_earned = move_data.get("points", 0)
+                words_formed = move_data.get("words", [])
+                
+                # Ensure words_formed is a list of strings
+                if isinstance(words_formed, str):
+                    words_formed = [words_formed]
+                elif not isinstance(words_formed, list):
+                    words_formed = []
+                
+                move_info = {
+                    "player_id": str(move.player_id),
+                    "player_username": player.username,
+                    "timestamp": move.timestamp.isoformat(),
+                    "turn_number": turn_number,
+                    "move_type": move_type,
+                    "positions": positions,
+                    "points_earned": points_earned,
+                    "words_formed": words_formed
+                }
+                moves_data.append(move_info)
+                seen_players.add(move.player_id)
+                
+        except Exception as e:
+            logger.error(f"Error processing move {move.id} for recent moves: {e}")
+            continue
+    
+    # Sort by timestamp (most recent first) and limit based on game size
+    # Contract specifies: max_players - 1 moves (up to 3 moves for 4-player games)
+    moves_data.sort(key=lambda x: x["timestamp"], reverse=True)
+    return moves_data[:3]  # Maximum 3 recent moves for 4-player games
+
 def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dict[str, Any]:
     """
     Shared function to get detailed game data for single game view.
@@ -255,6 +374,9 @@ def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dic
         if player_data:
             player_info[player.user_id] = player_data
     
+    # Get recent moves for highlighting
+    recent_moves = get_recent_moves_data(game.id, current_user_id, db)
+    
     return {
         "id": game.id,
         "status": game.status.value,
@@ -269,7 +391,8 @@ def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dic
         "letter_bag_count": len(state_data.get("letter_bag", [])),
         "players": player_info,
         "turn_number": state_data.get("turn_number", 0),
-        "consecutive_passes": state_data.get("consecutive_passes", 0)
+        "consecutive_passes": state_data.get("consecutive_passes", 0),
+        "recent_moves": recent_moves
     }
 
 def sort_games_by_priority(games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

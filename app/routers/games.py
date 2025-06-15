@@ -168,6 +168,9 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
                 })
         contract_board.append(contract_row)
     
+    # Get recent moves from game data (already processed by get_recent_moves_data)
+    recent_moves = game_data.get("recent_moves", [])
+    
     return {
         "id": game_data.get("id"),
         "name": game_name,  # Contract requires this
@@ -184,7 +187,8 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
             "time_limit": 0,  # Default values for optional contract fields
             "allow_challenges": True,
             "difficulty": "normal"
-        }
+        },
+        "recent_moves": recent_moves
     }
 
 @router.post("/create")
@@ -1271,7 +1275,13 @@ async def make_move(
     move_entry = Move(
         game_id=game_id,
         player_id=current_user.id,
-        move_data=json.dumps({"type": MoveType.PLACE.value, "data": move_data, "points": points_gained}), # Store move type, data, and points in JSON
+        move_data=json.dumps({
+            "type": MoveType.PLACE.value, 
+            "data": move_data, 
+            "points": points_gained,
+            "turn_number": game_state.turn_number,
+            "words": []  # TODO: Extract words formed from the move validation
+        }), # Store move type, data, points, turn number, and words in JSON
         timestamp=datetime.now(timezone.utc)
     )
     db.add(move_entry)
