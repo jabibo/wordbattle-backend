@@ -2365,17 +2365,20 @@ async def trigger_computer_move(
         # Pre-filter to reasonable words before conversion
         rack_letters = set(computer_player.rack.upper())
         
-        # Quick pre-filter: only words 2-7 letters that could possibly be made
+        # Much more lenient pre-filter: prioritize finding moves over extreme optimization
         filtered_words = []
         count = 0
         for word in wordlist:
-            if count >= 1000:  # Limit to first 1000 words for ultra-fast processing
+            if count >= 10000:  # Increase to 10k words to ensure we find moves
                 break
-            if 2 <= len(word) <= 7:
-                word_letters = set(word.upper())
-                # Quick check: word uses only letters we might have (including blanks)
-                if word_letters.issubset(rack_letters | {'?', '*'}) or len(word_letters & rack_letters) >= len(word) // 2:
-                    filtered_words.append(word.upper())
+            if 2 <= len(word) <= 10:  # Allow longer words too
+                word_upper = word.upper()
+                word_letters = set(word_upper)
+                # Very lenient check: include most words that could possibly work
+                if (len(word) <= 5 or  # Always include words 5 letters or shorter
+                    len(word_letters & rack_letters) >= 1 or  # Share at least 1 letter
+                    word_letters.issubset(rack_letters | {'?', '*', 'A', 'E', 'I', 'O', 'U'})):  # Include vowel-heavy words
+                    filtered_words.append(word_upper)
                     count += 1
         
         logger.info(f"🚀 PERFORMANCE: Filtered wordlist from {len(wordlist)} to {len(filtered_words)} words")
@@ -2582,17 +2585,20 @@ async def debug_computer_move(
         # Pre-filter to reasonable words before conversion
         rack_letters = set(computer_player.rack.upper())
         
-        # Quick pre-filter: only words 2-7 letters that could possibly be made
+        # Much more lenient pre-filter: prioritize finding moves over extreme optimization
         filtered_words = []
         count = 0
         for word in wordlist:
-            if count >= 1000:  # Limit to first 1000 words for ultra-fast processing
+            if count >= 10000:  # Increase to 10k words to ensure we find moves
                 break
-            if 2 <= len(word) <= 7:
-                word_letters = set(word.upper())
-                # Quick check: word uses only letters we might have (including blanks)
-                if word_letters.issubset(rack_letters | {'?', '*'}) or len(word_letters & rack_letters) >= len(word) // 2:
-                    filtered_words.append(word.upper())
+            if 2 <= len(word) <= 10:  # Allow longer words too
+                word_upper = word.upper()
+                word_letters = set(word_upper)
+                # Very lenient check: include most words that could possibly work
+                if (len(word) <= 5 or  # Always include words 5 letters or shorter
+                    len(word_letters & rack_letters) >= 1 or  # Share at least 1 letter
+                    word_letters.issubset(rack_letters | {'?', '*', 'A', 'E', 'I', 'O', 'U'})):  # Include vowel-heavy words
+                    filtered_words.append(word_upper)
                     count += 1
         
         wordlist_list = filtered_words
