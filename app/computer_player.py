@@ -322,15 +322,40 @@ class ComputerPlayer:
         
         # Create a temporary game state for validation
         try:
-            # Use the main game state validation
-            is_valid, error_msg, words_formed = self.game_state.validate_word_placement(tiles, set(wordlist) if wordlist else set())
+            from app.game_logic.game_state import GameState
+            
+            # Create temporary game state with current board
+            temp_game_state = GameState(language=language)
+            
+            # Convert board format for game state validation
+            temp_game_state.board = [[None for _ in range(15)] for _ in range(15)]
+            for row_idx, row in enumerate(board):
+                for col_idx, cell in enumerate(row):
+                    if cell is not None:
+                        # Handle dict format from the game state
+                        if isinstance(cell, dict):
+                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
+                                letter=cell.get("letter", ""),
+                                is_blank=cell.get("is_blank", False),
+                                tile_id=cell.get("tile_id")
+                            )
+                        else:
+                            # Handle simple format
+                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
+                                letter=str(cell),
+                                is_blank=False
+                            )
+            
+            # Use the game state validation
+            dictionary = set(word.upper() for word in wordlist) if wordlist else set()
+            is_valid, error_msg, words_formed = temp_game_state.validate_word_placement(tiles, dictionary)
             
             if not is_valid:
                 logger.info(f"Computer AI: Word '{word}' at ({start_row},{start_col}) {direction} REJECTED: {error_msg}")
                 return None
             
             # Calculate points using game state logic
-            points = self.game_state._calculate_points(tiles)
+            points = temp_game_state._calculate_points(tiles)
             
             logger.info(f"Computer AI: Word '{word}' at ({start_row},{start_col}) {direction} ACCEPTED: {points} points, forms {words_formed}")
             
