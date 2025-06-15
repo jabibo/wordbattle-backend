@@ -157,7 +157,7 @@ class ComputerPlayer:
         # Try each makeable word
         for word in sampled_words:
             # Try to place the word on the board
-            placements = self._find_word_placements_on_board(board, word, rack_letters, language)
+            placements = self._find_word_placements_on_board(board, word, rack_letters, language, wordlist)
             
             if placements:
                 words_with_placements += 1
@@ -197,28 +197,28 @@ class ComputerPlayer:
         
         return True
     
-    def _find_word_placements_on_board(self, board: List[List], word: str, rack_letters: List[str], language: str = "en") -> List[Dict[str, Any]]:
+    def _find_word_placements_on_board(self, board: List[List], word: str, rack_letters: List[str], language: str = "en", wordlist: List[str] = None) -> List[Dict[str, Any]]:
         """Find valid placements for a word on the board."""
         placements = []
         
         # Try horizontal placements
         for row in range(15):
             for col in range(15 - len(word) + 1):
-                placement = self._try_placement(board, word, row, col, "horizontal", rack_letters, language)
+                placement = self._try_placement(board, word, row, col, "horizontal", rack_letters, language, wordlist)
                 if placement:
                     placements.append(placement)
         
         # Try vertical placements
         for row in range(15 - len(word) + 1):
             for col in range(15):
-                placement = self._try_placement(board, word, row, col, "vertical", rack_letters, language)
+                placement = self._try_placement(board, word, row, col, "vertical", rack_letters, language, wordlist)
                 if placement:
                     placements.append(placement)
         
         return placements
     
     def _try_placement(self, board: List[List], word: str, start_row: int, start_col: int, 
-                      direction: str, rack_letters: List[str], language: str = "en") -> Optional[Dict[str, Any]]:
+                      direction: str, rack_letters: List[str], language: str = "en", wordlist: List[str] = None) -> Optional[Dict[str, Any]]:
         """Try to place a word at a specific position and direction."""
         tiles = []
         rack_copy = rack_letters.copy()
@@ -258,7 +258,7 @@ class ComputerPlayer:
                 elif '*' in rack_copy:  # Also support * for blank tiles
                     rack_copy.remove('*')
                 else:
-                    return False
+                    return None
                 
                 tiles.append({
                     "row": row,
@@ -292,6 +292,11 @@ class ComputerPlayer:
             if not center_covered:
                 return None
         
+        # *** CRITICAL BUG FIX: Validate all cross-words formed ***
+        # This was missing and caused invalid moves like DTUNS in German games
+        if not self._validate_placement_words(board, tiles, word, start_row, start_col, direction, language, wordlist):
+            return None
+        
         # Calculate proper score using letter point values
         score = self._calculate_word_score(word, tiles, board, start_row, start_col, direction, language)
         
@@ -301,6 +306,129 @@ class ComputerPlayer:
             "start_pos": (start_row, start_col),
             "direction": direction
         }
+    
+    def _validate_placement_words(self, board: List[List], tiles: List[Dict], main_word: str, 
+                                 start_row: int, start_col: int, direction: str, language: str = "en", 
+                                 wordlist: List[str] = None) -> bool:
+        """
+        Validate that all words formed by this placement are valid dictionary words.
+        This includes the main word and any cross-words formed.
+        
+        This is the critical validation that prevents invalid moves
+        like placing TUNS next to a D to form DTUNS in German games.
+        """
+        try:
+            # Use provided wordlist or try to get it
+            if wordlist is None:
+                from app.utils.wordlist_utils import load_wordlist
+                try:
+                    wordlist_set = load_wordlist(language)
+                    wordlist = list(wordlist_set) if wordlist_set else []
+                    if not wordlist:
+                        logger.error(f"Computer AI: Could not get {language} wordlist for validation, REJECTING move for safety")
+                        return False  # REJECT move if we can't validate (fail-safe approach)
+                except Exception as e:
+                    logger.error(f"Computer AI: Could not load {language} dictionary for validation: {e}, REJECTING move")
+                    return False  # REJECT move if validation fails (fail-safe approach)
+            
+            # Ensure wordlist is not empty
+            if not wordlist or len(wordlist) == 0:
+                logger.error(f"Computer AI: Empty wordlist for {language}, rejecting move for safety")
+                return False
+            
+            # Convert to set for fast lookup
+            dictionary = set(word.upper() for word in wordlist)
+            logger.debug(f"Computer AI: Using dictionary with {len(dictionary)} words for validation")
+            
+            # Create temporary board with new tiles placed
+            temp_board = [row[:] for row in board]
+            for tile in tiles:
+                temp_board[tile["row"]][tile["col"]] = tile["letter"]
+            
+            # Collect all words that would be formed
+            words_to_validate = []
+            
+            # 1. Add the main word being placed
+            if len(main_word) > 1:
+                words_to_validate.append(main_word.upper())
+                logger.debug(f"Computer AI: Main word to validate: '{main_word.upper()}'")
+            
+            # 2. Check for cross-words formed by each new tile
+            for tile in tiles:
+                row, col = tile["row"], tile["col"]
+                
+                # Check horizontal cross-word (if main word is vertical)
+                if direction == "vertical":
+                    # Find horizontal word containing this tile
+                    start_col = col
+                    end_col = col
+                    
+                    # Extend left
+                    while start_col > 0 and temp_board[row][start_col - 1] not in (None, "", " "):
+                        start_col -= 1
+                    
+                    # Extend right
+                    while end_col < 14 and temp_board[row][end_col + 1] not in (None, "", " "):
+                        end_col += 1
+                    
+                    # If we found a multi-letter word, add it for validation
+                    if end_col > start_col:
+                        cross_word = ""
+                        for c in range(start_col, end_col + 1):
+                            letter = temp_board[row][c]
+                            if isinstance(letter, dict):
+                                cross_word += letter.get("letter", "")
+                            else:
+                                cross_word += (letter or "")
+                        
+                        if len(cross_word) > 1:
+                            words_to_validate.append(cross_word.upper())
+                            logger.debug(f"Computer AI: Horizontal cross-word to validate: '{cross_word.upper()}'")
+                
+                # Check vertical cross-word (if main word is horizontal)
+                if direction == "horizontal":
+                    # Find vertical word containing this tile
+                    start_row = row
+                    end_row = row
+                    
+                    # Extend up
+                    while start_row > 0 and temp_board[start_row - 1][col] not in (None, "", " "):
+                        start_row -= 1
+                    
+                    # Extend down
+                    while end_row < 14 and temp_board[end_row + 1][col] not in (None, "", " "):
+                        end_row += 1
+                    
+                    # If we found a multi-letter word, add it for validation
+                    if end_row > start_row:
+                        cross_word = ""
+                        for r in range(start_row, end_row + 1):
+                            letter = temp_board[r][col]
+                            if isinstance(letter, dict):
+                                cross_word += letter.get("letter", "")
+                            else:
+                                cross_word += (letter or "")
+                        
+                        if len(cross_word) > 1:
+                            words_to_validate.append(cross_word.upper())
+                            logger.debug(f"Computer AI: Vertical cross-word to validate: '{cross_word.upper()}'")
+            
+            # Validate all words
+            logger.debug(f"Computer AI: Validating {len(words_to_validate)} words: {words_to_validate}")
+            for word_to_check in words_to_validate:
+                if word_to_check not in dictionary:
+                    logger.warning(f"Computer AI: Invalid word formed: '{word_to_check}' - REJECTING placement")
+                    return False
+                else:
+                    logger.debug(f"Computer AI: Valid word: '{word_to_check}'")
+            
+            # All words are valid
+            logger.debug(f"Computer AI: All words validated successfully: {words_to_validate}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Computer AI: Error in word validation: {e}")
+            return False  # REJECT move if validation fails (fail-safe approach)
     
     def _calculate_word_score(self, word: str, tiles: List[Dict], board: List[List], 
                              start_row: int, start_col: int, direction: str, language: str = "en") -> int:
