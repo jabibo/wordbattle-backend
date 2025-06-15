@@ -149,7 +149,7 @@ class ComputerPlayer:
         else:
             sampled_words = makeable_words
         
-        logger.info(f"Computer player: Testing {len(sampled_words)} makeable words")
+        logger.info(f"Computer player: Testing {len(sampled_words)} makeable words: {sampled_words[:10]}{'...' if len(sampled_words) > 10 else ''}")
         
         # Track what we're testing for debugging
         words_with_placements = 0
@@ -297,133 +297,55 @@ class ComputerPlayer:
             else:  # vertical
                 row, col = start_row + i, start_col
             
-            if row >= 15 or col >= 15:
+            if row >= 15 or col >= 15 or row < 0 or col < 0:
+                logger.debug(f"Computer AI: Word '{word}' placement out of bounds at ({row},{col})")
                 return None
             
-            existing_tile = board[row][col]
-            
-            if existing_tile is not None:
-                # Handle both simple letter format and complex tile object format
-                if isinstance(existing_tile, dict):
-                    # New format: {"letter": "A", "is_blank": false, "tile_id": "..."}
-                    existing_letter = existing_tile.get("letter")
-                else:
-                    # Old format: just the letter string
-                    existing_letter = existing_tile
-                
-                # Letter already on board - must match
-                if existing_letter != letter:
+            if board[row][col] is not None:
+                # Position occupied by existing tile
+                existing_letter = board[row][col].letter.upper()
+                if existing_letter != letter.upper():
+                    logger.debug(f"Computer AI: Word '{word}' conflicts with existing tile '{existing_letter}' at ({row},{col}), needed '{letter}'")
                     return None
                 touches_existing = True
             else:
-                # Need to place a tile from rack
-                if letter in rack_copy:
-                    rack_copy.remove(letter)
-                elif '?' in rack_copy:  # Blank tile (using ? instead of *)
-                    rack_copy.remove('?')
-                elif '*' in rack_copy:  # Also support * for blank tiles
-                    rack_copy.remove('*')
-                else:
+                # Need to use a letter from rack
+                if letter.upper() not in rack_copy:
+                    logger.debug(f"Computer AI: Word '{word}' requires letter '{letter}' not in rack {rack_copy}")
                     return None
-                
-                tiles.append({
-                    "row": row,
-                    "col": col,
-                    "letter": letter
-                })
+                rack_copy.remove(letter.upper())
+                tiles.append((Position(row, col), PlacedTile(letter.upper())))
         
-        # Must touch at least one existing tile (except for first move)
-        board_has_tiles = False
-        for row in board:
-            for cell in row:
-                if cell is not None:
-                    board_has_tiles = True
-                    break
-            if board_has_tiles:
-                break
-        
-        if not touches_existing and board_has_tiles:
+        if not tiles:
+            logger.debug(f"Computer AI: Word '{word}' requires no new tiles - invalid move")
             return None
         
-        # First move must go through center (7,7)
-        if not board_has_tiles:
-            center_covered = False
-            for i in range(len(word)):
-                if direction == "horizontal":
-                    if start_row == 7 and start_col + i == 7:
-                        center_covered = True
-                else:
-                    if start_row + i == 7 and start_col == 7:
-                        center_covered = True
-            if not center_covered:
-                return None
-        
-        # *** USE STANDARD VALIDATION FROM GAME_STATE ***
         # Create a temporary game state for validation
         try:
-            from app.game_logic.game_state import GameState, Position, PlacedTile
-            
-            # Convert wordlist to dictionary set
-            if wordlist is None:
-                logger.error(f"Computer AI: No wordlist provided for validation")
-                return None
-            dictionary = set(word.upper() for word in wordlist)
-            
-            # Create temporary game state with current board
-            temp_game_state = GameState(language=language)
-            
-            # Convert board format for game state
-            # Handle both tile objects and simple letters
-            temp_game_state.board = [[None for _ in range(15)] for _ in range(15)]
-            for row_idx, row in enumerate(board):
-                for col_idx, cell in enumerate(row):
-                    if cell is not None:
-                        if isinstance(cell, dict):
-                            # Convert dict format to PlacedTile
-                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
-                                letter=cell.get("letter", ""),
-                                is_blank=cell.get("is_blank", False),
-                                tile_id=cell.get("tile_id")
-                            )
-                        else:
-                            # Convert simple letter to PlacedTile
-                            temp_game_state.board[row_idx][col_idx] = PlacedTile(
-                                letter=str(cell),
-                                is_blank=False
-                            )
-            
-            # Convert move data to the format expected by game state validation
-            word_positions = []
-            for tile in tiles:
-                pos = Position(row=tile["row"], col=tile["col"])
-                placed_tile = PlacedTile(
-                    letter=tile["letter"],
-                    is_blank=False  # For now, computer doesn't use blank tiles
-                )
-                word_positions.append((pos, placed_tile))
-            
-            # Use the proper game state validation method
-            is_valid, error_msg, words_formed = temp_game_state.validate_word_placement(word_positions, dictionary)
+            # Use the main game state validation
+            is_valid, error_msg, words_formed = self.game_state.validate_word_placement(tiles, set(wordlist) if wordlist else set())
             
             if not is_valid:
-                logger.debug(f"Computer AI: Move rejected by game state validation: {error_msg}")
+                logger.info(f"Computer AI: Word '{word}' at ({start_row},{start_col}) {direction} REJECTED: {error_msg}")
                 return None
             
-            logger.debug(f"Computer AI: Move validated successfully, words formed: {words_formed}")
+            # Calculate points using game state logic
+            points = self.game_state._calculate_points(tiles)
+            
+            logger.info(f"Computer AI: Word '{word}' at ({start_row},{start_col}) {direction} ACCEPTED: {points} points, forms {words_formed}")
+            
+            return {
+                "word": word,
+                "tiles": tiles,
+                "points": points,
+                "start_pos": (start_row, start_col),
+                "direction": direction,
+                "words_formed": words_formed
+            }
             
         except Exception as e:
-            logger.error(f"Computer AI: Error in game state validation: {e}")
-            return None  # Reject move if validation fails
-        
-        # Calculate proper score using letter point values
-        score = self._calculate_word_score(word, tiles, board, start_row, start_col, direction, language)
-        
-        return {
-            "tiles": tiles,
-            "score": score,
-            "start_pos": (start_row, start_col),
-            "direction": direction
-        }
+            logger.error(f"Computer AI: Error in game state validation for '{word}': {str(e)}")
+            return None
     
     def _calculate_word_score(self, word: str, tiles: List[Dict], board: List[List], 
                              start_row: int, start_col: int, direction: str, language: str = "en") -> int:
