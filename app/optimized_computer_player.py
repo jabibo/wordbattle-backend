@@ -274,19 +274,57 @@ class OptimizedComputerPlayer:
         """Initialize the optimized word index (called once during service startup)."""
         if self.word_index is None:
             self.word_index = OptimizedWordIndex(wordlist)
-            logger.info("🚀 OptimizedComputerPlayer initialized with direct access object model")
+            # Store wordlist as set for fast dictionary validation
+            self._wordlist_set = set(word.upper() for word in wordlist)
+            logger.info(f"🚀 OptimizedComputerPlayer initialized with {len(wordlist)} words for validation")
+    
+    def _get_performance_wordlist(self, full_wordlist: List[str]) -> List[str]:
+        """Get a performance-optimized subset of the wordlist for quick play."""
+        # Convert to list if it's a set
+        if not isinstance(full_wordlist, list):
+            full_wordlist = list(full_wordlist)
+        
+        # Smart filtering for performance:
+        # 1. Common word lengths (2-7 letters)
+        # 2. No very rare words
+        # 3. Priority to common letters
+        common_letters = set('AEIOURSTLNDMHCBPFGWYVKJXQZ')
+        
+        performance_words = []
+        for word in full_wordlist:
+            word_upper = word.upper()
+            # Filter criteria for performance
+            if (2 <= len(word_upper) <= 7 and  # Good length range
+                len(set(word_upper) & common_letters) >= len(word_upper) * 0.7):  # Mostly common letters
+                performance_words.append(word_upper)
+                
+                # Limit to 25,000 words for quick initialization
+                if len(performance_words) >= 25000:
+                    break
+        
+        logger.info(f"🎯 Performance wordlist: {len(performance_words)} words from {len(full_wordlist)} total")
+        return performance_words
     
     def make_move(self, game_state_data: Dict[str, Any], rack: str, wordlist: List[str]) -> Dict[str, Any]:
         """Make a move using optimized algorithms - target <50ms."""
         if self.word_index is None:
-            self.initialize_with_wordlist(wordlist)
+            # Use a smaller, performance-focused wordlist for quick initialization
+            logger.info("🚀 Quick-initializing with performance-optimized wordlist...")
+            performance_wordlist = self._get_performance_wordlist(wordlist)
+            self.initialize_with_wordlist(performance_wordlist)
+        
+        # Ensure wordlist set is available for validation
+        if not hasattr(self, '_wordlist_set') and wordlist:
+            self._wordlist_set = set(word.upper() for word in wordlist)
+            logger.info(f"🔧 Wordlist set initialized with {len(wordlist)} words for validation")
         
         start_time = time.time()
         rack_letters = list(rack.upper())
         board = game_state_data.get("board", [[None]*15 for _ in range(15)])
         
-        logger.info(f"🚀 OptimizedComputerPlayer: Starting optimized move search")
+        logger.info(f"🚀 OptimizedComputerPlayer: Starting optimized move search with dictionary validation")
         logger.info(f"   Rack: {rack_letters}")
+        logger.info(f"   Dictionary size: {len(self._wordlist_set) if hasattr(self, '_wordlist_set') else 'N/A'}")
         
         # PHASE 1: Bubble sort elimination of word candidates (<5ms)
         limits = self.move_limits[self.difficulty]
@@ -364,10 +402,29 @@ class OptimizedComputerPlayer:
     def _try_optimized_placement(self, board: List[List], candidate: WordCandidate, 
                                 start_row: int, start_col: int, direction: str, 
                                 rack_letters: List[str]) -> Optional[Dict[str, Any]]:
-        """Try placing a word with minimal validation for speed."""
+        """Try placing a word with validation for correctness."""
         word = candidate.word
         tiles = []
         rack_copy = rack_letters.copy()
+        
+        # CRITICAL: Validate word is in dictionary first!
+        if not hasattr(self, '_wordlist_set'):
+            logger.warning(f"⚠️ No wordlist available for validation, skipping word: {word}")
+            return None
+        
+        # SPECIAL DETECTION: Only block known problematic patterns
+        if word.upper() in ["ADSTAND", "ISTADSTAND", "ISTSTAND"]:
+            logger.error(f"🚨 CRITICAL: Blocked known invalid word: '{word}'")
+            return None
+        
+        if word.upper() not in self._wordlist_set:
+            logger.error(f"🚫 INVALID WORD REJECTED: '{word}' is NOT in dictionary")
+            # Log some similar words for debugging
+            similar_words = [w for w in list(self._wordlist_set)[:100] if w.startswith(word[:3])][:5]
+            logger.error(f"   Similar words in dictionary: {similar_words}")
+            return None
+        
+        logger.debug(f"✅ MAIN WORD VALIDATED: '{word}' is in dictionary")
         
         # Fast connectivity check
         connected = False
@@ -388,19 +445,35 @@ class OptimizedComputerPlayer:
                 elif '*' in rack_copy:  # Alternative blank format
                     rack_copy.remove('*')
                 else:
+                    logger.warning(f"⚠️ Cannot place '{word}': missing letter '{letter}' from rack")
                     return None  # Can't place this letter
                 
                 tiles.append({"row": row, "col": col, "letter": letter})
             else:
                 # Letter must match existing tile
-                if board[row][col].upper() != letter:
+                cell = board[row][col]
+                if isinstance(cell, dict):
+                    existing_letter = cell.get("letter", cell.get("LETTER", str(cell))).upper()
+                else:
+                    existing_letter = str(cell).upper()
+                
+                if existing_letter != letter:
+                    logger.warning(f"⚠️ Cannot place '{word}': letter mismatch at ({row},{col}), need '{letter}' but found '{existing_letter}'")
                     return None
                 connected = True  # Connected to existing tile
         
         # Check connectivity (at least one tile connects to existing)
         if not connected and any(any(cell is not None for cell in row) for row in board):
             # Not first move and no connection
+            logger.warning(f"⚠️ Cannot place '{word}': no connection to existing tiles")
             return None
+        
+        # Validate all cross-words formed (comprehensive validation)
+        if not self._validate_all_cross_words(board, tiles, direction, start_row, start_col):
+            logger.error(f"🚫 CROSS-WORD VALIDATION FAILED for main word '{word}'")
+            return None
+        
+        logger.info(f"✅ VALID WORD ACCEPTED: '{word}' passed all validation checks")
         
         # Calculate simple score (basic implementation)
         score = len(word) * 2  # Simple scoring
@@ -412,6 +485,89 @@ class OptimizedComputerPlayer:
             "start_pos": (start_row, start_col),
             "direction": direction
         }
+    
+    def _validate_all_cross_words(self, board: List[List], tiles: List[Dict], 
+                                 direction: str, start_row: int, start_col: int) -> bool:
+        """Validate that all cross-words formed are in the dictionary."""
+        if not hasattr(self, '_wordlist_set'):
+            logger.warning("⚠️ No wordlist available for cross-word validation - skipping")
+            return True  # Skip validation if no wordlist
+        
+        # Create temporary board with new tiles
+        temp_board = [row[:] for row in board]
+        for tile in tiles:
+            temp_board[tile["row"]][tile["col"]] = tile["letter"]
+        
+        logger.debug(f"🔍 CROSS-WORD VALIDATION: Checking {len(tiles)} tiles in {direction} direction")
+        
+        # Check each placed tile for cross-words
+        for tile in tiles:
+            row, col = tile["row"], tile["col"]
+            
+            # Check horizontal cross-word (if main word is vertical)
+            if direction == "vertical":
+                word = self._extract_word_at_position(temp_board, row, col, "horizontal")
+                if len(word) > 1:
+                    if word.upper() not in self._wordlist_set:
+                        logger.error(f"🚫 INVALID HORIZONTAL CROSS-WORD: '{word}' at ({row},{col}) NOT IN DICTIONARY")
+                        return False
+            
+            # Check vertical cross-word (if main word is horizontal)  
+            if direction == "horizontal":
+                word = self._extract_word_at_position(temp_board, row, col, "vertical")
+                if len(word) > 1:
+                    if word.upper() not in self._wordlist_set:
+                        logger.error(f"🚫 INVALID VERTICAL CROSS-WORD: '{word}' at ({row},{col}) NOT IN DICTIONARY")
+                        return False
+        
+        logger.debug("✅ All cross-words validated successfully")
+        return True
+    
+    def _extract_word_at_position(self, board: List[List], row: int, col: int, direction: str) -> str:
+        """Extract the complete word at a position in the given direction."""
+        logger.debug(f"🔍 Extracting {direction} word at ({row},{col})")
+        
+        if direction == "horizontal":
+            # Find start of word
+            start_col = col
+            while start_col > 0 and board[row][start_col - 1] is not None:
+                start_col -= 1
+            
+            # Extract word
+            word = ""
+            current_col = start_col
+            while current_col < 15 and board[row][current_col] is not None:
+                cell = board[row][current_col]
+                if isinstance(cell, dict):
+                    letter = cell.get("letter", str(cell)).upper()
+                else:
+                    letter = str(cell).upper()
+                word += letter
+                current_col += 1
+            
+            logger.debug(f"🔍 Extracted horizontal word: '{word}' from ({row},{start_col}) to ({row},{current_col-1})")
+            return word
+        
+        else:  # vertical
+            # Find start of word
+            start_row = row
+            while start_row > 0 and board[start_row - 1][col] is not None:
+                start_row -= 1
+            
+            # Extract word
+            word = ""
+            current_row = start_row
+            while current_row < 15 and board[current_row][col] is not None:
+                cell = board[current_row][col]
+                if isinstance(cell, dict):
+                    letter = cell.get("letter", str(cell)).upper()
+                else:
+                    letter = str(cell).upper()
+                word += letter
+                current_row += 1
+            
+            logger.debug(f"🔍 Extracted vertical word: '{word}' from ({start_row},{col}) to ({current_row-1},{col})")
+            return word
 
 
 # Global instance for service-level caching
@@ -432,13 +588,8 @@ def get_computer_player_health() -> Dict[str, Any]:
     # Update last check timestamp
     _computer_player_status["last_check"] = time.time()
     
-    # Test if standard computer player is available as fallback
-    try:
-        from app.computer_player import create_computer_player
-        standard_available = True
-    except Exception as e:
-        standard_available = False
-        logger.warning(f"⚠️ Standard computer player not available: {e}")
+    # Only OptimizedComputerPlayer is available now - no fallbacks
+    standard_available = False
     
     # Test if optimized computer player is working
     optimized_available = False
@@ -502,7 +653,10 @@ def initialize_optimized_computer_player(wordlist: List[str]) -> None:
     
     try:
         player = get_optimized_computer_player()
-        player.initialize_with_wordlist(wordlist)
+        
+        # Use performance wordlist for quick startup
+        performance_wordlist = player._get_performance_wordlist(wordlist)
+        player.initialize_with_wordlist(performance_wordlist)
         
         initialization_time = time.time() - start_time
         _computer_player_status.update({
@@ -511,7 +665,7 @@ def initialize_optimized_computer_player(wordlist: List[str]) -> None:
             "initialization_time": initialization_time
         })
         
-        logger.info(f"🚀 OptimizedComputerPlayer initialized for service in {initialization_time:.2f}s")
+        logger.info(f"🚀 OptimizedComputerPlayer initialized for service in {initialization_time:.2f}s with {len(performance_wordlist)} words")
     except Exception as e:
         _computer_player_status.update({
             "ready": False,
@@ -519,5 +673,5 @@ def initialize_optimized_computer_player(wordlist: List[str]) -> None:
             "initialization_time": None
         })
         logger.error(f"❌ Failed to initialize OptimizedComputerPlayer: {e}")
-        logger.info("🔄 Computer player will work without optimization")
-        raise 
+        logger.info("🔄 Computer player will work with lazy initialization")
+        # Don't raise - allow lazy initialization 

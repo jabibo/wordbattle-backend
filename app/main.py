@@ -282,15 +282,45 @@ async def initialize_words_background():
             
             if result["success"]:
                 logger.info(f"Background wordlist loading completed: {result['words_loaded']} words loaded")
-                # Schedule the remaining words
-                asyncio.create_task(schedule_background_word_import())
+                
+                # Initialize computer player with the loaded wordlist
+                await initialize_computer_player_background()
             else:
                 logger.error(f"Background wordlist loading failed: {result.get('error', 'Unknown error')}")
         else:
             logger.info("Database already has words - skipping initial load")
+            # Initialize computer player even if words are already loaded
+            await initialize_computer_player_background()
             
     except Exception as e:
         logger.error(f"Error in background word initialization: {e}")
+
+async def initialize_computer_player_background():
+    """Initialize computer player in the background."""
+    try:
+        logger.info("🚀 Starting computer player initialization...")
+        
+        from app.utils.wordlist_utils import load_wordlist
+        from app.optimized_computer_player import initialize_optimized_computer_player
+        
+        # Load wordlist for computer player initialization
+        wordlist = load_wordlist("de")  # Start with German
+        if not wordlist:
+            logger.warning("⚠️ No German wordlist available, trying English...")
+            wordlist = load_wordlist("en")
+        
+        if wordlist:
+            logger.info(f"🎯 Initializing computer player with {len(wordlist)} words...")
+            # Initialize in a thread to avoid blocking
+            import asyncio
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, initialize_optimized_computer_player, list(wordlist))
+            logger.info("✅ Computer player initialization completed successfully!")
+        else:
+            logger.error("❌ No wordlist available for computer player initialization")
+            
+    except Exception as e:
+        logger.error(f"❌ Computer player initialization failed: {e}")
 
 # Simple rate limiting middleware
 @app.middleware("http")

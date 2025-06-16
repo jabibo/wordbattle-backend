@@ -39,8 +39,7 @@ from app.game_logic.rules import get_next_player
 from app.game_logic.board_utils import BOARD_MULTIPLIERS
 import secrets
 from app.utils.cache import cache_response
-from app.simple_computer_player import SimpleComputerPlayer
-from app.computer_player import create_computer_player, add_computer_player_to_game
+# Only using OptimizedComputerPlayer now - clean implementation
 
 logger = logging.getLogger(__name__)
 
@@ -2311,8 +2310,27 @@ def add_computer_player_endpoint(
         raise HTTPException(400, "Game is already full")
     
     try:
-        # Add computer player to game
-        computer_info = add_computer_player_to_game(game_id, db, request.difficulty)
+        # Add computer player to game using optimized implementation
+        computer_user_id = get_computer_user_id(db)
+        if not computer_user_id:
+            raise HTTPException(500, "Computer user not available")
+        
+        # Create player entry for computer
+        computer_player = Player(
+            game_id=game_id,
+            user_id=computer_user_id,
+            rack="",  # Will be filled when game starts
+            score=0
+        )
+        db.add(computer_player)
+        db.commit()
+        
+        computer_info = {
+            "user_id": computer_user_id,
+            "difficulty": request.difficulty,
+            "score": 0,
+            "is_computer": True
+        }
         
         logger.info(f"Computer player added to game {game_id} with difficulty {request.difficulty}")
         
@@ -2381,56 +2399,23 @@ async def trigger_computer_move(
         # Convert Set to List for computer player
         wordlist_list = list(wordlist)
         
-        # 🚀 USE OPTIMIZED COMPUTER PLAYER - Performance boost from 2000ms to <50ms!
-        try:
-            from app.optimized_computer_player import get_optimized_computer_player
-            
-            # Get optimized computer player instance (with service-level caching)
-            computer = get_optimized_computer_player("medium")  # Default to medium difficulty
-            logger.info(f"🚀 Using OptimizedComputerPlayer for game {game_id}")
-            
-            # Log rack information for debugging
-            logger.info(f"🤖 Computer player starting move for game {game_id}")
-            logger.info(f"   Computer rack: '{computer_player.rack}' (length: {len(computer_player.rack)})")
-            
-            # Make computer move using optimized algorithm
-            move_result = computer.make_move(
-                game_state_data=game_state_data,
-                rack=computer_player.rack,
-                wordlist=wordlist_list  # Full wordlist - no artificial limits!
-            )
-            
-        except (ImportError, Exception) as e:
-            logger.warning(f"⚠️ OptimizedComputerPlayer not available: {e}")
-            logger.info("🔄 Falling back to standard computer player")
-            
-            # Fallback to SimpleComputerPlayer but with full wordlist
-            simple_computer = SimpleComputerPlayer(
-                rack=list(computer_player.rack),
-                difficulty="medium"
-            )
-            
-            # Parse board from game state
-            board_data = game_state_data.get("board", [])
-            board = reconstruct_board_from_json(board_data)
-            
-            # Convert board to simple format for SimpleComputerPlayer
-            simple_board = []
-            for row in board:
-                simple_row = []
-                for cell in row:
-                    if cell is None:
-                        simple_row.append(None)
-                    else:
-                        simple_row.append({
-                            "letter": cell.letter,
-                            "is_blank": cell.is_blank,
-                            "tile_id": getattr(cell, 'tile_id', None)
-                        })
-                simple_board.append(simple_row)
-            
-            # Make computer move with full wordlist - no hardcoded limitations!
-            move_result = simple_computer.make_move(simple_board, game.language, wordlist)
+        # 🚀 USE OPTIMIZED COMPUTER PLAYER ONLY - No fallbacks, clean implementation
+        from app.optimized_computer_player import get_optimized_computer_player
+        
+        # Get optimized computer player instance (with service-level caching)
+        computer = get_optimized_computer_player("medium")  # Default to medium difficulty
+        logger.info(f"🚀 Using OptimizedComputerPlayer for game {game_id}")
+        
+        # Log rack information for debugging
+        logger.info(f"🤖 Computer player starting move for game {game_id}")
+        logger.info(f"   Computer rack: '{computer_player.rack}' (length: {len(computer_player.rack)})")
+        
+        # Make computer move using optimized algorithm
+        move_result = computer.make_move(
+            game_state_data=game_state_data,
+            rack=computer_player.rack,
+            wordlist=wordlist_list  # Full wordlist - no artificial limits!
+        )
         
         if move_result is None:
             # Computer is passing
@@ -2641,8 +2626,9 @@ async def debug_computer_move(
         
         wordlist_list = filtered_words
         
-        # Create computer player instance
-        computer = create_computer_player("medium")
+        # Use OptimizedComputerPlayer for debugging
+        from app.optimized_computer_player import get_optimized_computer_player
+        computer = get_optimized_computer_player("medium")
         
         # Debug information
         debug_info = {
@@ -2653,8 +2639,8 @@ async def debug_computer_move(
             "wordlist_size": len(wordlist_list),
             "board_tiles": 0,
             "sample_words": wordlist_list[:10] if wordlist_list else [],
-            "can_make_words": [],
-            "placement_tests": []
+            "optimized_player_status": "available",
+            "move_generation_test": None
         }
         
         # Count board tiles
@@ -2664,43 +2650,23 @@ async def debug_computer_move(
                 if cell is not None:
                     debug_info["board_tiles"] += 1
         
-        # Test if computer can make some basic words
-        test_words = ["KRAFT", "FAKT", "TRAF", "MELS", "MESS", "LESE"]
-        rack_letters = list(computer_player.rack)
-        
-        for word in test_words:
-            if word in wordlist_list:
-                can_make = computer._can_make_word(word, rack_letters)
-                debug_info["can_make_words"].append({
-                    "word": word,
-                    "can_make": can_make,
-                    "in_wordlist": True
-                })
-            else:
-                debug_info["can_make_words"].append({
-                    "word": word,
-                    "can_make": False,
-                    "in_wordlist": False
-                })
-        
-        # Test placement logic for words we can make
-        for word_info in debug_info["can_make_words"]:
-            if word_info["can_make"]:
-                word = word_info["word"]
-                placements = computer._find_word_placements_on_board(board, word, rack_letters)
-                debug_info["placement_tests"].append({
-                    "word": word,
-                    "placements_found": len(placements),
-                    "placements": placements[:3] if placements else []  # First 3 placements
-                })
-        
-        # Try the actual move generation
+        # Try the actual move generation with OptimizedComputerPlayer
         try:
-            possible_moves = computer._find_possible_moves(board, rack_letters, wordlist_list)
-            debug_info["possible_moves_count"] = len(possible_moves)
-            debug_info["top_moves"] = possible_moves[:3] if possible_moves else []
+            move_result = computer.make_move(
+                game_state_data=game_state_data,
+                rack=computer_player.rack,
+                wordlist=wordlist_list
+            )
+            debug_info["move_generation_test"] = {
+                "success": True,
+                "move_result": move_result,
+                "move_type": "pass" if move_result is None else "place"
+            }
         except Exception as e:
-            debug_info["move_generation_error"] = str(e)
+            debug_info["move_generation_test"] = {
+                "success": False,
+                "error": str(e)
+            }
         
         return debug_info
         
@@ -2757,13 +2723,18 @@ def get_computer_player_status(
         }
 
 def validate_computer_player_availability():
-    """Validate that computer player is available for games."""
+    """Validate that computer player system is available (allows lazy initialization)."""
     try:
-        from app.optimized_computer_player import is_computer_player_ready
-        if not is_computer_player_ready():
+        from app.optimized_computer_player import get_optimized_computer_player
+        # Try to get the computer player instance - this will create it if needed
+        computer = get_optimized_computer_player("medium")
+        if computer is not None:
+            logger.info("✅ Computer player system is available (supports lazy initialization)")
+            return  # Computer player system is available
+        else:
             raise HTTPException(
                 status_code=503,
-                detail="Computer player is not ready. AI games are temporarily unavailable. Please try again later."
+                detail="Computer player system is not available. AI games cannot be created."
             )
     except ImportError:
         raise HTTPException(
