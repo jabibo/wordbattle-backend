@@ -172,6 +172,9 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
     # Get recent moves from game data (already processed by get_recent_moves_data)
     recent_moves = game_data.get("recent_moves", [])
     
+    # Get last move summary from game data (contract requirement)
+    last_move = game_data.get("last_move")
+    
     return {
         "id": game_data.get("id"),
         "name": game_name,  # Contract requires this
@@ -189,7 +192,8 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
             "allow_challenges": True,
             "difficulty": "normal"
         },
-        "recent_moves": recent_moves
+        "recent_moves": recent_moves,
+        "last_move": last_move
     }
 
 @router.post("/create")

@@ -64,6 +64,7 @@ def get_player_data(player: Player, current_user_id: int, game_status: GameStatu
 def get_last_move_info(game_id: str, current_user_id: int, db: Session) -> Optional[Dict[str, Any]]:
     """
     Get formatted information about the last move in a game.
+    Legacy function for backward compatibility.
     
     Args:
         game_id: Game ID
@@ -109,6 +110,85 @@ def get_last_move_info(game_id: str, current_user_id: int, db: Session) -> Optio
         "description": move_description,
         "was_current_user": last_move_player.id == current_user_id
     }
+
+def get_last_move_summary(game_id: str, db: Session) -> Optional[Dict[str, Any]]:
+    """
+    Get last move summary matching the frontend contract requirements.
+    
+    Returns simplified last move information for easy frontend display:
+    - player_username: Name of player who made the move
+    - move_type: PLACE, PASS, or EXCHANGE
+    - word: Word formed (for PLACE moves) or null
+    - points_earned: Points earned from the move
+    - timestamp: ISO timestamp of the move
+    
+    Args:
+        game_id: Game ID
+        db: Database session
+        
+    Returns:
+        Last move summary or None if no moves made
+    """
+    last_move = db.query(Move).filter(
+        Move.game_id == game_id
+    ).order_by(Move.timestamp.desc()).first()
+    
+    if not last_move:
+        return None
+    
+    last_move_player = db.query(User).filter(User.id == last_move.player_id).first()
+    if not last_move_player:
+        return None
+    
+    try:
+        move_data = json.loads(last_move.move_data) if last_move.move_data else {}
+        move_type = move_data.get("type", "unknown").upper()
+        
+        # Handle different move types according to contract
+        if move_type == "PLACE":
+            # For PLACE moves, try to get the word formed
+            words_formed = move_data.get("words", [])
+            if not words_formed:
+                # Check for singular "word" field (computer moves)
+                single_word = move_data.get("word", "")
+                if single_word:
+                    words_formed = [single_word]
+            
+            # Take the first/primary word for display
+            word = words_formed[0] if words_formed else None
+            points_earned = move_data.get("points", 0)
+            
+            # Handle different point field names (some moves use "score")
+            if points_earned == 0:
+                points_earned = move_data.get("score", 0)
+                
+        elif move_type in ["PASS", "EXCHANGE"]:
+            # For PASS and EXCHANGE moves
+            word = None
+            points_earned = 0
+        else:
+            # Unknown move type - treat as PLACE
+            word = None
+            points_earned = move_data.get("points", move_data.get("score", 0))
+        
+        return {
+            "player_username": last_move_player.username,
+            "move_type": move_type,
+            "word": word,
+            "points_earned": points_earned,
+            "timestamp": last_move.timestamp.isoformat()
+        }
+        
+    except (json.JSONDecodeError, KeyError, AttributeError) as e:
+        logger.error(f"Error parsing last move data for game {game_id}: {e}")
+        # Return basic info even if move data is corrupted
+        return {
+            "player_username": last_move_player.username,
+            "move_type": "UNKNOWN",
+            "word": None,
+            "points_earned": 0,
+            "timestamp": last_move.timestamp.isoformat()
+        }
 
 def get_next_player_info(game: Game, current_user_id: int, db: Session) -> Optional[Dict[str, Any]]:
     """
@@ -307,7 +387,18 @@ def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> Li
                 # Extract additional move information for full contract compliance
                 turn_number = move_data.get("turn_number", 0)
                 points_earned = move_data.get("points", 0)
+                
+                # Handle different point field names (some moves use "score")
+                if points_earned == 0:
+                    points_earned = move_data.get("score", 0)
+                
+                # Handle both "words" (human moves) and "word" (computer moves) fields
                 words_formed = move_data.get("words", [])
+                if not words_formed:
+                    # Check for singular "word" field (computer moves)
+                    single_word = move_data.get("word", "")
+                    if single_word:
+                        words_formed = [single_word]
                 
                 # Ensure words_formed is a list of strings
                 if isinstance(words_formed, str):
@@ -315,15 +406,43 @@ def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> Li
                 elif not isinstance(words_formed, list):
                     words_formed = []
                 
+                # Calculate time ago for user-friendly display
+                time_ago = datetime.now(timezone.utc) - move.timestamp
+                
+                # Format time ago in a human-readable way
+                if time_ago.days > 0:
+                    time_ago_str = f"{time_ago.days} day{'s' if time_ago.days != 1 else ''} ago"
+                elif time_ago.seconds > 3600:
+                    hours = time_ago.seconds // 3600
+                    time_ago_str = f"{hours} hour{'s' if hours != 1 else ''} ago"
+                elif time_ago.seconds > 60:
+                    minutes = time_ago.seconds // 60
+                    time_ago_str = f"{minutes} minute{'s' if minutes != 1 else ''} ago"
+                else:
+                    time_ago_str = "Just now"
+                
+                # Enhanced move info with comprehensive details for frontend
                 move_info = {
+                    # Player information (WHO)
                     "player_id": str(move.player_id),
                     "player_username": player.username,
+                    "is_computer": is_computer_user_id(move.player_id, db),
+                    
+                    # Timing information (WHEN)
                     "timestamp": move.timestamp.isoformat(),
+                    "timestamp_unix": int(move.timestamp.timestamp()),
+                    "time_ago": time_ago_str,
                     "turn_number": turn_number,
+                    
+                    # Move details (WHAT)
                     "move_type": move_type,
-                    "positions": positions,
+                    "words_formed": words_formed,
                     "points_earned": points_earned,
-                    "words_formed": words_formed
+                    "positions": positions,
+                    
+                    # Additional context for frontend
+                    "move_summary": _generate_move_summary(words_formed, points_earned, move_type),
+                    "tile_count": len(positions)
                 }
                 moves_data.append(move_info)
                 seen_players.add(move.player_id)
@@ -381,6 +500,9 @@ def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dic
     # Get recent moves for highlighting
     recent_moves = get_recent_moves_data(game.id, current_user_id, db)
     
+    # Get last move summary for frontend contract compliance
+    last_move_summary = get_last_move_summary(game.id, db)
+    
     return {
         "id": game.id,
         "status": game.status.value,
@@ -396,7 +518,8 @@ def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dic
         "players": player_info,
         "turn_number": state_data.get("turn_number", 0),
         "consecutive_passes": state_data.get("consecutive_passes", 0),
-        "recent_moves": recent_moves
+        "recent_moves": recent_moves,
+        "last_move": last_move_summary
     }
 
 def sort_games_by_priority(games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -454,4 +577,31 @@ def group_games_by_status(games: List[Dict[str, Any]]) -> Dict[str, Any]:
         "pending_games": pending_games,
         "completed_games": completed_games,
         "total_games": len(games)
-    } 
+    }
+
+def _generate_move_summary(words_formed: List[str], points_earned: int, move_type: str) -> str:
+    """
+    Generate a human-readable summary of a move for frontend display.
+    
+    Args:
+        words_formed: List of words formed in the move
+        points_earned: Points earned from the move
+        move_type: Type of move (PLACE, PASS, EXCHANGE)
+        
+    Returns:
+        Human-readable move summary
+    """
+    if move_type == "PLACE" and words_formed:
+        if len(words_formed) == 1:
+            return f"Played '{words_formed[0]}' for {points_earned} points"
+        else:
+            words_str = "', '".join(words_formed)
+            return f"Played '{words_str}' for {points_earned} points"
+    elif move_type == "PLACE":
+        return f"Placed tiles for {points_earned} points"
+    elif move_type == "PASS":
+        return "Passed turn"
+    elif move_type == "EXCHANGE":
+        return "Exchanged letters"
+    else:
+        return f"Made a {move_type.lower()} move"
