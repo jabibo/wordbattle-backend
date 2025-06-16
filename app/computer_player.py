@@ -162,25 +162,46 @@ class ComputerPlayer:
         rack_set = set(rack_letters)
         quick_filtered = []
         
-        # Only check first 2000 words to avoid expensive iteration
-        check_limit = min(2000, len(wordlist))
-        for i, word in enumerate(wordlist[:check_limit]):
-            if i >= max_words_to_check:
-                break
-                
-            # Quick length filter
-            if not (2 <= len(word) <= 6):
-                continue
-                
-            # Quick letter filter - word must use letters we have
-            word_upper = word.upper()
-            word_letters = set(word_upper)
+        # EFFICIENT FIX: Use a curated list of common valid words for better performance
+        if language.lower() == "de":
+            # Common German words that are likely to be valid
+            common_words = [
+                "ICH", "DU", "ER", "SIE", "WIR", "IHR", "DAS", "DIE", "DER", "UND", "IST", "BIN", "HAT", 
+                "MIT", "AUS", "ZU", "VON", "FÜR", "AUF", "AN", "UM", "SO", "WAS", "WER", "WIE", "WO", 
+                "DA", "JA", "NEIN", "GUT", "NEU", "ALT", "GROSS", "KLEIN", "LANG", "KURZ", "HOCH", "TIEF",
+                "HAUS", "AUTO", "BUCH", "HAND", "KOPF", "AUGE", "OHR", "MUND", "TAG", "NACHT", "JAHR", 
+                "ZEIT", "WELT", "LAND", "STADT", "DORF", "MANN", "FRAU", "KIND", "BABY", "HUND", "KATZE",
+                "BAUM", "BLUME", "KRAFT", "FEST", "SPIEL", "ARBEIT", "LEBEN", "LIEBE", "FREUND", "SCHULE",
+                "WASSER", "FEUER", "LUFT", "ERDE"
+            ]
             
-            # Skip if word needs letters we don't have (quick check)
-            if not word_letters.issubset(rack_set | {'?', '*'}):  # Allow blanks
-                continue
+            # Filter common words by what we can make
+            for word in common_words:
+                word_upper = word.upper()
+                word_letters = set(word_upper)
+                if word_letters.issubset(rack_set | {'?', '*'}) and self._can_make_word(word_upper, rack_letters):
+                    quick_filtered.append(word_upper)
+        
+        # If we didn't find enough common words, check some from the full wordlist
+        if len(quick_filtered) < 5:
+            check_limit = min(1000, len(wordlist))  # Reduced from 2000
+            for i, word in enumerate(wordlist[:check_limit]):
+                if i >= max_words_to_check or len(quick_filtered) >= 10:  # Stop early
+                    break
+                    
+                # Quick length filter
+                if not (2 <= len(word) <= 6):
+                    continue
+                    
+                # Quick letter filter - word must use letters we have
+                word_upper = word.upper()
+                word_letters = set(word_upper)
                 
-            quick_filtered.append(word_upper)
+                # Skip if word needs letters we don't have (quick check)
+                if not word_letters.issubset(rack_set | {'?', '*'}):  # Allow blanks
+                    continue
+                
+                quick_filtered.append(word_upper)
         
         logger.info(f"🤖 Computer player: Quick filtered to {len(quick_filtered)} words")
         
@@ -344,7 +365,7 @@ class ComputerPlayer:
     
     def _try_placement(self, board: List[List], word: str, start_row: int, start_col: int, 
                       direction: str, rack_letters: List[str], language: str = "en", wordlist: List[str] = None) -> Optional[Dict[str, Any]]:
-        """Try to place a word at a specific position and direction using simplified validation."""
+        """Try to place a word at a specific position and direction with EFFICIENT validation."""
         tiles = []
         rack_copy = rack_letters.copy()
         
@@ -377,14 +398,38 @@ class ComputerPlayer:
         if not tiles:
             return None
         
-        # PERFORMANCE OPTIMIZATION: Skip expensive full validation for computer player
-        # Just do basic checks and assume the word is valid since it came from the dictionary
-        
         # Basic connectivity check
         if not self._is_connected_to_existing_simple(board, tiles):
             return None
         
-        # Simple scoring calculation (much faster than GameState)
+        # EFFICIENT FIX: Use actual GameState validation (fast and correct)
+        try:
+            from app.game_logic.game_state import GameState
+            
+            # Create minimal GameState for validation
+            game_state = GameState(language=language)
+            game_state.board = [row[:] for row in board]  # Copy board
+            
+            # Convert tiles to proper format for validation
+            word_positions = [(pos, tile) for pos, tile in tiles]
+            
+            # Use the actual game validation system (already optimized)
+            if isinstance(wordlist, list):
+                dictionary = set(wordlist)  # Convert to set for fast lookup
+            else:
+                dictionary = wordlist or set()
+            
+            is_valid, error_msg, words_formed = game_state.validate_word_placement(word_positions, dictionary)
+            
+            if not is_valid:
+                logger.info(f"🤖 Computer AI: REJECTED '{word}' - {error_msg}")
+                return None
+            
+        except Exception as e:
+            logger.warning(f"🤖 Computer AI: Validation error for '{word}': {e}")
+            return None
+        
+        # Simple scoring calculation
         points = self._calculate_simple_score(word, tiles, board, language)
         
         logger.info(f"🤖 Computer AI: ACCEPTED '{word}' at ({start_row},{start_col}) {direction}: {points} points")
@@ -395,9 +440,10 @@ class ComputerPlayer:
             "points": points,
             "start_pos": (start_row, start_col),
             "direction": direction,
-            "words_formed": [word]  # Simplified - just the main word
+            "words_formed": words_formed if 'words_formed' in locals() else [word]
         }
     
+
     def _is_connected_to_existing_simple(self, board: List[List], tiles: List[Tuple]) -> bool:
         """Simple connectivity check without expensive validation."""
         # Check if board is empty (first move)
