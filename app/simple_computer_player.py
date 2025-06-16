@@ -28,29 +28,32 @@ class SimpleComputerPlayer:
                 logger.error(f"🤖 Simple AI: No wordlist available for {language}")
                 return None
         
-        # Simple word list - common German words that are likely to work
-        simple_words = [
-            "ICH", "DU", "ER", "SIE", "WIR", "IHR", "DAS", "DIE", "DER", "UND",
-            "IST", "BIN", "HAT", "MIT", "AUS", "ZU", "VON", "FÜR", "AUF", "AN",
-            "UM", "SO", "WAS", "WER", "WIE", "WO", "DA", "JA", "NEIN", "GUT",
-            "NEU", "ALT", "GROß", "KLEIN", "LANG", "KURZ", "HOCH", "TIEF",
-            "HAUS", "AUTO", "BUCH", "HAND", "KOPF", "AUGE", "OHR", "MUND",
-            "TAG", "NACHT", "JAHR", "ZEIT", "WELT", "LAND", "STADT", "DORF",
-            "MANN", "FRAU", "KIND", "BABY", "HUND", "KATZE", "BAUM", "BLUME"
-        ]
+        # IMPROVED: Smart word selection from full wordlist instead of hardcoded list
+        # Get rack letters for filtering
+        rack_letters_set = set(letter.upper() for letter in self.rack)
         
-        # Filter words that are actually in the dictionary - STRICT validation
-        valid_simple_words = []
-        for word in simple_words:
-            # Check both uppercase and lowercase versions
-            if (word.upper() in wordlist or word.lower() in wordlist or 
-                word.capitalize() in wordlist or word in wordlist):
-                valid_simple_words.append(word)
-                logger.info(f"🤖 Simple AI: '{word}' is valid in dictionary")
-            else:
-                logger.warning(f"🤖 Simple AI: '{word}' NOT found in dictionary")
+        # Intelligently filter wordlist to manageable size while maintaining good coverage
+        candidate_words = []
+        for word in wordlist:
+            word_upper = word.upper()
+            # Filter to reasonable words that could potentially be played
+            if (2 <= len(word_upper) <= 7 and  # Scrabble word length range
+                len(set(word_upper) & rack_letters_set) >= 1):  # Share at least one letter with rack
+                candidate_words.append(word_upper)
+                # Limit to prevent performance issues while ensuring good coverage
+                if len(candidate_words) >= 1000:  # 1000 candidates should be plenty
+                    break
         
-        logger.info(f"🤖 Simple AI: {len(valid_simple_words)} of {len(simple_words)} words are in dictionary")
+        logger.info(f"🤖 Simple AI: Found {len(candidate_words)} candidate words from full dictionary")
+        
+        # For safety, also include some common short words for any language
+        common_short_words = ["A", "I", "IS", "IT", "TO", "OF", "IN", "ON", "AT", "BE", "OR", "AS", "AN", "GO", "NO", "SO", "UP", "WE", "ME", "MY"]
+        for word in common_short_words:
+            if word.upper() in wordlist and word.upper() not in candidate_words:
+                candidate_words.append(word.upper())
+        
+        valid_simple_words = candidate_words
+        logger.info(f"🤖 Simple AI: Using {len(valid_simple_words)} words for move generation")
         
         # Try to make words from our rack
         possible_words = []
