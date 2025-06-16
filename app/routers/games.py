@@ -26,7 +26,8 @@ from app.utils.game_helpers import (
     get_player_data, get_last_move_info, get_next_player_info, 
     format_time_since_activity, get_game_summary_data, 
     get_detailed_game_data, sort_games_by_priority, group_games_by_status,
-    is_computer_user_id as helper_is_computer_user_id
+    is_computer_user_id as helper_is_computer_user_id,
+    get_recent_moves_data
 )
 from app.config import FRONTEND_URL
 from app.websocket import manager
@@ -1330,6 +1331,9 @@ async def make_move(
     
     # Broadcast game update via WebSocket
     try:
+        # Get recent moves for all players except the one who just moved (for highlighting)
+        recent_moves = get_recent_moves_data(game_id, current_user.id, db)
+        
         broadcast_payload = {
             "type": "game_update",
             "game_id": game_id,
@@ -1347,7 +1351,8 @@ async def make_move(
             "completion_details": completion_details if is_game_over else None,
             "letter_bag_count": len(game_state.letter_bag),
             "turn_number": game_state.turn_number,
-            "consecutive_passes": game_state.consecutive_passes
+            "consecutive_passes": game_state.consecutive_passes,
+            "recent_moves": recent_moves
         }
         await manager.broadcast_to_game(game.id, broadcast_payload)
     except Exception as e: # pragma: no cover
@@ -1642,7 +1647,8 @@ async def pass_turn(
             "letter_bag_count": len(game_state.letter_bag),
             "turn_number": game_state.turn_number,
             "consecutive_passes": game_state.consecutive_passes,
-            "scores": {p.user_id: p.score for p in db_players} # Scores don't change on pass, but good to send
+            "scores": {p.user_id: p.score for p in db_players}, # Scores don't change on pass, but good to send
+            "recent_moves": get_recent_moves_data(game_id, current_user.id, db)
         }
         await manager.broadcast_to_game(game.id, broadcast_payload)
     except Exception as e: # pragma: no cover
@@ -1774,7 +1780,8 @@ async def exchange_letters(
             "letter_bag_count": len(game_state.letter_bag),
             "turn_number": game_state.turn_number,
             "consecutive_passes": game_state.consecutive_passes, # Will be 0
-            "scores": {p.user_id: p.score for p in db_players} # Scores don't change
+            "scores": {p.user_id: p.score for p in db_players}, # Scores don't change
+            "recent_moves": get_recent_moves_data(game_id, current_user.id, db)
         }
         await manager.broadcast_to_game(game_id, broadcast_payload)
     except Exception as e: # pragma: no cover
@@ -2480,7 +2487,8 @@ async def trigger_computer_move(
             "type": "computer_move",
             "move": move_result or {"type": "pass"},
             "next_player_id": game.current_player_id,
-            "game_state": game_state_data
+            "game_state": game_state_data,
+            "recent_moves": get_recent_moves_data(game_id, computer_player.user_id, db)
         })
         
         logger.info(f"Computer player made move in game {game_id}: {move_type}")

@@ -190,6 +190,9 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
     next_player_info = get_next_player_info(game, current_user_id, db)
     last_move_info = get_last_move_info(game.id, current_user_id, db)
     
+    # Get recent moves for highlighting (contract requirement)
+    recent_moves = get_recent_moves_data(game.id, current_user_id, db)
+    
     # Calculate time since last activity
     last_move = db.query(Move).filter(Move.game_id == game.id).order_by(Move.timestamp.desc()).first()
     last_activity = last_move.timestamp if last_move else game.created_at
@@ -211,7 +214,8 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
         "next_player": next_player_info,
         "last_move": last_move_info,
         "players": players_info,
-        "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0)
+        "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0),
+        "recent_moves": recent_moves
     }
 
 def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> List[Dict[str, Any]]:
