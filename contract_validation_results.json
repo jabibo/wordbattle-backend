@@ -1,33 +1,33 @@
 {
-  "timestamp": "2025-06-16T11:43:47.289443",
+  "timestamp": "2025-06-16T20:47:43.599807",
   "target_url": "https://wordbattle-backend-test-skhco4fxoq-ew.a.run.app",
-  "contracts_dir": "/Users/janbinge/git/wordbattle/wordbattle-contracts",
+  "contracts_dir": "./wordbattle-contracts",
   "results": {
     "endpoints": {
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.09465
+        "response_time": 0.094397
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.077493
+        "response_time": 0.08719
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.135215
+        "response_time": 0.143442
       },
       "/admin/contracts/info": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.081537
+        "response_time": 0.07526
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.077611
+        "response_time": 0.092638
       }
     },
     "contracts": {
@@ -36,19 +36,39 @@
         "endpoint": "/admin/contracts/info",
         "data": {
           "contract_validation": {
-            "enabled": false,
+            "enabled": true,
             "strict_mode": false,
-            "contracts_dir": "/Users/janbinge/git/wordbattle/wordbattle-contracts",
-            "contracts_dir_exists": false,
-            "validator_loaded": false,
-            "schema_files": [],
-            "total_schemas": 0,
-            "middleware_active": false,
-            "error": "Import error: No module named 'jsonschema'"
+            "contracts_dir": "/app/contracts",
+            "contracts_dir_exists": true,
+            "validator_loaded": true,
+            "schema_files": [
+              "all",
+              "auth",
+              "game",
+              "error",
+              "config"
+            ],
+            "total_schemas": 5,
+            "middleware_active": true,
+            "error": null,
+            "validator_details": {
+              "enabled": true,
+              "strict_mode": false,
+              "contracts_dir": "/app/contracts",
+              "loaded": true,
+              "schema_files": [
+                "all",
+                "auth",
+                "game",
+                "error",
+                "config"
+              ],
+              "total_schemas": 15
+            }
           },
-          "timestamp": "2025-06-16T09:43:48.035014+00:00"
+          "timestamp": "2025-06-16T18:47:44.325754+00:00"
         },
-        "validation_enabled": false
+        "validation_enabled": true
       }
     },
     "schema": {

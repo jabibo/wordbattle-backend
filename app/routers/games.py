@@ -204,28 +204,64 @@ def create_game_contract(
     t: TranslationHelper = Depends(get_translation_helper)
 ):
     """Create a new game (Contract-compliant endpoint)."""
-    # Convert contract request to internal format
-    internal_request = CreateGameRequest(
-        language=game_data.language,
-        max_players=game_data.max_players,
-        short_game=False,  # Contract doesn't have this concept
-        add_computer_player=game_data.add_computer_player,
-        computer_difficulty=game_data.computer_difficulty
-    )
     
-    # Create the game using internal implementation
-    game_response = create_game_impl(internal_request, db, current_user, t)
+    # If invitees are provided, handle invitation logic
+    if game_data.invitees and len(game_data.invitees) > 0:
+        # Validate invitees count
+        if len(game_data.invitees) >= game_data.max_players:
+            raise HTTPException(400, f"Too many invitees. Maximum {game_data.max_players - 1} invitees for {game_data.max_players} player game")
+        
+        # Create game with invitations using the existing invitation logic
+        invitation_request = CreateGameWithInvitationsRequest(
+            language=game_data.language,
+            max_players=game_data.max_players,
+            invitees=game_data.invitees,
+            base_url="https://wordbattle.app",  # Default production frontend URL
+            short_game=False,
+            add_computer_player=game_data.add_computer_player,
+            computer_difficulty=game_data.computer_difficulty
+        )
+        
+        # Use the existing invitation creation logic
+        invitation_response = create_game_with_invitations_impl(invitation_request, db, current_user)
+        
+        # Get the complete game state for contract compliance
+        game_id = invitation_response["id"]
+        game_state_response = get_game(game_id, db, current_user)
+        
+        # Format response to match contract
+        if game_state_response.get("success"):
+            game_state_response["name"] = game_data.name
+            # Add invitation info to response
+            game_state_response["invitations_created"] = invitation_response.get("invitations_created", 0)
+            game_state_response["invitations_sent"] = invitation_response.get("invitations_sent", 0)
+            game_state_response["failed_invitations"] = invitation_response.get("failed_invitations", [])
+        
+        return game_state_response
     
-    # Get the complete game state
-    game_id = game_response["id"]
-    game_state_response = get_game(game_id, db, current_user)
-    
-    # The get_game function already returns formatted data with success field
-    # Just update the name field to match the contract request
-    if game_state_response.get("success"):
-        game_state_response["name"] = game_data.name
-    
-    return game_state_response
+    else:
+        # No invitees - create regular game
+        internal_request = CreateGameRequest(
+            language=game_data.language,
+            max_players=game_data.max_players,
+            short_game=False,  # Contract doesn't have this concept
+            add_computer_player=game_data.add_computer_player,
+            computer_difficulty=game_data.computer_difficulty
+        )
+        
+        # Create the game using internal implementation
+        game_response = create_game_impl(internal_request, db, current_user, t)
+        
+        # Get the complete game state
+        game_id = game_response["id"]
+        game_state_response = get_game(game_id, db, current_user)
+        
+        # The get_game function already returns formatted data with success field
+        # Just update the name field to match the contract request
+        if game_state_response.get("success"):
+            game_state_response["name"] = game_data.name
+        
+        return game_state_response
 
 def create_game_impl(
     game_data: CreateGameRequest,
@@ -481,13 +517,12 @@ def get_available_games(
         }
     }
 
-@router.post("/create-with-invitations")
-def create_game_with_invitations(
+def create_game_with_invitations_impl(
     game_data: CreateGameWithInvitationsRequest,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_current_user)
+    db: Session,
+    current_user
 ):
-    """Create a new game with automatic invitations and email notifications."""
+    """Shared implementation for creating a game with invitations."""
     # Validate language
     if game_data.language not in ["en", "de", "es", "fr", "it"]:
         raise HTTPException(400, "Invalid language. Supported languages: en, de, es, fr, it")
@@ -655,6 +690,15 @@ def create_game_with_invitations(
         "failed_invitations": failed_invitations,
         "message": f"Game created with {len(invitations_created)} invitations. {invitations_sent} email(s) sent successfully."
     }
+
+@router.post("/create-with-invitations")
+def create_game_with_invitations(
+    game_data: CreateGameWithInvitationsRequest,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Create a new game with automatic invitations and email notifications."""
+    return create_game_with_invitations_impl(game_data, db, current_user)
 
 @router.post("/{game_id}/join")
 async def join_game(

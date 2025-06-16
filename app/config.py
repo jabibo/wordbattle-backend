@@ -143,8 +143,7 @@ print(f"  Strict Mode: {CONTRACT_VALIDATION_STRICT}")
 API_VERSION = "v1"
 API_PREFIX = f"/api/{API_VERSION}"
 
-# Feature Flags
-ENABLE_CONTRACT_VALIDATION = os.getenv("ENABLE_CONTRACT_VALIDATION", "1") == "1"
+# Feature Flags - Contract validation already configured above
 
 # Deployment Configuration
 def get_deployment_config() -> Dict[str, Any]:

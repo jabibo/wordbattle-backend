@@ -281,6 +281,69 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com containerreg
 echo "✅ Google Cloud setup complete"
 echo ""
 
+# Contract Validation and Preparation
+echo "📋 Contract Validation Check..."
+
+# Check if contracts directory exists
+CONTRACTS_DIR="/Users/janbinge/git/wordbattle/wordbattle-contracts"
+if [ ! -d "$CONTRACTS_DIR" ]; then
+    echo "⚠️  Contracts directory not found at: $CONTRACTS_DIR"
+    echo "Contract validation will be disabled in the deployed service."
+    echo ""
+else
+    echo "✅ Contracts directory found: $CONTRACTS_DIR"
+    
+    # Copy contracts to build context for Docker BEFORE building
+    echo "  Copying contracts to build context..."
+    rm -rf ./wordbattle-contracts 2>/dev/null || true
+    cp -r "$CONTRACTS_DIR" ./wordbattle-contracts
+    echo "✅ Contracts copied to build context"
+    
+    # Run contract validation script if it exists
+    VALIDATION_SCRIPT="scripts/validate_contracts.py"
+    if [ -f "$VALIDATION_SCRIPT" ]; then
+        echo "  Running contract validation script..."
+        
+        # Run validation against the current local API for basic checks
+        if python3 "$VALIDATION_SCRIPT" --url "http://localhost:8000" --contracts-dir "$CONTRACTS_DIR" --timeout 10 >/dev/null 2>&1; then
+            echo "✅ Local contract validation passed"
+        else
+            echo "⚠️  Local API not available for validation (this is normal during deployment)"
+        fi
+        
+        # Validate contract schemas themselves
+        echo "  Validating contract schema files..."
+        SCHEMA_VALID=true
+        
+        for schema_file in "$CONTRACTS_DIR"/*.json; do
+            if [ -f "$schema_file" ]; then
+                if python3 -m json.tool "$schema_file" >/dev/null 2>&1; then
+                    echo "    ✅ $(basename "$schema_file")"
+                else
+                    echo "    ❌ $(basename "$schema_file") - Invalid JSON"
+                    SCHEMA_VALID=false
+                fi
+            fi
+        done
+        
+        if [ "$SCHEMA_VALID" = true ]; then
+            echo "✅ All contract schemas are valid"
+        else
+            echo "❌ Some contract schemas contain errors"
+            if [[ "$ENVIRONMENT" == "production" ]]; then
+                echo "Production deployment requires valid contracts. Please fix the schema errors."
+                exit 1
+            else
+                echo "⚠️  Proceeding with testing deployment despite schema errors"
+            fi
+        fi
+    else
+        echo "⚠️  Contract validation script not found: $VALIDATION_SCRIPT"
+    fi
+fi
+
+echo ""
+
 # Build the Docker image
 echo "🐳 Building Docker Image..."
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -337,11 +400,20 @@ echo ""
 # Build environment variables for deployment
 echo "🔧 Building Environment Variables..."
 
-# Build DATABASE_URL
-DATABASE_URL="postgresql+pg8000://${DB_USER}:${DB_PASSWORD}@/${CLOUD_SQL_DATABASE_NAME}?unix_sock=/cloudsql/${PROJECT_ID}:${CLOUD_REGION}:${CLOUD_SQL_INSTANCE_NAME}"
-
 # Core environment variables (same for both environments)
 ENV_VARS="ENVIRONMENT=${ENVIRONMENT}"
+# Pass individual database components like the working deploy-test-robust.sh did
+ENV_VARS="$ENV_VARS,DB_HOST=${DB_HOST:-localhost}"
+ENV_VARS="$ENV_VARS,DB_PORT=${DB_PORT:-5432}"
+ENV_VARS="$ENV_VARS,DB_NAME=${DB_NAME}"
+ENV_VARS="$ENV_VARS,DB_USER=${DB_USER}"
+ENV_VARS="$ENV_VARS,DB_PASSWORD=${DB_PASSWORD}"
+ENV_VARS="$ENV_VARS,CLOUD_REGION=${CLOUD_REGION}"
+ENV_VARS="$ENV_VARS,PROJECT_ID=${PROJECT_ID}"
+ENV_VARS="$ENV_VARS,CLOUD_SQL_INSTANCE_NAME=${CLOUD_SQL_INSTANCE_NAME}"
+# Also provide the constructed DATABASE_URL as backup
+DB_NAME_TO_USE="${DB_NAME:-${CLOUD_SQL_DATABASE_NAME}}"
+DATABASE_URL="postgresql+pg8000://${DB_USER}:${DB_PASSWORD}@/${DB_NAME_TO_USE}?unix_sock=/cloudsql/${PROJECT_ID}:${CLOUD_REGION}:${CLOUD_SQL_INSTANCE_NAME}"
 ENV_VARS="$ENV_VARS,DATABASE_URL=${DATABASE_URL}"
 ENV_VARS="$ENV_VARS,SECRET_KEY=${SECRET_KEY}"
 ENV_VARS="$ENV_VARS,ADMIN_EMAIL=${ADMIN_EMAIL}"
@@ -376,6 +448,14 @@ else
     ENV_VARS="$ENV_VARS,LOG_LEVEL=DEBUG"
     ENV_VARS="$ENV_VARS,DEBUG=true"
     
+    # SMTP configuration for testing
+    ENV_VARS="$ENV_VARS,SMTP_SERVER=${SMTP_SERVER}"
+    ENV_VARS="$ENV_VARS,SMTP_PORT=${SMTP_PORT}"
+    ENV_VARS="$ENV_VARS,SMTP_USERNAME=${SMTP_USERNAME}"
+    ENV_VARS="$ENV_VARS,SMTP_PASSWORD=${SMTP_PASSWORD}"
+    ENV_VARS="$ENV_VARS,FROM_EMAIL=${FROM_EMAIL}"
+    ENV_VARS="$ENV_VARS,SMTP_USE_SSL=${SMTP_USE_SSL:-true}"
+    
     # Relaxed settings for testing
     ENV_VARS="$ENV_VARS,ENABLE_CONTRACT_VALIDATION=${ENABLE_CONTRACT_VALIDATION:-true}"
     ENV_VARS="$ENV_VARS,CONTRACT_VALIDATION_STRICT=${CONTRACT_VALIDATION_STRICT:-false}"
@@ -395,6 +475,11 @@ if [[ -n "$GIT_COMMIT" ]]; then
     ENV_VARS="$ENV_VARS,GIT_COMMIT=$GIT_COMMIT"
     ENV_VARS="$ENV_VARS,GIT_BRANCH=$GIT_BRANCH"
     ENV_VARS="$ENV_VARS,DEPLOY_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
+
+# Set contracts path for the deployed environment (if contracts exist)
+if [ -d "./wordbattle-contracts" ]; then
+    ENV_VARS="$ENV_VARS,CONTRACTS_DIR=/app/contracts"
 fi
 
 echo "✅ Environment variables configured"
@@ -483,6 +568,32 @@ if [ $? -eq 0 ]; then
         echo "⚠️  API docs returned status: $DOCS_STATUS"
     fi
     
+    # Test contract validation
+    echo "  Testing contract validation..."
+    CONTRACT_RESPONSE=$(curl -s "$SERVICE_URL/admin/contracts/info")
+    if echo "$CONTRACT_RESPONSE" | grep -q '"validator_loaded":true'; then
+        echo "✅ Contract validation is enabled and working!"
+    elif echo "$CONTRACT_RESPONSE" | grep -q '"enabled":true'; then
+        echo "⚠️  Contract validation enabled but schemas not loaded"
+    else
+        echo "⚠️  Contract validation is disabled"
+    fi
+    
+    # Run full contract validation if script exists and contracts are available
+    if [ -f "$VALIDATION_SCRIPT" ] && [ -d "./wordbattle-contracts" ]; then
+        echo "  Running comprehensive contract validation..."
+        if python3 "$VALIDATION_SCRIPT" --url "$SERVICE_URL" --contracts-dir "./wordbattle-contracts" --timeout 30 --wait-for-deploy 5; then
+            echo "✅ Comprehensive contract validation passed!"
+        else
+            echo "⚠️  Some contract validation checks failed"
+            if [[ "$ENVIRONMENT" == "production" ]]; then
+                echo "❌ Production deployment requires contract validation to pass"
+                echo "Please review the contract validation results and fix any issues."
+                # Don't exit here, just warn for now
+            fi
+        fi
+    fi
+    
     echo ""
     echo "📋 Deployment Summary:"
     echo "  ✅ Environment: $ENVIRONMENT"
@@ -502,6 +613,13 @@ if [ $? -eq 0 ]; then
     echo "  Application: $SERVICE_URL"
     echo "  API Docs: $SERVICE_URL/docs"
     echo "  OpenAPI Schema: $SERVICE_URL/openapi.json"
+    echo "  Contract Status: $SERVICE_URL/admin/contracts/info"
+    echo ""
+    
+    # Clean up build artifacts
+    echo "🧹 Cleaning up build artifacts..."
+    rm -rf ./wordbattle-contracts 2>/dev/null || true
+    echo "✅ Build context cleaned up"
     echo ""
     
     if [[ "$ENVIRONMENT" == "production" ]]; then

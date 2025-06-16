@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy contracts directory if it exists
+COPY wordbattle-contracts/ /app/contracts/
+
 # Copy the actual word files (not just test words)
 # The data directory should already be copied with COPY . . above
 # But let's ensure the word files are accessible
