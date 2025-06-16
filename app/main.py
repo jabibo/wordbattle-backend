@@ -344,11 +344,28 @@ async def health_check():
         logger.error(f"Database health check failed: {e}")
         db_status = "unhealthy"
     
+    # Check computer player status
+    computer_player_status = "unknown"
+    try:
+        from app.optimized_computer_player import is_computer_player_ready
+        if is_computer_player_ready():
+            computer_player_status = "ready"
+        else:
+            computer_player_status = "not_ready"
+    except ImportError:
+        computer_player_status = "unavailable"
+    except Exception as e:
+        logger.warning(f"Computer player health check failed: {e}")
+        computer_player_status = "error"
+    
+    overall_status = "healthy" if db_status == "healthy" and computer_player_status in ["ready", "not_ready"] else "unhealthy"
+    
     return {
-        "status": "healthy" if db_status == "healthy" else "unhealthy",
+        "status": overall_status,
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
         "database": db_status,
+        "computer_player": computer_player_status,
         "environment": os.getenv("ENVIRONMENT", "development")
     }
 

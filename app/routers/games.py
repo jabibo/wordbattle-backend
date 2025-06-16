@@ -289,10 +289,13 @@ def create_game_impl(
     db.add(game)
     db.add(player)
     
-    # Add computer player if requested
+    # Add computer player if requested (with health check)
     if game_data.add_computer_player:
         if game_data.computer_difficulty not in ["easy", "medium", "hard"]:
             raise HTTPException(400, "Invalid computer difficulty. Must be easy, medium, or hard")
+        
+        # Validate computer player is ready before creating the game
+        validate_computer_player_availability()
         
         # Get computer user (created during startup)
         computer_user = db.query(User).filter(User.username == "computer_player").first()
@@ -2275,6 +2278,9 @@ def add_computer_player_endpoint(
 ):
     """Add a computer player to the game."""
     
+    # Validate computer player is ready
+    validate_computer_player_availability()
+    
     # Validate difficulty
     if request.difficulty not in ["easy", "medium", "hard"]:
         raise HTTPException(400, "Invalid difficulty. Must be 'easy', 'medium', or 'hard'")
@@ -2330,6 +2336,9 @@ async def trigger_computer_move(
     current_user = Depends(get_current_user)
 ):
     """Trigger a computer player move (for testing or manual triggering)."""
+    
+    # Validate computer player is ready
+    validate_computer_player_availability()
     
     # Get game
     game = db.query(Game).filter(Game.id == game_id).first()
@@ -2672,3 +2681,73 @@ async def debug_computer_move(
         
     except Exception as e:
         return {"error": f"Debug failed: {str(e)}"}
+
+@router.get("/computer-player/health")
+def get_computer_player_health_endpoint(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Get the health status of the computer player system."""
+    try:
+        from app.optimized_computer_player import get_computer_player_health
+        health_status = get_computer_player_health()
+        
+        return {
+            "success": True,
+            "computer_player_health": health_status,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Computer player health check failed: {e}")
+        return {
+            "success": False,
+            "computer_player_health": {
+                "overall_ready": False,
+                "error": str(e)
+            },
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+@router.get("/computer-player/status")
+def get_computer_player_status(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Quick check if computer player is ready for games."""
+    try:
+        from app.optimized_computer_player import is_computer_player_ready
+        is_ready = is_computer_player_ready()
+        
+        return {
+            "ready": is_ready,
+            "message": "Computer player is ready for games" if is_ready else "Computer player is not ready - AI games unavailable",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Computer player status check failed: {e}")
+        return {
+            "ready": False,
+            "message": f"Computer player status check failed: {str(e)}",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+
+def validate_computer_player_availability():
+    """Validate that computer player is available for games."""
+    try:
+        from app.optimized_computer_player import is_computer_player_ready
+        if not is_computer_player_ready():
+            raise HTTPException(
+                status_code=503,
+                detail="Computer player is not ready. AI games are temporarily unavailable. Please try again later."
+            )
+    except ImportError:
+        raise HTTPException(
+            status_code=503,
+            detail="Computer player system is not available. AI games cannot be created."
+        )
+    except Exception as e:
+        logger.error(f"Computer player validation failed: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Computer player validation failed: {str(e)}"
+        )
