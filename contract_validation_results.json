@@ -1,43 +1,43 @@
 {
-  "timestamp": "2025-06-17T13:30:47.096187",
-  "target_url": "https://wordbattle-backend-test-skhco4fxoq-ew.a.run.app",
+  "timestamp": "2025-06-17T13:32:20.234248",
+  "target_url": "https://wordbattle-backend-prod-skhco4fxoq-ew.a.run.app",
   "contracts_dir": "./wordbattle-contracts",
   "results": {
     "endpoints": {
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.087548
+        "response_time": 0.092923
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.076135
+        "response_time": 0.076767
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.170903
+        "response_time": 0.134395
       },
       "/admin/contracts/info": {
         "available": true,
-        "status_code": 200,
-        "response_time": 0.072622
+        "status_code": 500,
+        "response_time": 0.076255
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.080676
+        "response_time": 0.077361
       }
     },
     "contracts": {
       "contract_info": {
         "available": true,
-        "endpoint": "/admin/contracts/info",
+        "endpoint": "/admin/contract-status",
         "data": {
           "contract_validation": {
             "enabled": true,
-            "strict_mode": false,
+            "strict_mode": true,
             "contracts_dir": "/app/contracts",
             "contracts_dir_exists": true,
             "validator_loaded": true,
@@ -48,25 +48,10 @@
               "error",
               "config"
             ],
-            "total_schemas": 5,
-            "middleware_active": true,
             "error": null,
-            "validator_details": {
-              "enabled": true,
-              "strict_mode": false,
-              "contracts_dir": "/app/contracts",
-              "loaded": true,
-              "schema_files": [
-                "all",
-                "auth",
-                "game",
-                "error",
-                "config"
-              ],
-              "total_schemas": 15
-            }
+            "schema_count": 5
           },
-          "timestamp": "2025-06-17T11:30:47.826315+00:00"
+          "timestamp": "2025-06-17T11:32:20.993537+00:00"
         },
         "validation_enabled": true
       }
