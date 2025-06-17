@@ -41,7 +41,14 @@ Error Handling and Validation
   - Tests are NEVER on the local machine
   - always use deploy-gcp-test.sh for deploying to GCP
   - use /Users/janbinge/git/wordbattle/wordbattle-contracts for communication with the backend-team
-  
+
+- Going to production
+  - always working on testing-environmnent
+  - checking all code into github
+  - merge code into main
+  - switch to main 
+  - deploy to production using the correct deploment script
+    
 - Database rules
   - never switch to sqlite - even not for testing
   - The GCP-Cloud-SQL-Instance is: wordbattle-db
