@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-06-17T13:50:32.502747",
+  "timestamp": "2025-06-17T13:56:58.744236",
   "target_url": "https://wordbattle-backend-prod-skhco4fxoq-ew.a.run.app",
   "contracts_dir": "./wordbattle-contracts",
   "results": {
@@ -7,37 +7,37 @@
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.092459
+        "response_time": 0.09126
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.08327
+        "response_time": 0.075701
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.116904
+        "response_time": 0.168695
       },
       "/admin/contracts/info": {
         "available": true,
-        "status_code": 500,
-        "response_time": 0.078752
+        "status_code": 200,
+        "response_time": 0.08298
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.075801
+        "response_time": 0.083654
       }
     },
     "contracts": {
       "contract_info": {
         "available": true,
-        "endpoint": "/admin/contract-status",
+        "endpoint": "/admin/contracts/info",
         "data": {
           "contract_validation": {
             "enabled": true,
-            "strict_mode": true,
+            "strict_mode": false,
             "contracts_dir": "/app/contracts",
             "contracts_dir_exists": true,
             "validator_loaded": true,
@@ -48,10 +48,25 @@
               "error",
               "config"
             ],
+            "total_schemas": 5,
+            "middleware_active": true,
             "error": null,
-            "schema_count": 5
+            "validator_details": {
+              "enabled": true,
+              "strict_mode": false,
+              "contracts_dir": "/app/contracts",
+              "loaded": true,
+              "schema_files": [
+                "all",
+                "auth",
+                "game",
+                "error",
+                "config"
+              ],
+              "total_schemas": 15
+            }
           },
-          "timestamp": "2025-06-17T11:50:33.278606+00:00"
+          "timestamp": "2025-06-17T11:56:59.484008+00:00"
         },
         "validation_enabled": true
       }
