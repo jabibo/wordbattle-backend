@@ -140,6 +140,7 @@ class ContractValidator:
         endpoint_mapping = {
             '/auth/register': ('auth', 'authResponse'),
             '/auth/verify': ('auth', 'authResponse'),
+            '/auth/verify-code': ('auth', 'authResponse'),
             '/auth/login': ('auth', 'authResponse'),
             '/auth/email-login': ('auth', 'authResponse'),
             '/auth/refresh': ('auth', 'authResponse'),
@@ -190,6 +191,7 @@ class ContractValidator:
         endpoint_mapping = {
             '/auth/register': ('auth', 'authRequest'),
             '/auth/verify': ('auth', 'authRequest'),
+            '/auth/verify-code': ('auth', 'authRequest'),
             '/auth/login': ('auth', 'authRequest'),
             '/auth/email-login': ('auth', 'authRequest'),
             '/games/create': ('games', 'createRequest'),
