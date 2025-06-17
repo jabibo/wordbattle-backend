@@ -138,12 +138,12 @@ class ContractValidator:
         """Get the response schema for an endpoint and status code."""
         # Map endpoints to schema locations
         endpoint_mapping = {
-            '/auth/register': ('auth', 'response'),
-            '/auth/verify': ('auth', 'response'),
-            '/auth/login': ('auth', 'response'),
-            '/auth/email-login': ('auth', 'response'),
-            '/auth/refresh': ('auth', 'response'),
-            '/auth/logout': ('auth', 'response'),
+            '/auth/register': ('auth', 'authResponse'),
+            '/auth/verify': ('auth', 'authResponse'),
+            '/auth/login': ('auth', 'authResponse'),
+            '/auth/email-login': ('auth', 'authResponse'),
+            '/auth/refresh': ('auth', 'authResponse'),
+            '/auth/logout': ('auth', 'authResponse'),
             '/games/my': ('games', 'listResponse'),
             '/games/available': ('games', 'listResponse'),
             '/games/create': ('games', 'stateResponse'),
@@ -188,10 +188,10 @@ class ContractValidator:
     def _get_request_schema(self, endpoint: str) -> Optional[Dict[str, Any]]:
         """Get the request schema for an endpoint."""
         endpoint_mapping = {
-            '/auth/register': ('auth', 'request'),
-            '/auth/verify': ('auth', 'request'),
-            '/auth/login': ('auth', 'request'),
-            '/auth/email-login': ('auth', 'request'),
+            '/auth/register': ('auth', 'authRequest'),
+            '/auth/verify': ('auth', 'authRequest'),
+            '/auth/login': ('auth', 'authRequest'),
+            '/auth/email-login': ('auth', 'authRequest'),
             '/games/create': ('games', 'createRequest'),
             '/games/join': ('games', 'joinRequest'),
             '/games/move': ('games', 'moveRequest'),
