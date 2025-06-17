@@ -149,16 +149,13 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "id": user.id,
+            "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
-            "email": user.email,
-            "language": user.language or "en",
-            "is_admin": user.is_admin,
-            "is_word_admin": user.is_word_admin
+            "email": user.email
         }
     }
     
-    # If remember_me is requested, create persistent token
+    # If remember_me is requested, create persistent token (store in DB but don't return in API response for schema compliance)
     if request.remember_me:
         persistent_token = create_persistent_token(data={"sub": user.email})
         persistent_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
@@ -166,9 +163,6 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         # Store persistent token in database
         user.persistent_token = persistent_token
         user.persistent_token_expires = persistent_token_expires
-        
-        response_data["persistent_token"] = persistent_token
-        response_data["persistent_expires_at"] = persistent_token_expires.isoformat()
     
     db.commit()
     
@@ -209,12 +203,9 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
-            "id": user.id,
+            "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
-            "email": user.email,
-            "language": user.language or "en",
-            "is_admin": user.is_admin,
-            "is_word_admin": user.is_word_admin
+            "email": user.email
         }
     }
 
@@ -285,7 +276,7 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
             "success": True,
             "message": "Email verified successfully",
             "user": {
-                "id": user.id,
+                "id": str(user.id),  # Convert to string for schema compliance
                 "username": user.username,
                 "email": user.email
             }
