@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-06-17T13:35:07.202485",
+  "timestamp": "2025-06-17T13:44:45.341990",
   "target_url": "https://wordbattle-backend-prod-skhco4fxoq-ew.a.run.app",
   "contracts_dir": "./wordbattle-contracts",
   "results": {
@@ -7,27 +7,27 @@
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.09502
+        "response_time": 0.097821
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.084455
+        "response_time": 0.084647
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.163601
+        "response_time": 0.165756
       },
       "/admin/contracts/info": {
         "available": true,
         "status_code": 500,
-        "response_time": 0.08479
+        "response_time": 0.086321
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.076227
+        "response_time": 0.079813
       }
     },
     "contracts": {
@@ -51,7 +51,7 @@
             "error": null,
             "schema_count": 5
           },
-          "timestamp": "2025-06-17T11:35:08.005931+00:00"
+          "timestamp": "2025-06-17T11:44:46.154291+00:00"
         },
         "validation_enabled": true
       }
