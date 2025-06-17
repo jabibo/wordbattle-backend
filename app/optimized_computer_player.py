@@ -256,7 +256,7 @@ class OptimizedBoardAnalyzer:
         return 5
 
 class OptimizedComputerPlayer:
-    """High-performance computer player with bubble sort optimization."""
+    """Minimal intelligence computer player - always passes (reactivated for testing)."""
     
     def __init__(self, difficulty: str = "medium"):
         self.difficulty = difficulty
@@ -306,98 +306,18 @@ class OptimizedComputerPlayer:
         return performance_words
     
     def make_move(self, game_state_data: Dict[str, Any], rack: str, wordlist: List[str]) -> Dict[str, Any]:
-        """Make a move using optimized algorithms - target <50ms."""
-        if self.word_index is None:
-            # Use a smaller, performance-focused wordlist for quick initialization
-            logger.info("🚀 Quick-initializing with performance-optimized wordlist...")
-            performance_wordlist = self._get_performance_wordlist(wordlist)
-            self.initialize_with_wordlist(performance_wordlist)
-        
-        # Ensure wordlist set is available for validation
-        if not hasattr(self, '_wordlist_set') and wordlist:
-            self._wordlist_set = set(word.upper() for word in wordlist)
-            logger.info(f"🔧 Wordlist set initialized with {len(wordlist)} words for validation")
-        
-        start_time = time.time()
+        """Make a move - MINIMAL INTELLIGENCE: Always pass."""
         rack_letters = list(rack.upper())
         board = game_state_data.get("board", [[None]*15 for _ in range(15)])
         
-        logger.info(f"🚀 OptimizedComputerPlayer: Starting optimized move search with dictionary validation")
+        logger.info(f"🤖 MinimalComputerPlayer: Always passing (minimal intelligence mode)")
         logger.info(f"   Rack: {rack_letters}")
-        logger.info(f"   Dictionary size: {len(self._wordlist_set) if hasattr(self, '_wordlist_set') else 'N/A'}")
+        logger.info(f"   Board has tiles: {any(any(cell is not None for cell in row) for row in board)}")
         
-        # PHASE 1: Bubble sort elimination of word candidates (<5ms)
-        limits = self.move_limits[self.difficulty]
-        word_candidates = self.word_index.get_bubble_sorted_candidates(
-            rack_letters, 
-            max_candidates=limits["candidates"]
-        )
-        
-        if not word_candidates:
-            logger.info(f"🚀 OptimizedComputerPlayer: No word candidates found - passing")
-            return {"type": "pass", "message": "No valid words found"}
-        
-        logger.info(f"🚀 Phase 1 complete: {len(word_candidates)} word candidates")
-        
-        # PHASE 2: Strategic position analysis (<10ms)
-        strategic_positions = self.board_analyzer.get_strategic_positions(board)
-        strategic_positions = strategic_positions[:limits["positions"]]
-        
-        logger.info(f"🚀 Phase 2 complete: {len(strategic_positions)} strategic positions")
-        
-        # PHASE 3: Optimized placement attempts (<35ms)
-        best_move = None
-        best_score = 0
-        attempts = 0
-        max_attempts = limits["attempts"]
-        
-        for candidate in word_candidates:
-            for position in strategic_positions:
-                if attempts >= max_attempts:
-                    break
-                
-                # Try horizontal placement
-                if position.col + candidate.length <= 15:
-                    attempts += 1
-                    move = self._try_optimized_placement(
-                        board, candidate, position.row, position.col, "horizontal", rack_letters
-                    )
-                    if move and move["score"] > best_score:
-                        best_move = move
-                        best_score = move["score"]
-                
-                # Try vertical placement
-                if position.row + candidate.length <= 15:
-                    attempts += 1
-                    move = self._try_optimized_placement(
-                        board, candidate, position.row, position.col, "vertical", rack_letters
-                    )
-                    if move and move["score"] > best_score:
-                        best_move = move
-                        best_score = move["score"]
-                
-                # Early termination if good move found
-                if best_score >= 20:  # Decent score found
-                    break
-            
-            if best_score >= 20:  # Stop searching if good move found
-                break
-        
-        total_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-        
-        if best_move:
-            logger.info(f"🚀 OptimizedComputerPlayer: Found move in {total_time:.1f}ms")
-            logger.info(f"   Word: {best_move['word']}, Score: {best_move['score']}, Attempts: {attempts}")
-            return {
-                "type": "place_tiles",
-                "tiles": best_move["tiles"],
-                "word": best_move["word"],
-                "score": best_move["score"],
-                "message": f"Computer played '{best_move['word']}' for {best_move['score']} points"
-            }
-        else:
-            logger.info(f"🚀 OptimizedComputerPlayer: No valid moves found in {total_time:.1f}ms ({attempts} attempts)")
-            return {"type": "pass", "message": "No valid placements found"}
+        return {
+            "type": "pass", 
+            "message": "Computer passes (minimal intelligence mode - always passes)"
+        }
     
     def _try_optimized_placement(self, board: List[List], candidate: WordCandidate, 
                                 start_row: int, start_col: int, direction: str, 
