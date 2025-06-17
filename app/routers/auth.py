@@ -66,8 +66,8 @@ def request_email_login(request: EmailLoginRequest, db: Session = Depends(get_db
     if not user:
         # For security, don't reveal if email exists or not
         return {
-            "message": "If this email is registered, you will receive a verification code.",
-            "email_sent": True
+            "success": True,
+            "message": "If this email is registered, you will receive a verification code."
         }
     
     # Generate verification code
@@ -91,9 +91,9 @@ def request_email_login(request: EmailLoginRequest, db: Session = Depends(get_db
         # Don't reveal the failure to the user for security
     
     return {
+        "success": True,
         "message": "If this email is registered, you will receive a verification code.",
-        "email_sent": True,
-        "expires_in_minutes": VERIFICATION_CODE_EXPIRE_MINUTES
+        "expires_in": VERIFICATION_CODE_EXPIRE_MINUTES * 60  # Convert minutes to seconds for consistency
     }
 
 @router.options("/email-login")
@@ -145,6 +145,7 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
     )
     
     response_data = {
+        "success": True,
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
@@ -204,6 +205,7 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
     )
     
     return {
+        "success": True,
         "access_token": access_token,
         "token_type": "bearer",
         "user": {
