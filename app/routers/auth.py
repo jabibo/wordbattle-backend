@@ -235,14 +235,26 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
 
 @router.post("/logout")
 def logout(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Logout user and invalidate persistent token."""
+    """Logout user but preserve persistent token for 'remember me' functionality."""
+    # Note: We intentionally do NOT clear the persistent token here
+    # This allows "remember me" functionality to work across sessions
+    # The persistent token will only be cleared when:
+    # 1. It expires naturally (30 days)
+    # 2. User explicitly revokes it via "logout from all devices"
+    # 3. User changes password/security settings
+    
+    return {"success": True, "message": "Successfully logged out"}
+
+@router.post("/logout-all-devices")
+def logout_all_devices(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Logout from all devices by clearing persistent token."""
     if current_user:
-        # Clear persistent token
+        # Clear persistent token to logout from all devices
         current_user.persistent_token = None
         current_user.persistent_token_expires = None
         db.commit()
     
-    return {"success": True, "message": "Successfully logged out"}
+    return {"success": True, "message": "Successfully logged out from all devices"}
 
 @router.get("/me")
 def get_current_user_info(current_user: User = Depends(get_current_user)):
