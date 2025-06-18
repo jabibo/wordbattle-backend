@@ -1035,6 +1035,81 @@ async def ensure_primary_admin(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to ensure primary admin: {str(e)}")
 
+@router.post("/database/fix-schema")
+async def fix_database_schema():
+    """Fix database schema by ensuring required columns exist (production-safe)"""
+    try:
+        from sqlalchemy import text
+        from app.database import SessionLocal
+        
+        actions = []
+        
+        # Create database session
+        db = SessionLocal()
+        
+        try:
+            # Check current database columns
+            result = db.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'games' 
+                ORDER BY column_name
+            """))
+            columns = [row[0] for row in result.fetchall()]
+            actions.append(f"Current games table columns: {columns}")
+            
+            # Check for missing columns
+            required_columns = ['name', 'ended_at']
+            missing_columns = [col for col in required_columns if col not in columns]
+            
+            if missing_columns:
+                actions.append(f"Missing columns detected: {missing_columns}")
+                
+                # Add missing columns
+                for col in missing_columns:
+                    if col == 'name':
+                        db.execute(text("ALTER TABLE games ADD COLUMN name VARCHAR"))
+                        actions.append("✅ Added 'name' column to games table")
+                    elif col == 'ended_at':
+                        db.execute(text("ALTER TABLE games ADD COLUMN ended_at TIMESTAMP WITH TIME ZONE"))
+                        actions.append("✅ Added 'ended_at' column to games table")
+                
+                db.commit()
+                actions.append("✅ All schema fixes committed successfully")
+            else:
+                actions.append("✅ All required columns already exist")
+            
+            # Verify fix by checking columns again
+            result = db.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'games' 
+                ORDER BY column_name
+            """))
+            final_columns = [row[0] for row in result.fetchall()]
+            actions.append(f"Final games table columns: {final_columns}")
+            
+            return {
+                "success": True,
+                "message": "Database schema check and fix completed",
+                "actions": actions,
+                "missing_columns": missing_columns,
+                "all_columns": final_columns,
+                "fixed": len(missing_columns) > 0
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        actions.append(f"❌ Error: {str(e)}")
+        return {
+            "success": False,
+            "message": "Database schema fix failed",
+            "actions": actions,
+            "error": str(e)
+        }
+
 @router.get("/contract-status")
 async def get_contract_status():
     """Get basic contract validation status (public endpoint)."""
