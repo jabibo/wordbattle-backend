@@ -17,8 +17,8 @@ def check_migration_status():
     
     print("🔍 Checking Migration Status...")
     
-    # Database URL for production
-    database_url = "postgresql://wordbattle_user:wordbattle_password@wordbattle-1748668162:europe-west1:wordbattle-db/wordbattle_db"
+    # Database URL for production - Use the proper Cloud SQL proxy format
+    database_url = "postgresql://wordbattle_user:wordbattle_password@/cloudsql/wordbattle-1748668162:europe-west1:wordbattle-db/wordbattle_db"
     
     try:
         # Create engine

@@ -1110,6 +1110,76 @@ async def fix_database_schema():
             "error": str(e)
         }
 
+@router.post("/database/run-migration")
+async def run_migration():
+    """Run Alembic migration from within the application (production-safe)"""
+    try:
+        import subprocess
+        import os
+        from alembic.config import Config
+        from alembic import command
+        
+        actions = []
+        
+        # Run migration using Alembic programmatically
+        try:
+            actions.append("🔧 Running Alembic migration...")
+            
+            # Get Alembic configuration
+            alembic_cfg = Config("/app/alembic.ini")
+            
+            # Apply migrations
+            command.upgrade(alembic_cfg, "head")
+            actions.append("✅ Alembic migrations applied successfully")
+            
+            # Verify the fix
+            from sqlalchemy import text
+            from app.database import SessionLocal
+            
+            db = SessionLocal()
+            try:
+                result = db.execute(text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'games' 
+                    ORDER BY column_name
+                """))
+                columns = [row[0] for row in result.fetchall()]
+                actions.append(f"✅ Games table now has columns: {columns}")
+                
+                # Check if required columns exist
+                required_columns = ['name', 'ended_at']
+                missing_columns = [col for col in required_columns if col not in columns]
+                
+                if missing_columns:
+                    actions.append(f"⚠️  Still missing columns: {missing_columns}")
+                else:
+                    actions.append("✅ All required columns present!")
+                    
+            finally:
+                db.close()
+            
+            return {
+                "success": True,
+                "message": "Migration completed successfully",
+                "actions": actions,
+                "all_columns": columns,
+                "missing_columns": missing_columns if 'missing_columns' in locals() else []
+            }
+            
+        except Exception as e:
+            actions.append(f"❌ Migration error: {str(e)}")
+            raise e
+            
+    except Exception as e:
+        actions.append(f"❌ Error: {str(e)}")
+        return {
+            "success": False,
+            "message": "Migration failed",
+            "actions": actions,
+            "error": str(e)
+        }
+
 @router.get("/contract-status")
 async def get_contract_status():
     """Get basic contract validation status (public endpoint)."""
