@@ -15,6 +15,7 @@ class Game(Base):
     __tablename__ = "games"
     
     id = Column(String, primary_key=True, index=True)
+    name = Column(String, nullable=True)  # Game name for contract compliance
     creator_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     current_player_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     state = Column(String)  # JSON string containing game state
@@ -24,6 +25,7 @@ class Game(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    ended_at = Column(DateTime(timezone=True), nullable=True)  # For forfeit tracking
     
     # Relationships
     creator = relationship("User", foreign_keys=[creator_id])

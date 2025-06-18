@@ -144,15 +144,23 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         data={"sub": user.email}, expires_delta=access_token_expires
     )
     
+    # Create refresh token for contract compliance
+    refresh_token = create_access_token(
+        data={"sub": user.email, "type": "refresh"}, 
+        expires_delta=timedelta(days=7)  # Refresh tokens last 7 days
+    )
+    
     response_data = {
         "success": True,
         "access_token": access_token,
+        "refresh_token": refresh_token,  # Required by contract
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
         "user": {
             "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
         }
     }
     
@@ -203,14 +211,23 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
         data={"sub": user.email}, expires_delta=access_token_expires
     )
     
+    # Create refresh token for contract compliance
+    refresh_token = create_access_token(
+        data={"sub": user.email, "type": "refresh"}, 
+        expires_delta=timedelta(days=7)  # Refresh tokens last 7 days
+    )
+    
     return {
         "success": True,
         "access_token": access_token,
+        "refresh_token": refresh_token,  # Required by contract
         "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
         "user": {
             "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
         }
     }
 
@@ -283,7 +300,8 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
             "user": {
                 "id": str(user.id),  # Convert to string for schema compliance
                 "username": user.username,
-                "email": user.email
+                "email": user.email,
+                "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
             }
         }
     
@@ -433,6 +451,12 @@ def contract_refresh(db: Session = Depends(get_db), current_user: User = Depends
         expires_delta=access_token_expires
     )
     
+    # Create refresh token for contract compliance
+    refresh_token = create_access_token(
+        data={"sub": current_user.email, "type": "refresh"}, 
+        expires_delta=timedelta(days=7)  # Refresh tokens last 7 days
+    )
+    
     # Create/refresh persistent token
     persistent_token = create_persistent_token(data={"sub": current_user.email})
     persistent_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
@@ -443,13 +467,15 @@ def contract_refresh(db: Session = Depends(get_db), current_user: User = Depends
     current_user.last_login = datetime.now(timezone.utc)
     db.commit()
     
-    # Return contract-compliant format with persistent_token
+    # Return contract-compliant format with all required tokens
     return {
         "success": True,
         "access_token": access_token,
+        "refresh_token": refresh_token,  # Required by contract
         "persistent_token": persistent_token,
         "token_type": "bearer",
         "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
+        "persistent_expires_in": 30 * 24 * 60 * 60,  # 30 days in seconds
         "user": {
             "id": str(current_user.id),
             "username": current_user.username,

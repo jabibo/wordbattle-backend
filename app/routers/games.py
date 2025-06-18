@@ -227,6 +227,13 @@ def create_game_contract(
         
         # Get the complete game state for contract compliance
         game_id = invitation_response["id"]
+        
+        # Store the name in the database
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game:
+            game.name = game_data.name
+            db.commit()
+        
         game_state_response = get_game(game_id, db, current_user)
         
         # Format response to match contract
@@ -254,6 +261,13 @@ def create_game_contract(
         
         # Get the complete game state
         game_id = game_response["id"]
+        
+        # Store the name in the database
+        game = db.query(Game).filter(Game.id == game_id).first()
+        if game:
+            game.name = game_data.name
+            db.commit()
+        
         game_state_response = get_game(game_id, db, current_user)
         
         # The get_game function already returns formatted data with success field

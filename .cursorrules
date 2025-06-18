@@ -42,7 +42,7 @@ Error Handling and Validation
   - always use 
       - ./deploy-unified.sh testing for deploying to test
       - ./deploy-unified.sh production for deploying to prod
-  - use /Users/janbinge/git/wordbattle/wordbattle-contracts/backend_communication for communication with the frondend-team
+  - use /Users/janbinge/git/wordbattle/wordbattle-contracts/ for communication with the frondend-team
   
 - Database rules
   - never switch to sqlite - even not for testing
