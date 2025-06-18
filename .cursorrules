@@ -39,16 +39,11 @@ Error Handling and Validation
   - Production always uses the production-database and the main-branch
   - Development always uses the testing-database and the testing-environment-branch
   - Tests are NEVER on the local machine
-  - always use deploy-gcp-test.sh for deploying to GCP
-  - use /Users/janbinge/git/wordbattle/wordbattle-contracts for communication with the backend-team
-
-- Going to production
-  - always working on testing-environmnent
-  - checking all code into github
-  - merge code into main
-  - switch to main 
-  - deploy to production using the correct deploment script
-    
+  - always use 
+      - ./deploy-unified.sh testing for deploying to test
+      - ./deploy-unified.sh production for deploying to prod
+  - use /Users/janbinge/git/wordbattle/wordbattle-contracts/backend_communication for communication with the frondend-team
+  
 - Database rules
   - never switch to sqlite - even not for testing
   - The GCP-Cloud-SQL-Instance is: wordbattle-db
