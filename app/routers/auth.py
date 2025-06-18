@@ -166,7 +166,9 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
     
     # If remember_me is requested, create persistent token and include in response
     if request.remember_me:
-        persistent_token = create_persistent_token(data={"sub": user.email})
+        # Generate a secure random token for database storage
+        from app.auth import generate_persistent_token
+        persistent_token = generate_persistent_token()
         persistent_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
         
         # Store persistent token in database

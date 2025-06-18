@@ -1215,6 +1215,60 @@ async def run_migration():
             "error": str(e)
         }
 
+@router.get("/debug/persistent-tokens")
+async def debug_persistent_tokens(db: Session = Depends(get_db)):
+    """Debug endpoint to check persistent token status (production-safe)"""
+    try:
+        from sqlalchemy import text
+        from datetime import datetime, timezone
+        
+        actions = []
+        
+        # Check users with persistent tokens
+        result = db.execute(text("""
+            SELECT id, username, email, 
+                   persistent_token IS NOT NULL as has_token,
+                   persistent_token_expires,
+                   persistent_token_expires > NOW() as token_valid
+            FROM users 
+            WHERE persistent_token IS NOT NULL
+            ORDER BY id
+        """))
+        
+        users_with_tokens = []
+        for row in result.fetchall():
+            users_with_tokens.append({
+                "id": row[0],
+                "username": row[1], 
+                "email": row[2],
+                "has_token": row[3],
+                "expires": row[4].isoformat() if row[4] else None,
+                "is_valid": row[5] if row[5] is not None else False
+            })
+        
+        actions.append(f"📋 Found {len(users_with_tokens)} users with persistent tokens")
+        
+        # Check total user count
+        result = db.execute(text("SELECT COUNT(*) FROM users"))
+        total_users = result.fetchone()[0]
+        actions.append(f"📊 Total users in database: {total_users}")
+        
+        return {
+            "success": True,
+            "message": "Persistent token debug completed",
+            "actions": actions,
+            "users_with_tokens": users_with_tokens,
+            "total_users": total_users,
+            "current_time": datetime.now(timezone.utc).isoformat()
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "message": "Debug failed",
+            "error": str(e)
+        }
+
 @router.get("/contract-status")
 async def get_contract_status():
     """Get basic contract validation status (public endpoint)."""
