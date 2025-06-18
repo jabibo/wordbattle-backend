@@ -934,6 +934,107 @@ async def create_default_admin(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to create default users: {str(e)}")
 
+@router.post("/database/ensure-primary-admin")
+async def ensure_primary_admin(
+    db: Session = Depends(get_db)
+):
+    """Ensure that jan@binge.de exists as the primary admin user (production-safe)"""
+    try:
+        from app.auth import get_password_hash
+        from datetime import datetime, timezone
+        
+        primary_admin_email = "jan@binge.de"
+        primary_admin_username = "janbinge"
+        
+        actions = []
+        
+        # First check if jan@binge.de exists
+        existing_user = db.query(User).filter(User.email == primary_admin_email).first()
+        
+        if existing_user:
+            # User exists - ensure admin privileges
+            changes_made = False
+            
+            if not existing_user.is_admin:
+                existing_user.is_admin = True
+                changes_made = True
+                actions.append(f"Granted admin privileges to {primary_admin_email}")
+            
+            if not existing_user.is_word_admin:
+                existing_user.is_word_admin = True
+                changes_made = True
+                actions.append(f"Granted word admin privileges to {primary_admin_email}")
+            
+            if not existing_user.is_email_verified:
+                existing_user.is_email_verified = True
+                changes_made = True
+                actions.append(f"Verified email for {primary_admin_email}")
+            
+            if changes_made:
+                db.commit()
+                action_type = "upgraded"
+            else:
+                action_type = "already_admin"
+                actions.append(f"User {primary_admin_email} already has all admin privileges")
+            
+            return {
+                "message": f"Primary admin user ensured successfully",
+                "email": primary_admin_email,
+                "username": existing_user.username,
+                "user_id": existing_user.id,
+                "action": action_type,
+                "actions": actions,
+                "is_admin": existing_user.is_admin,
+                "is_word_admin": existing_user.is_word_admin,
+                "created_at": existing_user.created_at.isoformat() if existing_user.created_at else None
+            }
+        else:
+            # User doesn't exist - create primary admin
+            
+            # Check if username is taken
+            username_check = db.query(User).filter(User.username == primary_admin_username).first()
+            if username_check:
+                primary_admin_username = f"{primary_admin_username}_admin"
+                actions.append(f"Username '{primary_admin_username}' was taken, using '{primary_admin_username}'")
+            
+            # Create the primary admin user
+            new_admin = User(
+                username=primary_admin_username,
+                email=primary_admin_email,
+                hashed_password=get_password_hash("admin123456"),  # Default secure password
+                is_admin=True,
+                is_word_admin=True,
+                is_email_verified=True,
+                language="en",
+                allow_invites=True,
+                preferred_languages=["en", "de"],
+                created_at=datetime.now(timezone.utc)
+            )
+            
+            db.add(new_admin)
+            db.commit()
+            db.refresh(new_admin)
+            
+            actions.append(f"Created primary admin user: {primary_admin_email}")
+            
+            return {
+                "message": f"Primary admin user created successfully",
+                "email": primary_admin_email,
+                "username": new_admin.username,
+                "user_id": new_admin.id,
+                "action": "created",
+                "actions": actions,
+                "is_admin": new_admin.is_admin,
+                "is_word_admin": new_admin.is_word_admin,
+                "created_at": new_admin.created_at.isoformat(),
+                "default_password": "admin123456",
+                "note": "Please change the default password after first login!"
+            }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to ensure primary admin: {str(e)}")
+
 @router.get("/contract-status")
 async def get_contract_status():
     """Get basic contract validation status (public endpoint)."""
