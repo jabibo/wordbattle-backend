@@ -1,0 +1,110 @@
+{
+  "description": "Authentication endpoint schemas for WordBattle API",
+  "version": "1.0.0",
+  "schemas": {
+    "authRequest": {
+      "type": "object",
+      "required": [
+        "email"
+      ],
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "username": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 20
+        },
+        "verification_code": {
+          "type": "string",
+          "pattern": "^\\d{6}$"
+        },
+        "remember_me": {
+          "type": "boolean"
+        }
+      }
+    },
+    "authResponse": {
+      "type": "object",
+      "required": [
+        "success"
+      ],
+      "properties": {
+        "success": {
+          "type": "boolean"
+        },
+        "access_token": {
+          "type": "string"
+        },
+        "refresh_token": {
+          "type": "string"
+        },
+        "persistent_token": {
+          "type": "string",
+          "description": "Long-lived persistent token (30 days) - only provided when remember_me=true"
+        },
+        "token_type": {
+          "type": "string",
+          "enum": [
+            "bearer"
+          ]
+        },
+        "expires_in": {
+          "type": "integer",
+          "description": "Access token expiry time in seconds"
+        },
+        "persistent_expires_in": {
+          "type": "integer",
+          "description": "Persistent token expiry time in seconds - only provided when persistent_token is included"
+        },
+        "user": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "username": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "message": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "examples": {
+    "authRequest": {
+      "email": "user@example.com",
+      "username": "player123"
+    },
+    "authResponse": {
+      "success": true,
+      "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+      "refresh_token": "refresh_token_here",
+      "persistent_token": "persistent_token_here",
+      "token_type": "bearer",
+      "expires_in": 1800,
+      "persistent_expires_in": 2592000,
+      "user": {
+        "id": "user_123",
+        "username": "player123",
+        "email": "user@example.com",
+        "created_at": "2023-01-01T00:00:00Z"
+      }
+    }
+  }
+}

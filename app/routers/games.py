@@ -2795,3 +2795,149 @@ def validate_computer_player_availability():
             status_code=503,
             detail=f"Computer player validation failed: {str(e)}"
         )
+
+@router.post("/{game_id}/shuffle-rack")
+async def shuffle_rack(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Shuffle the current player's rack tiles randomly. Can be done anytime regardless of turn."""
+    
+    # Get game
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Get current player
+    current_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == current_user.id
+    ).first()
+    
+    if not current_player:
+        raise HTTPException(403, "You are not part of this game")
+    
+    # Check if game is active (allow shuffle in any non-completed game)
+    if game.status == GameStatus.COMPLETED:
+        raise HTTPException(400, "Cannot shuffle rack in completed game")
+    
+    # Shuffle the player's rack (no turn validation - it's just visual reordering)
+    if current_player.rack:
+        rack_letters = list(current_player.rack)
+        random.shuffle(rack_letters)
+        new_rack = ''.join(rack_letters)
+        
+        # Update player's rack
+        current_player.rack = new_rack
+        db.commit()
+        
+        logger.info(f"Player {current_user.id} shuffled rack in game {game_id}: {new_rack}")
+        
+        return {
+            "success": True,
+            "message": "Rack shuffled successfully",
+            "new_rack_order": rack_letters
+        }
+    else:
+        raise HTTPException(400, "No tiles in rack to shuffle")
+
+@router.post("/{game_id}/forfeit")
+async def forfeit_game(
+    game_id: str,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    """Forfeit/surrender the current game."""
+    
+    # Get game
+    game = db.query(Game).filter(Game.id == game_id).first()
+    if not game:
+        raise HTTPException(404, "Game not found")
+    
+    # Get current player
+    forfeiting_player = db.query(Player).filter(
+        Player.game_id == game_id,
+        Player.user_id == current_user.id
+    ).first()
+    
+    if not forfeiting_player:
+        raise HTTPException(403, "You are not part of this game")
+    
+    # Check if game can be forfeited
+    if game.status in [GameStatus.COMPLETED, GameStatus.CANCELLED]:
+        raise HTTPException(400, "Game is already ended")
+    
+    # Get all players in the game
+    all_players = db.query(Player).filter(Player.game_id == game_id).all()
+    
+    # Calculate final scores and determine winners
+    final_scores = {}
+    winners = []
+    
+    for player in all_players:
+        if player.user_id == current_user.id:
+            # Forfeiting player gets current score (or 0 if you want to penalize)
+            final_scores[str(player.user_id)] = player.score
+        else:
+            # Other players are winners with their current scores
+            final_scores[str(player.user_id)] = player.score
+            winners.append(str(player.user_id))
+    
+    # Update game status
+    game.status = GameStatus.COMPLETED
+    game.ended_at = datetime.now(timezone.utc)
+    
+    # Update game state to mark as forfeited
+    try:
+        game_state_data = json.loads(game.state) if game.state else {}
+        game_state_data["forfeited"] = True
+        game_state_data["forfeited_by"] = current_user.id
+        game_state_data["forfeit_time"] = datetime.now(timezone.utc).isoformat()
+        game_state_data["final_scores"] = final_scores
+        game.state = json.dumps(game_state_data, cls=GameStateEncoder)
+    except (json.JSONDecodeError, TypeError):
+        # If state parsing fails, create minimal forfeit state
+        forfeit_state = {
+            "forfeited": True,
+            "forfeited_by": current_user.id,
+            "forfeit_time": datetime.now(timezone.utc).isoformat(),
+            "final_scores": final_scores
+        }
+        game.state = json.dumps(forfeit_state, cls=GameStateEncoder)
+    
+    db.commit()
+    
+    # Send WebSocket notification to all players
+    try:
+        forfeit_message = {
+            "type": "game_forfeited",
+            "game_id": game_id,
+            "forfeited_by": current_user.username,
+            "forfeited_by_id": current_user.id,
+            "message": f"{current_user.username} has forfeited the game",
+            "game_status": "completed",
+            "final_scores": final_scores,
+            "winners": winners,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Notify all players in the game
+        for player in all_players:
+            await manager.send_personal_message(forfeit_message, player.user_id)
+            
+    except Exception as e:
+        logger.warning(f"Failed to send forfeit WebSocket notification: {e}")
+    
+    logger.info(f"Player {current_user.id} forfeited game {game_id}")
+    
+    # Determine winner for response (first non-forfeiting player, or highest score)
+    winner_id = winners[0] if winners else None
+    
+    return {
+        "success": True,
+        "message": "Game forfeited successfully",
+        "game_status": "completed",
+        "winner": winner_id,
+        "final_scores": final_scores
+    }

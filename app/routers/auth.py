@@ -22,12 +22,12 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class EmailLoginRequest(BaseModel):
     email: EmailStr
-    remember_me: bool = False
+    remember_me: bool = True  # Default to True as requested by frontend
 
 class VerifyCodeRequest(BaseModel):
     email: EmailStr
     verification_code: str
-    remember_me: bool = False
+    remember_me: bool = True  # Default to True as requested by frontend
 
 class PersistentLoginRequest(BaseModel):
     persistent_token: str
@@ -148,6 +148,7 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         "success": True,
         "access_token": access_token,
         "token_type": "bearer",
+        "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # Convert to seconds
         "user": {
             "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
@@ -155,7 +156,7 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         }
     }
     
-    # If remember_me is requested, create persistent token (store in DB but don't return in API response for schema compliance)
+    # If remember_me is requested, create persistent token and include in response
     if request.remember_me:
         persistent_token = create_persistent_token(data={"sub": user.email})
         persistent_token_expires = datetime.now(timezone.utc) + timedelta(days=30)
@@ -163,6 +164,10 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
         # Store persistent token in database
         user.persistent_token = persistent_token
         user.persistent_token_expires = persistent_token_expires
+        
+        # Add to response as requested by frontend team
+        response_data["persistent_token"] = persistent_token
+        response_data["persistent_expires_in"] = 30 * 24 * 60 * 60  # 30 days in seconds
     
     db.commit()
     
@@ -375,7 +380,7 @@ class ContractAuthRequest(BaseModel):
 def contract_login(request: ContractAuthRequest, db: Session = Depends(get_db)):
     """Contract-compliant login endpoint (wrapper for email-login flow)."""
     # This endpoint initiates the email login process
-    email_login_request = EmailLoginRequest(email=request.email, remember_me=False)
+    email_login_request = EmailLoginRequest(email=request.email)
     response = request_email_login(email_login_request, db)
     
     # Return contract-compliant format
@@ -398,7 +403,7 @@ def contract_verify(request: ContractAuthRequest, db: Session = Depends(get_db))
     verify_request = VerifyCodeRequest(
         email=request.email,
         verification_code=request.verification_code,
-        remember_me=True  # Always enable remember_me for contract compliance
+        remember_me=True  # Frontend team requested default to True
     )
     
     response = verify_login_code(verify_request, db)
