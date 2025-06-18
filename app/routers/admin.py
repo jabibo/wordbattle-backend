@@ -2513,3 +2513,19 @@ def run_feedback_migration(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
+
+@router.get("/debug/my-persistent-token")
+def get_my_persistent_token(current_user: User = Depends(get_current_user)):
+    """Debug endpoint to get current user's persistent token for testing."""
+    return {
+        "success": True,
+        "user": {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email
+        },
+        "persistent_token": current_user.persistent_token,
+        "persistent_token_expires": current_user.persistent_token_expires.isoformat() if current_user.persistent_token_expires else None,
+        "has_valid_token": bool(current_user.persistent_token and current_user.persistent_token_expires),
+        "current_time": datetime.now(timezone.utc).isoformat()
+    }
