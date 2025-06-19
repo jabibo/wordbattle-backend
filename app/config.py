@@ -45,7 +45,7 @@ DB_NAME = os.environ.get("DB_NAME", "wordbattle")
 
 # Cloud SQL settings for production/testing
 CLOUD_SQL_CONNECTION_NAME = os.environ.get("CLOUD_SQL_CONNECTION_NAME", "wordbattle-1748668162:europe-west1:wordbattle-db")
-CLOUD_SQL_DATABASE_NAME = os.environ.get("CLOUD_SQL_DATABASE_NAME", "wordbattle_test")
+CLOUD_SQL_DATABASE_NAME = os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_test")
 
 # Test database settings
 TEST_DB_NAME = os.environ.get("TEST_DB_NAME", "wordbattle_test")
@@ -56,7 +56,11 @@ def get_database_url(is_test=False):
         # AWS RDS Connection
         db_host = os.getenv("DB_HOST", "localhost")
         db_port = os.getenv("DB_PORT", "5432")
-        db_name = "wordbattle_test" if is_test else "wordbattle_db"
+        # Use environment variables for database name
+        if is_test:
+            db_name = os.getenv("TEST_DB_NAME", "wordbattle_test")
+        else:
+            db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_db"))
         db_user = os.getenv("DB_USER", "wordbattle")
         db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
         return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
@@ -64,7 +68,11 @@ def get_database_url(is_test=False):
         # GCP Cloud SQL Connection - using pg8000 with unix socket
         project_id = CLOUD_CONFIG["project_id"]
         instance_name = "wordbattle-db"
-        db_name = "wordbattle_test" if is_test else "wordbattle_db"
+        # Use environment variables for database name
+        if is_test:
+            db_name = os.getenv("TEST_DB_NAME", "wordbattle_test")
+        else:
+            db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_db"))
         db_user = os.getenv("DB_USER", "wordbattle")
         db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
         return f"postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock=/cloudsql/{project_id}:{CLOUD_CONFIG['region']}:{instance_name}"
@@ -72,6 +80,10 @@ def get_database_url(is_test=False):
 # Use the function to get the main database URL
 # Check if we're in testing mode to use test database
 DATABASE_URL = get_database_url(TESTING)
+
+# Debug output for database configuration
+print(f"Using Cloud SQL Connector for: {CLOUD_CONFIG['project_id']}:{CLOUD_CONFIG['region']}:wordbattle-db/{DB_NAME or CLOUD_SQL_DATABASE_NAME}")
+print(f"Database URL (masked): postgresql+pg8000://***:***@/{DB_NAME or CLOUD_SQL_DATABASE_NAME}?unix_sock=/cloudsql/...")
 
 # Security settings - CRITICAL: These must be set via environment variables in production
 SECRET_KEY = os.getenv("SECRET_KEY")
