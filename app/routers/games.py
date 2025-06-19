@@ -30,7 +30,7 @@ from app.utils.game_helpers import (
     get_recent_moves_data
 )
 from app.config import FRONTEND_URL
-from app.websocket import manager
+from app.websocket import manager, notification_manager
 from jose import JWTError, jwt
 from app.auth import SECRET_KEY, ALGORITHM
 import random
@@ -543,7 +543,7 @@ def get_available_games(
         }
     }
 
-def create_game_with_invitations_impl(
+async def create_game_with_invitations_impl(
     game_data: CreateGameWithInvitationsRequest,
     db: Session,
     current_user
@@ -704,6 +704,44 @@ def create_game_with_invitations_impl(
     db.commit()
     db.refresh(game)
     
+    # Send WebSocket notifications for all created invitations
+    try:
+        import asyncio
+        for invitation in invitations_created:
+            # Get fresh invitation data from database after commit
+            db.refresh(invitation)
+            
+            # Prepare invitation data for WebSocket notification
+            invitation_data = {
+                "invitation_id": invitation.id,
+                "game_id": invitation.game_id,
+                "inviter": {
+                    "id": current_user.id,
+                    "username": current_user.username,
+                    "email": current_user.email
+                },
+                "game": {
+                    "id": game.id,
+                    "name": getattr(game, 'name', f"Game by {current_user.username}"),
+                    "language": game.language,
+                    "max_players": game.max_players,
+                    "status": game.status.value,
+                    "created_at": game.created_at.isoformat()
+                },
+                "status": invitation.status.value,
+                "created_at": invitation.created_at.isoformat(),
+                "join_token": invitation.join_token,
+                "is_new": True
+            }
+            
+            # Send WebSocket notification to invitee
+            await notification_manager.send_invitation_received(invitation.invitee_id, invitation_data)
+            logger.info(f"🔔 WebSocket invitation notification sent to user {invitation.invitee_id}")
+            
+    except Exception as e:
+        logger.error(f"WebSocket notification error: {e}")
+        # Don't fail the response due to WebSocket issues
+    
     return {
         "id": game.id,
         "creator_id": game.creator_id,
@@ -718,13 +756,13 @@ def create_game_with_invitations_impl(
     }
 
 @router.post("/create-with-invitations")
-def create_game_with_invitations(
+async def create_game_with_invitations(
     game_data: CreateGameWithInvitationsRequest,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
     """Create a new game with automatic invitations and email notifications."""
-    return create_game_with_invitations_impl(game_data, db, current_user)
+    return await create_game_with_invitations_impl(game_data, db, current_user)
 
 @router.post("/{game_id}/join")
 async def join_game(
@@ -774,6 +812,21 @@ async def join_game(
         # Update invitation status to accepted
         pending_invitation.status = InvitationStatus.ACCEPTED
         pending_invitation.responded_at = datetime.now(timezone.utc)
+        
+        # Send WebSocket notification for invitation status change
+        try:
+            import asyncio
+            asyncio.create_task(
+                notification_manager.send_invitation_status_changed(
+                    pending_invitation.inviter_id,  # Notify the inviter
+                    pending_invitation.id,
+                    "accepted",
+                    game_id
+                )
+            )
+            logger.info(f"🔔 WebSocket invitation status notification sent to user {pending_invitation.inviter_id}")
+        except Exception as e:
+            logger.error(f"WebSocket notification error for invitation status: {e}")
         
         # No longer creating friendships - removed friends system
     
@@ -837,6 +890,25 @@ async def join_game(
                 "player_count": new_player_count,
                 "message": f"🚀 Game started automatically! {new_player_count} players joined. {first_player.user.username} goes first!"
             })
+            
+            # Send individual game started notifications to all players
+            for player in all_players:
+                invitation = db.query(GameInvitation).filter(
+                    GameInvitation.game_id == game_id,
+                    GameInvitation.invitee_id == player.user_id,
+                    GameInvitation.status == InvitationStatus.ACCEPTED
+                ).first()
+                
+                if invitation:  # Only notify if they joined via invitation
+                    asyncio.create_task(
+                        notification_manager.send_game_started(
+                            player.user_id,
+                            game_id,
+                            invitation.id,
+                            invitation.inviter.username
+                        )
+                    )
+                    
         except Exception as e:
             logger.warning(f"WebSocket broadcast error after auto-start {game_id}: {e}")
     elif new_player_count >= 2 and game.status == GameStatus.SETUP:
@@ -916,6 +988,21 @@ async def join_game_with_token(
     invitation.status = InvitationStatus.ACCEPTED
     invitation.responded_at = datetime.now(timezone.utc)
     
+    # Send WebSocket notification for invitation status change
+    try:
+        import asyncio
+        asyncio.create_task(
+            notification_manager.send_invitation_status_changed(
+                invitation.inviter_id,  # Notify the inviter
+                invitation.id,
+                "accepted",
+                game_id
+            )
+        )
+        logger.info(f"🔔 WebSocket invitation status notification sent to user {invitation.inviter_id}")
+    except Exception as e:
+        logger.error(f"WebSocket notification error for invitation status: {e}")
+    
     # No longer creating friendships - removed friends system
     
     # Check if game should transition to READY state and auto-start
@@ -978,6 +1065,25 @@ async def join_game_with_token(
                 "player_count": new_player_count,
                 "message": f"🚀 Game started automatically! {new_player_count} players joined. {first_player.user.username} goes first!"
             })
+            
+            # Send individual game started notifications to all players
+            for player in all_players:
+                invitation_check = db.query(GameInvitation).filter(
+                    GameInvitation.game_id == game_id,
+                    GameInvitation.invitee_id == player.user_id,
+                    GameInvitation.status == InvitationStatus.ACCEPTED
+                ).first()
+                
+                if invitation_check:  # Only notify if they joined via invitation
+                    asyncio.create_task(
+                        notification_manager.send_game_started(
+                            player.user_id,
+                            game_id,
+                            invitation_check.id,
+                            invitation_check.inviter.username
+                        )
+                    )
+                    
         except Exception as e:
             logger.warning(f"WebSocket broadcast error after auto-start {game_id}: {e}")
     
