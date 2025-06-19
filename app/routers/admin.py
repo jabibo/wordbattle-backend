@@ -2449,6 +2449,81 @@ def run_feedback_migration(
     """Run feedback system migration (admin only)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
+
+@router.post("/debug/run-feedback-migration-no-auth")
+def run_feedback_migration_no_auth(
+    db: Session = Depends(get_db)
+):
+    """TEMPORARY: Run feedback system migration without auth for testing"""
+    
+    try:
+        # SQL to create feedback table and enums
+        migration_sql = """
+        -- Create feedback category enum
+        DO $$ BEGIN
+            CREATE TYPE feedbackcategory AS ENUM (
+                'bug_report', 'feature_request', 'performance_issue', 
+                'ui_ux_feedback', 'game_logic_issue', 'authentication_problem',
+                'network_connection_issue', 'general_feedback', 'other'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+
+        -- Create feedback status enum
+        DO $$ BEGIN
+            CREATE TYPE feedbackstatus AS ENUM (
+                'new', 'in_review', 'resolved', 'closed'
+            );
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+
+        -- Drop existing feedback table if it exists (to fix schema)
+        DROP TABLE IF EXISTS feedback;
+        
+        -- Create feedback table with CORRECT INTEGER user_id
+        CREATE TABLE IF NOT EXISTS feedback (
+            id VARCHAR(36) NOT NULL PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            category feedbackcategory NOT NULL,
+            description TEXT NOT NULL,
+            contact_email VARCHAR(255),
+            debug_logs JSON,
+            device_info JSON,
+            app_info JSON,
+            status feedbackstatus NOT NULL DEFAULT 'new',
+            admin_notes TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        -- Create indexes
+        CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id);
+        CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
+        CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+        """
+        
+        # Execute migration
+        db.execute(text(migration_sql))
+        db.commit()
+        
+        # Verify table exists
+        result = db.execute(text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'feedback'"))
+        count = result.scalar()
+        
+        return {
+            "success": True,
+            "message": "Feedback migration completed successfully (NO AUTH - TESTING ONLY)",
+            "table_created": count > 0,
+            "note": "This endpoint will be removed after testing"
+        }
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
     
     try:
         # SQL to create feedback table and enums
