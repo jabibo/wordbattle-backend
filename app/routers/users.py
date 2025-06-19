@@ -138,10 +138,23 @@ def get_random_candidates(
         
         candidates_info = []
         for candidate in candidates:
+            # Build preferred_languages based on user's actual preferences
+            # If preferred_languages is set, use it; otherwise use their UI language + fallback
+            preferred_langs = candidate.preferred_languages
+            if not preferred_langs:
+                # If no preferred_languages set, include their UI language and common defaults
+                user_lang = candidate.language or "en"
+                preferred_langs = [user_lang]
+                # Add other common languages if not already included
+                if user_lang != "en":
+                    preferred_langs.append("en")
+                if user_lang != "de" and "de" not in preferred_langs:
+                    preferred_langs.append("de")
+            
             candidates_info.append({
                 "id": candidate.id,
                 "username": candidate.username,
-                "preferred_languages": candidate.preferred_languages or ["en", "de"],
+                "preferred_languages": preferred_langs,
                 "allow_invites": candidate.allow_invites
             })
         
@@ -184,10 +197,23 @@ def search_users(
         
         results_info = []
         for user in search_results:
+            # Build preferred_languages based on user's actual preferences
+            # If preferred_languages is set, use it; otherwise use their UI language + fallback
+            preferred_langs = user.preferred_languages
+            if not preferred_langs:
+                # If no preferred_languages set, include their UI language and common defaults
+                user_lang = user.language or "en"
+                preferred_langs = [user_lang]
+                # Add other common languages if not already included
+                if user_lang != "en":
+                    preferred_langs.append("en")
+                if user_lang != "de" and "de" not in preferred_langs:
+                    preferred_langs.append("de")
+            
             results_info.append({
                 "id": user.id,
                 "username": user.username,
-                "preferred_languages": user.preferred_languages or ["en", "de"],
+                "preferred_languages": preferred_langs,
                 "allow_invites": user.allow_invites
             })
         
