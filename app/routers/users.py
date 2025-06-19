@@ -120,11 +120,15 @@ def get_random_candidates(
     """Get random users who accept invites and have compatible language preferences."""
     
     try:
-        # Simplified approach - just get all users who accept invites
+        # Get test usernames to filter out
+        from app.routers.games import TEST_USERNAMES
+        
+        # Simplified approach - just get all users who accept invites, excluding test users
         # Language filtering can be added later when we have more users and proper JSON handling
         candidates = db.query(User).filter(
             User.id != current_user.id,
-            User.allow_invites == True
+            User.allow_invites == True,
+            ~User.username.in_(TEST_USERNAMES)  # Exclude test users from production
         ).all()
         
         # Randomly shuffle and limit results
@@ -167,11 +171,15 @@ def search_users(
         raise HTTPException(status_code=400, detail="Search term must be at least 2 characters")
     
     try:
+        # Get test usernames to filter out
+        from app.routers.games import TEST_USERNAMES
+        
         # Search for users with usernames containing the search term
         search_results = db.query(User).filter(
             User.id != current_user.id,  # Exclude current user
             User.username.ilike(f"%{username}%"),  # Partial match, case insensitive
-            User.allow_invites == True  # Only show users who accept invites
+            User.allow_invites == True,  # Only show users who accept invites
+            ~User.username.in_(TEST_USERNAMES)  # Exclude test users from production
         ).limit(20).all()  # Limit to 20 results
         
         results_info = []
