@@ -2529,3 +2529,102 @@ def get_my_persistent_token(current_user: User = Depends(get_current_user)):
         "has_valid_token": bool(current_user.persistent_token and current_user.persistent_token_expires),
         "current_time": datetime.now(timezone.utc).isoformat()
     }
+
+@router.get("/debug/list-all-users")
+def list_all_users_debug(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Debug endpoint to list all users in the database."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    users = db.query(User).all()
+    user_list = []
+    
+    for user in users:
+        user_list.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_admin": user.is_admin,
+            "is_word_admin": user.is_word_admin,
+            "is_email_verified": user.is_email_verified,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "last_login": user.last_login.isoformat() if user.last_login else None,
+            "has_persistent_token": bool(user.persistent_token),
+            "language": user.language
+        })
+    
+    return {
+        "success": True,
+        "total_users": len(user_list),
+        "users": user_list,
+        "current_time": datetime.now(timezone.utc).isoformat()
+    }
+
+@router.post("/database/cleanup-test-users")
+def cleanup_test_users(
+    confirm: bool = False,
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    """Clean up test users from production database."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    # Define test user patterns to remove
+    test_usernames = ["player01", "player02", "computer", "Computer", "test_user", "testuser"]
+    test_emails = ["player01@binge.de", "player02@binge.de", "computer@binge.de", "test@example.com"]
+    
+    # Find test users
+    test_users = db.query(User).filter(
+        (User.username.in_(test_usernames)) | 
+        (User.email.in_(test_emails)) |
+        (User.username.like("test_%")) |
+        (User.username.like("player%")) |
+        (User.email.like("%@test.%")) |
+        (User.email.like("%@example.%"))
+    ).all()
+    
+    if not confirm:
+        return {
+            "success": False,
+            "message": "This is a dry run. Set confirm=true to actually delete users.",
+            "test_users_found": len(test_users),
+            "users_to_delete": [
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "created_at": user.created_at.isoformat() if user.created_at else None
+                }
+                for user in test_users
+            ],
+            "warning": "These users will be permanently deleted if confirm=true"
+        }
+    
+    # Delete test users
+    deleted_count = 0
+    deleted_users = []
+    
+    for user in test_users:
+        # Skip if this is the current admin user (safety check)
+        if user.id == current_user.id:
+            continue
+            
+        deleted_users.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        })
+        
+        db.delete(user)
+        deleted_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Successfully deleted {deleted_count} test users from production",
+        "deleted_users": deleted_users,
+        "remaining_users": db.query(User).count(),
+        "current_time": datetime.now(timezone.utc).isoformat()
+    }
