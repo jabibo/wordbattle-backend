@@ -43,6 +43,9 @@ from app.utils.cache import cache_response
 
 logger = logging.getLogger(__name__)
 
+# List of test usernames to exclude from production user listings
+TEST_USERNAMES = ["player01", "player02", "computer", "Computer", "computer_player", "test_user", "testuser"]
+
 def is_computer_player(player, db):
     """Check if a player is a computer player."""
     if hasattr(player, 'user_id'):
@@ -499,6 +502,10 @@ def get_available_games(
         
         # Get game creator info
         creator = db.query(User).filter(User.id == game.creator_id).first()
+        
+        # Filter out games created by test users
+        if creator and creator.username in TEST_USERNAMES:
+            continue  # Skip games created by test users
         
         # Format game info for contract response
         game_info = {
@@ -2130,7 +2137,8 @@ def invite_random_player(
     potential_users = db.query(User).filter(
         ~User.id.in_(excluded_ids),
         User.allow_invites == True,  # User accepts invites
-        User.preferred_languages.contains([game.language])  # User wants invites for this language
+        User.preferred_languages.contains([game.language]),  # User wants invites for this language
+        ~User.username.in_(TEST_USERNAMES)  # Exclude test users from production
     ).all()
     
     if not potential_users:
@@ -2297,7 +2305,8 @@ def search_users_for_invitation(
     query = db.query(User).filter(
         User.allow_invites == True,
         User.username.ilike(f"%{username_query}%"),  # Case-insensitive search
-        User.id != current_user.id  # Exclude current user
+        User.id != current_user.id,  # Exclude current user
+        ~User.username.in_(TEST_USERNAMES)  # Exclude test users from production
     )
     
     # Filter by language preference if specified
