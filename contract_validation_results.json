@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-06-19T21:01:39.717797",
+  "timestamp": "2025-06-19T21:15:40.458451",
   "target_url": "http://localhost:8000",
   "contracts_dir": "/Users/janbinge/git/wordbattle/wordbattle-contracts",
   "results": {
@@ -7,27 +7,27 @@
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.00667
+        "response_time": 0.007188
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.002746
+        "response_time": 0.003267
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.002946
+        "response_time": 0.001863
       },
       "/admin/contracts/info": {
         "available": true,
         "status_code": 404,
-        "response_time": 0.001195
+        "response_time": 0.001549
       },
       "/admin/contract-status": {
         "available": true,
         "status_code": 404,
-        "response_time": 0.001547
+        "response_time": 0.001521
       }
     },
     "contracts": {
