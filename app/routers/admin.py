@@ -2725,3 +2725,98 @@ def test_authentication_consistency(
             "/admin/debug/auth-test"
         ]
     }
+
+@router.post("/fix-feedback-schema")
+def fix_feedback_schema(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Fix feedback table schema mismatch (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Check current schema
+        result = db.execute(text("""
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'feedback' AND column_name = 'user_id'
+        """))
+        current_schema = result.fetchone()
+        
+        if not current_schema:
+            return {"success": False, "message": "Feedback table not found"}
+            
+        current_type = current_schema[1]
+        
+        if current_type in ['character varying', 'text', 'varchar']:
+            # Fix the schema mismatch
+            fix_sql = """
+            -- Backup existing data if any
+            CREATE TEMP TABLE feedback_backup AS SELECT * FROM feedback;
+            
+            -- Drop existing table
+            DROP TABLE IF EXISTS feedback;
+            
+            -- Create feedback table with correct schema
+            CREATE TABLE feedback (
+                id VARCHAR(36) NOT NULL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                category feedbackcategory NOT NULL,
+                description TEXT NOT NULL,
+                contact_email VARCHAR(255),
+                debug_logs JSON,
+                device_info JSON,
+                app_info JSON,
+                status feedbackstatus NOT NULL DEFAULT 'new',
+                admin_notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            -- Create indexes
+            CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id);
+            CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
+            CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+            CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+            
+            -- Restore data if any (convert user_id to integer if possible)
+            INSERT INTO feedback SELECT 
+                id, 
+                CAST(user_id AS INTEGER),
+                category,
+                description,
+                contact_email,
+                debug_logs,
+                device_info,
+                app_info,
+                status,
+                admin_notes,
+                created_at,
+                updated_at
+            FROM feedback_backup 
+            WHERE user_id ~ '^[0-9]+$';  -- Only insert rows where user_id is numeric
+            """
+            
+            db.execute(text(fix_sql))
+            db.commit()
+            
+            return {
+                "success": True,
+                "message": "Feedback schema fixed successfully",
+                "old_type": current_type,
+                "new_type": "integer",
+                "action": "Schema converted from String to Integer"
+            }
+        else:
+            return {
+                "success": True,
+                "message": "Schema is already correct",
+                "current_type": current_type,
+                "action": "No changes needed"
+            }
+            
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Schema fix failed: {str(e)}")
