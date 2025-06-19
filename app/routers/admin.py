@@ -2754,3 +2754,201 @@ def fix_feedback_schema(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Schema fix failed: {str(e)}")
+
+@router.get("/database/inspect-feedback-table")
+async def inspect_feedback_table(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Comprehensive inspection of feedback table structure and permissions"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from sqlalchemy import text, inspect
+        from ..models.feedback import Feedback
+        
+        results = {}
+        
+        # 1. Check if table exists in information_schema
+        table_exists_query = text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+            );
+        """)
+        table_exists = db.execute(table_exists_query).scalar()
+        results["table_exists_in_schema"] = table_exists
+        
+        # 2. List all tables in the database
+        all_tables_query = text("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            ORDER BY table_name;
+        """)
+        all_tables = [row[0] for row in db.execute(all_tables_query).fetchall()]
+        results["all_tables"] = all_tables
+        
+        # 3. Get detailed table structure if it exists
+        if table_exists:
+            # Get columns
+            columns_query = text("""
+                SELECT 
+                    column_name,
+                    data_type,
+                    is_nullable,
+                    column_default,
+                    character_maximum_length
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                ORDER BY ordinal_position;
+            """)
+            columns = []
+            for row in db.execute(columns_query).fetchall():
+                columns.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "nullable": row[2],
+                    "default": row[3],
+                    "max_length": row[4]
+                })
+            results["columns"] = columns
+            
+            # Get constraints
+            constraints_query = text("""
+                SELECT 
+                    tc.constraint_name,
+                    tc.constraint_type,
+                    kcu.column_name,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name
+                FROM information_schema.table_constraints AS tc 
+                JOIN information_schema.key_column_usage AS kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                LEFT JOIN information_schema.constraint_column_usage AS ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                    AND ccu.table_schema = tc.table_schema
+                WHERE tc.table_schema = 'public'
+                AND tc.table_name = 'feedback';
+            """)
+            constraints = []
+            for row in db.execute(constraints_query).fetchall():
+                constraints.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "column": row[2],
+                    "foreign_table": row[3],
+                    "foreign_column": row[4]
+                })
+            results["constraints"] = constraints
+            
+            # Get indexes
+            indexes_query = text("""
+                SELECT 
+                    indexname,
+                    indexdef
+                FROM pg_indexes 
+                WHERE schemaname = 'public' 
+                AND tablename = 'feedback';
+            """)
+            indexes = []
+            for row in db.execute(indexes_query).fetchall():
+                indexes.append({
+                    "name": row[0],
+                    "definition": row[1]
+                })
+            results["indexes"] = indexes
+        
+        # 4. Check current user and permissions
+        current_user_query = text("SELECT current_user, current_database();")
+        user_info = db.execute(current_user_query).fetchone()
+        results["database_user"] = {
+            "current_user": user_info[0],
+            "current_database": user_info[1]
+        }
+        
+        # 5. Check table permissions for current user
+        if table_exists:
+            permissions_query = text("""
+                SELECT 
+                    privilege_type
+                FROM information_schema.role_table_grants 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                AND grantee = current_user;
+            """)
+            permissions = [row[0] for row in db.execute(permissions_query).fetchall()]
+            results["current_user_permissions"] = permissions
+            
+            # Check all permissions on the table
+            all_permissions_query = text("""
+                SELECT 
+                    grantee,
+                    privilege_type,
+                    is_grantable
+                FROM information_schema.role_table_grants 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                ORDER BY grantee, privilege_type;
+            """)
+            all_permissions = []
+            for row in db.execute(all_permissions_query).fetchall():
+                all_permissions.append({
+                    "grantee": row[0],
+                    "privilege": row[1],
+                    "grantable": row[2]
+                })
+            results["all_permissions"] = all_permissions
+        
+        # 6. Test basic operations
+        operations_test = {}
+        
+        if table_exists:
+            # Test SELECT
+            try:
+                count_result = db.execute(text("SELECT COUNT(*) FROM feedback")).scalar()
+                operations_test["SELECT"] = {"success": True, "count": count_result}
+            except Exception as e:
+                operations_test["SELECT"] = {"success": False, "error": str(e)}
+            
+            # Test INSERT (with rollback)
+            try:
+                test_id = f"test-{current_user.id}-permissions"
+                db.execute(text("""
+                    INSERT INTO feedback (id, user_id, category, description, contact_email, status, created_at, updated_at) 
+                    VALUES (:test_id, :user_id, 'general', 'Permission test', 'test@example.com', 'new', NOW(), NOW())
+                """), {"test_id": test_id, "user_id": current_user.id})
+                db.rollback()
+                operations_test["INSERT"] = {"success": True, "message": "Insert test successful (rolled back)"}
+            except Exception as e:
+                operations_test["INSERT"] = {"success": False, "error": str(e)}
+                db.rollback()
+        
+        results["operations_test"] = operations_test
+        
+        # 7. Check Alembic version
+        try:
+            alembic_query = text("SELECT version_num FROM alembic_version;")
+            alembic_version = db.execute(alembic_query).scalar()
+            results["alembic_version"] = alembic_version
+        except Exception as e:
+            results["alembic_version"] = f"Error: {str(e)}"
+        
+        return {
+            "success": True,
+            "inspection_results": results,
+            "summary": {
+                "table_exists": table_exists,
+                "columns_count": len(results.get("columns", [])),
+                "constraints_count": len(results.get("constraints", [])),
+                "user_can_select": operations_test.get("SELECT", {}).get("success", False),
+                "user_can_insert": operations_test.get("INSERT", {}).get("success", False)
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database inspection failed: {str(e)}")
