@@ -2628,3 +2628,74 @@ def cleanup_test_users(
         "remaining_users": db.query(User).count(),
         "current_time": datetime.now(timezone.utc).isoformat()
     }
+
+@router.post("/emergency/cleanup-test-users")
+def emergency_cleanup_test_users(admin_token: str, confirm: bool = False, db: Session = Depends(get_db)):
+    """Emergency cleanup of test users using admin token file authentication."""
+    
+    # Read admin token from file
+    try:
+        with open("/app/admin_token.txt", "r") as f:
+            stored_admin_token = f.read().strip()
+    except FileNotFoundError:
+        raise HTTPException(status_code=403, detail="Admin token file not found")
+    
+    # Verify admin token
+    if admin_token != stored_admin_token:
+        raise HTTPException(status_code=403, detail="Invalid admin token")
+    
+    # Define test user patterns to remove
+    test_usernames = ["player01", "player02", "computer", "Computer", "test_user", "testuser"]
+    test_emails = ["player01@binge.de", "player02@binge.de", "computer@binge.de", "test@example.com"]
+    
+    # Find test users (exclude admin users for safety)
+    test_users = db.query(User).filter(
+        ((User.username.in_(test_usernames)) | 
+         (User.email.in_(test_emails)) |
+         (User.username.like("test_%")) |
+         (User.username.like("player%")) |
+         (User.email.like("%@test.%")) |
+         (User.email.like("%@example.%"))) &
+        (User.is_admin == False)  # Safety: never delete admin users
+    ).all()
+    
+    if not confirm:
+        return {
+            "success": False,
+            "message": "This is a dry run. Set confirm=true to actually delete users.",
+            "test_users_found": len(test_users),
+            "users_to_delete": [
+                {
+                    "id": user.id,
+                    "username": user.username,
+                    "email": user.email,
+                    "created_at": user.created_at.isoformat() if user.created_at else None
+                }
+                for user in test_users
+            ],
+            "warning": "These users will be permanently deleted if confirm=true"
+        }
+    
+    # Delete test users
+    deleted_count = 0
+    deleted_users = []
+    
+    for user in test_users:
+        deleted_users.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        })
+        
+        db.delete(user)
+        deleted_count += 1
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Successfully deleted {deleted_count} test users from production",
+        "deleted_users": deleted_users,
+        "remaining_users": db.query(User).count(),
+        "current_time": datetime.now(timezone.utc).isoformat()
+    }
