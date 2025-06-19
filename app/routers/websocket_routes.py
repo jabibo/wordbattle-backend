@@ -102,6 +102,7 @@ async def websocket_user_notifications(
                         # Handle ping/pong for connection health
                         if data == "ping":
                             await websocket.send_text("pong")
+                            logger.debug(f"Ping/pong with user {user.username}")
                         else:
                             logger.debug(f"Received notification message from {user.username}: {data}")
                             

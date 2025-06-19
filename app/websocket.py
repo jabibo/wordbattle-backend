@@ -139,8 +139,11 @@ class UserNotificationManager:
                 logger.error(f"Error sending notification to user {user_id}: {e}")
                 # Clean up broken connection
                 self.disconnect(websocket)
+                return False
         else:
             logger.debug(f"User {user_id} not connected for notifications")
+            return False
+        return True
     
     async def send_invitation_received(self, user_id: int, invitation_data: dict):
         """Send invitation_received notification to user."""
