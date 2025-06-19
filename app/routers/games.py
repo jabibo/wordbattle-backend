@@ -44,7 +44,12 @@ from app.utils.cache import cache_response
 logger = logging.getLogger(__name__)
 
 # List of test usernames to exclude from production user listings
-TEST_USERNAMES = ["player01", "player02", "computer", "Computer", "computer_player", "test_user", "testuser"]
+TEST_USERNAMES = [
+    "player01", "player02", "player1", "player2",  # Common test player names
+    "computer", "Computer", "computer_player", "Computer_player",  # Computer player variations
+    "test_user", "testuser", "test", "Test", "test_player",  # Test user variations
+    "Player01", "Player02", "Player1", "Player2"  # Capitalized variations
+]
 
 def is_computer_player(player, db):
     """Check if a player is a computer player."""
