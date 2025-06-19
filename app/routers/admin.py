@@ -1504,13 +1504,17 @@ async def get_debug_verification_codes():
             else:
                 is_expired = True
                 
+            # A verification code is "used" if it has been cleared (None) 
+            # or if the code exists but is expired
+            is_code_used = user.verification_code is None or is_expired
+                
             verification_data.append({
                 "email": user.email,
                 "username": user.username,
                 "verification_code": user.verification_code,
                 "expires_at": expires_at.isoformat() if expires_at else None,
                 "is_expired": is_expired,
-                "is_verified": user.is_email_verified
+                "is_verified": is_code_used  # This now means "is this specific code used/invalid"
             })
         
         return {
