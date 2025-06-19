@@ -1065,20 +1065,36 @@ def list_user_games(
 
 @router.get("/my-invitations")
 def get_my_invitations(
+    last_checked: Optional[str] = Query(None, description="ISO timestamp of last check for new invitations"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Get all pending invitations for the current user."""
-    invitations = db.query(GameInvitation).filter(
+    """Get all pending invitations for the current user with notification support."""
+    invitations_query = db.query(GameInvitation).filter(
         and_(
             GameInvitation.invitee_id == current_user.id,
             GameInvitation.status == InvitationStatus.PENDING
         )
-    ).all()
+    )
+    
+    # Get all invitations
+    invitations = invitations_query.all()
+    
+    # If last_checked provided, find new invitations since then
+    new_invitations = []
+    if last_checked:
+        try:
+            last_checked_dt = datetime.fromisoformat(last_checked.replace('Z', '+00:00'))
+            new_invitations = invitations_query.filter(
+                GameInvitation.created_at > last_checked_dt
+            ).all()
+        except ValueError:
+            # Invalid timestamp format, ignore
+            pass
     
     invitation_list = []
     for inv in invitations:
-        invitation_list.append({
+        invitation_data = {
             "invitation_id": inv.id,
             "game_id": inv.game_id,
             "inviter": {
@@ -1088,6 +1104,7 @@ def get_my_invitations(
             },
             "game": {
                 "id": inv.game.id,
+                "name": getattr(inv.game, 'name', f"Game by {inv.inviter.username}"),  # Game name with fallback
                 "language": inv.game.language,
                 "max_players": inv.game.max_players,
                 "status": inv.game.status.value,
@@ -1095,13 +1112,21 @@ def get_my_invitations(
             },
             "status": inv.status.value,
             "created_at": inv.created_at.isoformat(),
-            "join_token": inv.join_token
-        })
+            "join_token": inv.join_token,
+            "is_new": inv in new_invitations  # Flag for new invitations
+        }
+        invitation_list.append(invitation_data)
+    
+    # Sort by creation date, newest first
+    invitation_list.sort(key=lambda x: x["created_at"], reverse=True)
     
     return {
         "invitations": invitation_list,
         "total_count": len(invitation_list),
-        "pending_count": len([inv for inv in invitation_list if inv["status"] == "pending"])
+        "pending_count": len([inv for inv in invitation_list if inv["status"] == "pending"]),
+        "new_count": len(new_invitations),
+        "last_checked": datetime.now(timezone.utc).isoformat(),
+        "has_new_invitations": len(new_invitations) > 0
     }
 
 # Friends system removed - see /profile/me/previous-players instead

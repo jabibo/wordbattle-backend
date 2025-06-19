@@ -180,12 +180,8 @@ WordBattle Team
 
     def send_game_invitation(self, to_email: str, invitee_username: str, inviter_username: str, 
                            game_id: str, join_token: str, base_url: str = None) -> bool:
-        """Send game invitation email with join link."""
+        """Send game invitation email with app-focused instructions."""
         try:
-            # Use frontend URL if no base_url provided
-            if base_url is None:
-                base_url = FRONTEND_URL
-            
             # For testing environment, just log instead of sending email
             if os.getenv("TESTING") == "1" or not self.username:
                 logger.info(f"TESTING MODE: Game invitation for {to_email} - Game: {game_id}, Token: {join_token}")
@@ -195,32 +191,36 @@ WordBattle Team
             msg = MIMEMultipart()
             msg['From'] = self.from_email
             msg['To'] = to_email
-            msg['Subject'] = f"WordBattle Game Invitation from {inviter_username}"
+            msg['Subject'] = f"🎮 WordBattle Game Invitation from {inviter_username}"
             
-            # Create join link - use frontend URL for user-facing links
-            join_link = f"{base_url}/games/{game_id}/join?token={join_token}"
-            
-            # Email body
+            # Email body - app-focused, no web links
             body = f"""
 Hello {invitee_username},
 
-{inviter_username} has invited you to play WordBattle!
+🎮 {inviter_username} has invited you to play WordBattle!
 
-Click the link below to join the game:
-{join_link}
+📱 TO JOIN THE GAME:
+1. Open the WordBattle app on your device
+2. Look for the invitation notification
+3. Tap "Accept" to join the game
 
-Or you can:
-1. Log in to WordBattle
-2. Go to your invitations
-3. Accept the invitation from {inviter_username}
+📥 Don't have the app yet?
+Download WordBattle from your App Store and create an account!
 
-Game Details:
-- Game ID: {game_id}
+🎯 Game Details:
+- Game ID: {game_id} (for manual joining if needed)
 - Invited by: {inviter_username}
+- Join Token: {join_token}
+
+💡 Manual Join Option:
+If you don't see the invitation in the app, you can manually join:
+1. Open WordBattle app
+2. Go to "Join Game" 
+3. Enter Game ID: {game_id}
 
 Don't keep them waiting - start playing now!
 
-Best regards,
+Happy gaming! 🎲
 WordBattle Team
             """
             
@@ -255,12 +255,8 @@ WordBattle Team
 
     def send_random_player_invitation(self, to_email: str, invitee_username: str, inviter_username: str, 
                                     game_id: str, join_token: str, base_url: str = None) -> bool:
-        """Send game invitation email to a random existing player."""
+        """Send game invitation email to a random existing player with app-focused instructions."""
         try:
-            # Use frontend URL if no base_url provided
-            if base_url is None:
-                base_url = FRONTEND_URL
-            
             # For testing environment, just log instead of sending email
             if os.getenv("TESTING") == "1" or not self.username:
                 logger.info(f"TESTING MODE: Random player invitation for {to_email} - Game: {game_id}, Token: {join_token}")
@@ -270,30 +266,36 @@ WordBattle Team
             msg = MIMEMultipart()
             msg['From'] = self.from_email
             msg['To'] = to_email
-            msg['Subject'] = f"WordBattle Game Invitation from {inviter_username}"
+            msg['Subject'] = f"🎮 WordBattle Game Invitation from {inviter_username}"
             
-            # Create join link - use frontend URL for user-facing links
-            join_link = f"{base_url}/games/{game_id}/join?token={join_token}"
-            
-            # Email body for random invitation
+            # Email body for random invitation - app-focused, no web links
             body = f"""
 Hello {invitee_username},
 
-{inviter_username} is looking for players and has invited you to join a WordBattle game!
+🎮 {inviter_username} is looking for skilled players and has invited you to join a WordBattle game!
 
-We thought you might be interested in playing since you're an active WordBattle player.
+We thought you might be interested since you're an active WordBattle player.
 
-Click the link below to join the game:
-{join_link}
+📱 TO JOIN THE GAME:
+1. Open the WordBattle app on your device
+2. Look for the invitation notification  
+3. Tap "Accept" to join the game
 
-Game Details:
-- Game ID: {game_id}
+🎯 Game Details:
+- Game ID: {game_id} (for manual joining if needed)
 - Invited by: {inviter_username}
+- Join Token: {join_token}
 - This is a random invitation to an active player
 
-Join now and show off your word skills!
+💡 Manual Join Option:
+If you don't see the invitation in the app, you can manually join:
+1. Open WordBattle app
+2. Go to "Join Game"
+3. Enter Game ID: {game_id}
 
-Best regards,
+Join now and show off your word skills! 🏆
+
+Happy gaming! 🎲
 WordBattle Team
             """
             
