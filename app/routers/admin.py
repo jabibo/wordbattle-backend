@@ -2952,3 +2952,97 @@ async def inspect_feedback_table(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database inspection failed: {str(e)}")
+
+@router.get("/database/inspect-feedback-table-public")
+async def inspect_feedback_table_public(
+    db: Session = Depends(get_db)
+):
+    """Temporary public endpoint to inspect feedback table (no auth required)"""
+    try:
+        from sqlalchemy import text
+        
+        results = {}
+        
+        # 1. Check if table exists in information_schema
+        table_exists_query = text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+            );
+        """)
+        table_exists = db.execute(table_exists_query).scalar()
+        results["table_exists_in_schema"] = table_exists
+        
+        # 2. List all tables in the database
+        all_tables_query = text("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            ORDER BY table_name;
+        """)
+        all_tables = [row[0] for row in db.execute(all_tables_query).fetchall()]
+        results["all_tables"] = all_tables
+        
+        # 3. Check current user and database
+        current_user_query = text("SELECT current_user, current_database();")
+        user_info = db.execute(current_user_query).fetchone()
+        results["database_user"] = {
+            "current_user": user_info[0],
+            "current_database": user_info[1]
+        }
+        
+        # 4. If feedback table exists, get basic info
+        if table_exists:
+            # Get columns
+            columns_query = text("""
+                SELECT 
+                    column_name,
+                    data_type,
+                    is_nullable,
+                    column_default
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                ORDER BY ordinal_position;
+            """)
+            columns = []
+            for row in db.execute(columns_query).fetchall():
+                columns.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "nullable": row[2],
+                    "default": row[3]
+                })
+            results["columns"] = columns
+            
+            # Test SELECT operation
+            try:
+                count_result = db.execute(text("SELECT COUNT(*) FROM feedback")).scalar()
+                results["select_test"] = {"success": True, "count": count_result}
+            except Exception as e:
+                results["select_test"] = {"success": False, "error": str(e)}
+        
+        # 5. Check Alembic version
+        try:
+            alembic_query = text("SELECT version_num FROM alembic_version;")
+            alembic_version = db.execute(alembic_query).scalar()
+            results["alembic_version"] = alembic_version
+        except Exception as e:
+            results["alembic_version"] = f"Error: {str(e)}"
+        
+        return {
+            "success": True,
+            "inspection_results": results,
+            "summary": {
+                "table_exists": table_exists,
+                "columns_count": len(results.get("columns", [])),
+                "can_select": results.get("select_test", {}).get("success", False)
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
