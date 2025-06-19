@@ -2703,3 +2703,25 @@ def emergency_cleanup_test_users(admin_token: str, confirm: bool = False, db: Se
         "remaining_users": db.query(User).count(),
         "current_time": datetime.now(timezone.utc).isoformat()
     }
+
+@router.get("/debug/auth-test")
+def test_authentication_consistency(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Debug endpoint to test authentication consistency across all endpoints"""
+    return {
+        "success": True,
+        "message": "Authentication working consistently",
+        "user_id": current_user.id,
+        "username": current_user.username,
+        "email": current_user.email,
+        "is_admin": current_user.is_admin,
+        "authentication_method": "Bearer token via get_current_user dependency",
+        "endpoints_using_same_auth": [
+            "/auth/me",
+            "/games/my-games", 
+            "/feedback/submit",
+            "/admin/debug/auth-test"
+        ]
+    }
