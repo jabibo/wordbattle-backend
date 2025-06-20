@@ -1200,6 +1200,9 @@ def get_my_invitations(
     
     invitation_list = []
     for inv in invitations:
+        # Get current player count for this game
+        current_players = db.query(Player).filter(Player.game_id == inv.game_id).count()
+        
         invitation_data = {
             "invitation_id": inv.id,
             "game_id": inv.game_id,
@@ -1213,6 +1216,7 @@ def get_my_invitations(
                 "name": getattr(inv.game, 'name', f"Game by {inv.inviter.username}"),  # Game name with fallback
                 "language": inv.game.language,
                 "max_players": inv.game.max_players,
+                "current_players": current_players,  # Add current player count
                 "status": inv.game.status.value,
                 "created_at": inv.game.created_at.isoformat()
             },
@@ -1318,6 +1322,13 @@ async def start_game(
         raise HTTPException(
             status_code=400,
             detail="Not enough players to start game"
+        )
+    
+    # Check if game has reached max_players count (for games with specific player requirements)
+    if len(players) < game.max_players:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Game requires {game.max_players} players but only has {len(players)} players. Wait for more players to join."
         )
     
     # Get test mode from game state
@@ -2176,6 +2187,13 @@ async def auto_start_game(
     players = db.query(Player).filter(Player.game_id == game_id).all()
     if len(players) < 2:
         raise HTTPException(400, "Not enough players to start game")
+    
+    # Check if game has reached max_players count (for games with specific player requirements)  
+    if len(players) < game.max_players:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Game requires {game.max_players} players but only has {len(players)} players. Wait for more players to join."
+        )
     
     # Get test mode from game state
     state_data = json.loads(game.state) if game.state else {}
