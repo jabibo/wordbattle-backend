@@ -47,3 +47,28 @@ scripts/*
 terraform/**/.terraform/
 terraform/
 cloud_sql_proxy
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+._.DS_Store
+**/.DS_Store
+**/._.DS_Store
+
+# Admin and validation files
+admin_token.txt
+contract_validation_results.json
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# IDE specific
+.vscode/
+.idea/
+*.sublime-*
+*.swp
+*.swo
+*~

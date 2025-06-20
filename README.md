@@ -8,7 +8,7 @@ A FastAPI backend for a multiplayer word game similar to Scrabble, deployed on G
 
 **Production Environment**: Google Cloud Run  
 **Current Branch**: `main`  
-**Deployment**: Automated via Git-integrated pipeline  
+**Deployment**: Unified deployment pipeline via `deploy-unified.sh`  
 
 The application is currently running on GCP with multi-environment support (production and testing).
 
@@ -16,33 +16,38 @@ The application is currently running on GCP with multi-environment support (prod
 
 ```
 wordbattle-backend/
-├── app/                    # Main application code
-├── alembic/               # Database migrations
-├── tests/                 # Test suite
-├── terraform/             # GCP infrastructure as code
-├── docs/                  # Documentation
-├── data/                  # Static data files
-├── migrations/            # Database migration scripts
-├── scripts/               # Utility scripts
-├── archive/              # Old/deprecated files
-│   ├── aws-deployment/   # Legacy AWS deployment files
-│   ├── old-deployment-scripts/
-│   ├── test-scripts/
-│   ├── old-dockerfiles/
-│   ├── old-configs/
-│   ├── alternative-deployments/
-│   └── old-documentation/
-├── deploy-gcp-production.ps1  # Main deployment script (PowerShell)
-├── deploy-gcp-production.sh   # Main deployment script (Bash)
-├── DEPLOYMENT_GUIDE.md        # Deployment instructions
-├── GCP_MIGRATION_SUMMARY.md   # Migration details
-└── Dockerfile.cloudrun        # Docker configuration for GCP
+├── app/                          # Main application code
+│   ├── routers/                  # API endpoints
+│   ├── models/                   # Database models  
+│   ├── schemas/                  # Pydantic schemas
+│   ├── utils/                    # Utility functions
+│   ├── game_logic/               # Game engine
+│   └── middleware/               # Custom middleware
+├── alembic/                      # Database migrations
+├── tests/                        # Test suite
+├── docs/                         # 📚 Documentation Hub
+│   ├── current-features/         # Current system features
+│   ├── archived-features/        # Completed project docs
+│   ├── troubleshooting/          # Problem resolution guides
+│   ├── deployment/               # Deployment guides
+│   └── frontend/                 # Frontend integration docs
+├── data/                         # Word lists and static data
+├── scripts/                      # Utility and maintenance scripts
+├── archive/                      # 🗃️ Historical files
+│   ├── analysis-scripts/         # Development analysis tools
+│   ├── aws-deployment/           # Legacy AWS deployment
+│   ├── old-deployment-scripts/   # Previous deployment attempts
+│   ├── old-configs/              # Deprecated configurations
+│   └── alternative-deployments/ # Other platform deployments
+├── deploy-unified.sh             # 🚀 Main deployment script
+├── Dockerfile.cloudrun           # Docker configuration for GCP
+└── requirements.txt              # Python dependencies
 ```
 
 ## 🔧 Quick Start
 
 ### Prerequisites
-- Python 3.9+
+- Python 3.11+
 - Docker
 - Google Cloud SDK (for deployment)
 - Git
@@ -60,8 +65,8 @@ pip install -r requirements.txt
 
 2. **Environment configuration:**
 ```bash
-cp .env.example .env
-# Edit .env with your configuration
+cp deploy.testing.env.example deploy.testing.env
+# Edit with your configuration
 ```
 
 3. **Database setup:**
@@ -78,37 +83,35 @@ API available at: http://localhost:8000
 
 ## 🌐 Deployment
 
-### Production Deployment (GCP)
+### Unified Deployment Script
 
-**PowerShell:**
-```powershell
-.\deploy-gcp-production.ps1 -Environment "production"
-```
+The project uses a single, comprehensive deployment script for both environments:
 
-**Bash:**
+**Testing Environment:**
 ```bash
-./deploy-gcp-production.sh production
+./deploy-unified.sh testing
 ```
 
-### Testing Environment
-
-**PowerShell:**
-```powershell
-.\deploy-gcp-production.ps1 -Environment "testing"
-```
-
-**Bash:**
+**Production Environment:**
 ```bash
-./deploy-gcp-production.sh testing
+./deploy-unified.sh production
 ```
 
-For detailed deployment instructions, see [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md).
+The script automatically handles:
+- ✅ Environment validation
+- ✅ Git integration and tagging
+- ✅ Docker image building and pushing
+- ✅ Contract validation
+- ✅ Health checks and verification
+- ✅ Comprehensive testing
+
+For detailed deployment instructions, see [docs/deployment/DEPLOYMENT_GUIDE.md](docs/deployment/DEPLOYMENT_GUIDE.md).
 
 ## 📖 Key Environment Variables
 
 - `DATABASE_URL`: Database connection string
-- `SECRET_KEY`: JWT secret key
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration (default: 30)
+- `SECRET_KEY`: JWT secret key  
+- `ACCESS_TOKEN_EXPIRE_MINUTES`: Token expiration (default: 240 - 4 hours)
 - `DEFAULT_WORDLIST_PATH`: Path to wordlist file
 - `LETTER_POOL_SIZE`: Letters per player rack (default: 7)
 - `GAME_INACTIVE_DAYS`: Days before game abandonment (default: 7)
@@ -121,51 +124,87 @@ python -m pytest
 
 # Run with coverage
 python -m pytest --cov=app --cov-report=html
+
+# Run specific test categories
+python -m pytest tests/test_auth.py
+python -m pytest tests/test_game_logic.py
 ```
 
 ## 📚 Documentation
 
-### API Documentation
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **API Spec**: [wordbattle_backend_api_documentation.md](wordbattle_backend_api_documentation.md)
+### 🔗 Quick Links
+- **API Documentation**: http://localhost:8000/docs (Swagger UI)
+- **Alternative API Docs**: http://localhost:8000/redoc (ReDoc)
 
-### Admin & Operations
-- **Admin Guide**: [docs/ADMIN.md](docs/ADMIN.md) - Administrative tasks, troubleshooting, and deployment issues
-- **Database Guide**: [docs/DATABASE.md](docs/DATABASE.md) - Database operations and management
-- **Deployment Guide**: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Comprehensive deployment instructions
+### 📖 Documentation Organization
+
+#### Current System Documentation
+- **[docs/current-features/](docs/current-features/)** - Active features and implementations
+  - Computer Player Auto-Recreation
+  - Authentication System
+  - Game Logic
+
+#### Deployment & Operations  
+- **[docs/deployment/](docs/deployment/)** - Deployment guides and workflows
+  - Deployment Guide - Comprehensive deployment instructions
+  - Development Workflow - Git workflow and environment management
+  - Deployment Safety - Best practices and safety measures
+
+#### Troubleshooting & Support
+- **[docs/troubleshooting/](docs/troubleshooting/)** - Problem resolution
+  - WebSocket Timeout Fix
+  - Common Issues and Solutions
+
+#### Integration Documentation
+- **[docs/frontend/](docs/frontend/)** - Frontend team integration guides
+- **[docs/ADMIN.md](docs/ADMIN.md)** - Administrative tasks and management
+- **[docs/DATABASE.md](docs/DATABASE.md)** - Database operations
+
+#### Historical Documentation
+- **[docs/archived-features/](docs/archived-features/)** - Completed projects and migrations
+  - GCP Migration Summary
+  - Security Assessment
+  - Project Status Reports
 
 ## 🗃️ Archive Directory
 
-The `archive/` directory contains historical files from the development process:
+The `archive/` directory preserves historical development artifacts:
 
-- **aws-deployment/**: Legacy AWS App Runner deployment files
-- **old-deployment-scripts/**: Previous deployment attempts and alternatives
-- **test-scripts/**: Development testing scripts and database utilities
-- **old-dockerfiles/**: Previous Docker configurations
-- **old-configs/**: Outdated configuration files
-- **alternative-deployments/**: Scripts for Fly.io, Railway, Render deployments
-- **old-documentation/**: Previous documentation versions
+- **analysis-scripts/**: Development debugging and analysis tools
+- **aws-deployment/**: Legacy AWS App Runner deployment files  
+- **old-deployment-scripts/**: Previous deployment attempts
+- **old-configs/**: Deprecated configuration files
+- **alternative-deployments/**: Scripts for other platforms (Fly.io, Railway, Render)
 
 These files are preserved for reference but are not part of the current production system.
 
 ## 🎮 Game Features
 
 - **Multiplayer word placement** similar to Scrabble
-- **Multi-language wordlist support** (German, English, etc.)
-- **Real-time gameplay** via WebSocket connections
+- **Multi-language wordlist support** (German, English, French, Spanish, Italian)
+- **Real-time gameplay** via WebSocket connections  
 - **Invitation system** for private games
 - **Score tracking** with letter and bonus calculations
+- **Computer player support** with automatic recreation
 - **Intelligent game ending** based on various conditions
 
 ## 🏗️ Infrastructure
 
 - **Platform**: Google Cloud Platform
-- **Compute**: Cloud Run (serverless containers)
+- **Compute**: Cloud Run (serverless containers)  
 - **Database**: Cloud SQL PostgreSQL
 - **Container Registry**: Google Container Registry
-- **Secrets**: Google Secret Manager
-- **Infrastructure**: Terraform-managed
+- **Secrets**: Google Secret Manager  
+- **Monitoring**: Cloud Logging and Error Reporting
+
+## 🔐 Security Features
+
+- **JWT-based authentication** with refresh tokens
+- **Persistent token support** for "remember me" functionality
+- **Email verification** with 6-digit codes
+- **Admin role management** with fine-grained permissions
+- **Contract validation** middleware for API compliance
+- **Environment-based configuration** with secure secret management
 
 ## 📄 License
 
