@@ -1,56 +1,90 @@
 {
-  "timestamp": "2025-06-19T21:15:40.458451",
-  "target_url": "http://localhost:8000",
-  "contracts_dir": "/Users/janbinge/git/wordbattle/wordbattle-contracts",
+  "timestamp": "2025-06-20T10:10:56.987116",
+  "target_url": "https://wordbattle-backend-test-skhco4fxoq-ew.a.run.app",
+  "contracts_dir": "./wordbattle-contracts",
   "results": {
     "endpoints": {
       "/health": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.007188
+        "response_time": 0.085129
       },
       "/docs": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.003267
+        "response_time": 0.081005
       },
       "/openapi.json": {
         "available": true,
         "status_code": 200,
-        "response_time": 0.001863
+        "response_time": 0.142755
       },
       "/admin/contracts/info": {
         "available": true,
-        "status_code": 404,
-        "response_time": 0.001549
+        "status_code": 200,
+        "response_time": 0.187297
       },
       "/admin/contract-status": {
         "available": true,
-        "status_code": 404,
-        "response_time": 0.001521
+        "status_code": 200,
+        "response_time": 0.079591
       }
     },
     "contracts": {
       "contract_info": {
-        "available": false,
-        "error": "No contract endpoints accessible"
+        "available": true,
+        "endpoint": "/admin/contracts/info",
+        "data": {
+          "contract_validation": {
+            "enabled": true,
+            "strict_mode": false,
+            "contracts_dir": "/app/contracts",
+            "contracts_dir_exists": true,
+            "validator_loaded": true,
+            "schema_files": [
+              "all",
+              "auth",
+              "game",
+              "error",
+              "config"
+            ],
+            "total_schemas": 5,
+            "middleware_active": true,
+            "error": null,
+            "validator_details": {
+              "enabled": true,
+              "strict_mode": false,
+              "contracts_dir": "/app/contracts",
+              "loaded": true,
+              "schema_files": [
+                "all",
+                "auth",
+                "game",
+                "error",
+                "config"
+              ],
+              "total_schemas": 18
+            }
+          },
+          "timestamp": "2025-06-20T08:10:57.835482+00:00"
+        },
+        "validation_enabled": true
       }
     },
     "schema": {
       "openapi_available": true,
-      "paths_count": 50,
-      "components_count": 19,
+      "paths_count": 118,
+      "components_count": 41,
       "required_paths": {
         "available": [
           "/health",
-          "/games/my-games",
-          "/games/{game_id}"
-        ],
-        "missing": [
           "/auth/register",
+          "/games/my-games",
+          "/games/{game_id}",
           "/admin/contracts/info"
         ],
-        "compliance": false
+        "missing": [],
+        "compliance": true
       }
     }
   },
