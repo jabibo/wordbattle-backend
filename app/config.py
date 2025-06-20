@@ -65,7 +65,7 @@ def get_database_url(is_test=False):
         db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
         return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
     else:
-        # GCP Cloud SQL Connection - using pg8000 with unix socket
+        # GCP Cloud SQL Connection
         project_id = CLOUD_CONFIG["project_id"]
         instance_name = "wordbattle-db"
         # Use environment variables for database name
@@ -75,7 +75,19 @@ def get_database_url(is_test=False):
             db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_db"))
         db_user = os.getenv("DB_USER", "wordbattle")
         db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
-        return f"postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock=/cloudsql/{project_id}:{CLOUD_CONFIG['region']}:{instance_name}"
+        
+        # Check if SSL is required (production)
+        require_ssl = os.getenv("CLOUD_SQL_REQUIRE_SSL", "false").lower() == "true"
+        ssl_mode = os.getenv("CLOUD_SQL_SSL_MODE", "prefer")
+        
+        if require_ssl:
+            # Use TCP connection with SSL for production
+            db_host = os.getenv("DB_HOST", f"{project_id}:{CLOUD_CONFIG['region']}:{instance_name}")
+            db_port = os.getenv("DB_PORT", "5432")
+            return f"postgresql+pg8000://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}?sslmode={ssl_mode}"
+        else:
+            # Use unix socket for testing/development
+            return f"postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock=/cloudsql/{project_id}:{CLOUD_CONFIG['region']}:{instance_name}"
 
 # Use the function to get the main database URL
 # Check if we're in testing mode to use test database
