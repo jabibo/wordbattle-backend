@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup, config, feedback, websocket_routes
+from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup, config, feedback, websocket_routes, analytics
 from app.config import CORS_ORIGINS, RATE_LIMIT, SECRET_KEY, ALGORITHM
 import time
 import os
@@ -123,6 +123,10 @@ app = FastAPI(
         {
             "name": "chat",
             "description": "Chat operations",
+        },
+        {
+            "name": "analytics",
+            "description": "Performance monitoring and analytics",
         },
     ],
     lifespan=lifespan
@@ -547,6 +551,7 @@ app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(config.router)
 app.include_router(feedback.router)
+app.include_router(analytics.router)  # Performance monitoring and analytics
 app.include_router(websocket_routes.router)  # WebSocket routes including notifications
 
 @app.get("/", tags=["root"])
