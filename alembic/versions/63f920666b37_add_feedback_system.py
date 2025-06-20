@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '63f920666b37'
-down_revision = '0008_drop_friends_table'
+down_revision = '0008'
 branch_labels = None
 depends_on = None
 
@@ -19,7 +19,7 @@ def upgrade():
     # Create feedback table
     op.create_table('feedback',
         sa.Column('id', sa.String(), nullable=False),
-        sa.Column('user_id', sa.String(), nullable=False),
+        sa.Column('user_id', sa.Integer(), nullable=False),
         sa.Column('category', sa.Enum('BUG_REPORT', 'FEATURE_REQUEST', 'PERFORMANCE_ISSUE', 'UI_UX_FEEDBACK', 'GAME_LOGIC_ISSUE', 'AUTHENTICATION_PROBLEM', 'NETWORK_CONNECTION_ISSUE', 'GENERAL_FEEDBACK', 'OTHER', name='feedbackcategory'), nullable=False),
         sa.Column('description', sa.Text(), nullable=False),
         sa.Column('contact_email', sa.String(), nullable=True),

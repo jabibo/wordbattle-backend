@@ -2449,74 +2449,8 @@ def run_feedback_migration(
     """Run feedback system migration (admin only)"""
     if not current_user.is_admin:
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    try:
-        # SQL to create feedback table and enums
-        migration_sql = """
-        -- Create feedback category enum
-        DO $$ BEGIN
-            CREATE TYPE feedbackcategory AS ENUM (
-                'bug_report', 'feature_request', 'performance_issue', 
-                'ui_ux_feedback', 'game_logic_issue', 'authentication_problem',
-                'network_connection_issue', 'general_feedback', 'other'
-            );
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
 
-        -- Create feedback status enum
-        DO $$ BEGIN
-            CREATE TYPE feedbackstatus AS ENUM (
-                'new', 'in_review', 'resolved', 'closed'
-            );
-        EXCEPTION
-            WHEN duplicate_object THEN null;
-        END $$;
 
-        -- Drop existing feedback table if it exists (to fix schema)
-        DROP TABLE IF EXISTS feedback;
-        
-        -- Create feedback table
-        CREATE TABLE IF NOT EXISTS feedback (
-            id VARCHAR(36) NOT NULL PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            category feedbackcategory NOT NULL,
-            description TEXT NOT NULL,
-            contact_email VARCHAR(255),
-            debug_logs JSON,
-            device_info JSON,
-            app_info JSON,
-            status feedbackstatus NOT NULL DEFAULT 'new',
-            admin_notes TEXT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        );
-
-        -- Create indexes
-        CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id);
-        CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
-        CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
-        CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
-        """
-        
-        # Execute migration
-        db.execute(text(migration_sql))
-        db.commit()
-        
-        # Verify table exists
-        result = db.execute(text("SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'feedback'"))
-        count = result.scalar()
-        
-        return {
-            "success": True,
-            "message": "Feedback migration completed successfully",
-            "table_created": count > 0
-        }
-        
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Migration failed: {str(e)}")
 
 @router.get("/debug/my-persistent-token")
 def get_my_persistent_token(current_user: User = Depends(get_current_user)):
@@ -2725,3 +2659,296 @@ def test_authentication_consistency(
             "/admin/debug/auth-test"
         ]
     }
+
+@router.post("/fix-feedback-schema")
+def fix_feedback_schema(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Fix feedback table schema mismatch (admin only)"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Check current schema
+        result = db.execute(text("""
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'feedback' AND column_name = 'user_id'
+        """))
+        current_schema = result.fetchone()
+        
+        if not current_schema:
+            return {"success": False, "message": "Feedback table not found"}
+            
+        current_type = current_schema[1]
+        
+        if current_type in ['character varying', 'text', 'varchar']:
+            # Fix the schema mismatch
+            fix_sql = """
+            -- Backup existing data if any
+            CREATE TEMP TABLE feedback_backup AS SELECT * FROM feedback;
+            
+            -- Drop existing table
+            DROP TABLE IF EXISTS feedback;
+            
+            -- Create feedback table with correct schema
+            CREATE TABLE feedback (
+                id VARCHAR(36) NOT NULL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                category feedbackcategory NOT NULL,
+                description TEXT NOT NULL,
+                contact_email VARCHAR(255),
+                debug_logs JSON,
+                device_info JSON,
+                app_info JSON,
+                status feedbackstatus NOT NULL DEFAULT 'new',
+                admin_notes TEXT,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            -- Create indexes
+            CREATE INDEX IF NOT EXISTS idx_feedback_user_id ON feedback(user_id);
+            CREATE INDEX IF NOT EXISTS idx_feedback_category ON feedback(category);
+            CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+            CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at);
+            
+            -- Restore data if any (convert user_id to integer if possible)
+            INSERT INTO feedback SELECT 
+                id, 
+                CAST(user_id AS INTEGER),
+                category,
+                description,
+                contact_email,
+                debug_logs,
+                device_info,
+                app_info,
+                status,
+                admin_notes,
+                created_at,
+                updated_at
+            FROM feedback_backup 
+            WHERE user_id ~ '^[0-9]+$';  -- Only insert rows where user_id is numeric
+            """
+            
+            db.execute(text(fix_sql))
+            db.commit()
+            
+            return {
+                "success": True,
+                "message": "Feedback schema fixed successfully",
+                "old_type": current_type,
+                "new_type": "integer",
+                "action": "Schema converted from String to Integer"
+            }
+        else:
+            return {
+                "success": True,
+                "message": "Schema is already correct",
+                "current_type": current_type,
+                "action": "No changes needed"
+            }
+            
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Schema fix failed: {str(e)}")
+
+@router.get("/database/inspect-feedback-table")
+async def inspect_feedback_table(
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Comprehensive inspection of feedback table structure and permissions"""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        from sqlalchemy import text, inspect
+        from ..models.feedback import Feedback
+        
+        results = {}
+        
+        # 1. Check if table exists in information_schema
+        table_exists_query = text("""
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+            );
+        """)
+        table_exists = db.execute(table_exists_query).scalar()
+        results["table_exists_in_schema"] = table_exists
+        
+        # 2. List all tables in the database
+        all_tables_query = text("""
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            ORDER BY table_name;
+        """)
+        all_tables = [row[0] for row in db.execute(all_tables_query).fetchall()]
+        results["all_tables"] = all_tables
+        
+        # 3. Get detailed table structure if it exists
+        if table_exists:
+            # Get columns
+            columns_query = text("""
+                SELECT 
+                    column_name,
+                    data_type,
+                    is_nullable,
+                    column_default,
+                    character_maximum_length
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                ORDER BY ordinal_position;
+            """)
+            columns = []
+            for row in db.execute(columns_query).fetchall():
+                columns.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "nullable": row[2],
+                    "default": row[3],
+                    "max_length": row[4]
+                })
+            results["columns"] = columns
+            
+            # Get constraints
+            constraints_query = text("""
+                SELECT 
+                    tc.constraint_name,
+                    tc.constraint_type,
+                    kcu.column_name,
+                    ccu.table_name AS foreign_table_name,
+                    ccu.column_name AS foreign_column_name
+                FROM information_schema.table_constraints AS tc 
+                JOIN information_schema.key_column_usage AS kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema
+                LEFT JOIN information_schema.constraint_column_usage AS ccu
+                    ON ccu.constraint_name = tc.constraint_name
+                    AND ccu.table_schema = tc.table_schema
+                WHERE tc.table_schema = 'public'
+                AND tc.table_name = 'feedback';
+            """)
+            constraints = []
+            for row in db.execute(constraints_query).fetchall():
+                constraints.append({
+                    "name": row[0],
+                    "type": row[1],
+                    "column": row[2],
+                    "foreign_table": row[3],
+                    "foreign_column": row[4]
+                })
+            results["constraints"] = constraints
+            
+            # Get indexes
+            indexes_query = text("""
+                SELECT 
+                    indexname,
+                    indexdef
+                FROM pg_indexes 
+                WHERE schemaname = 'public' 
+                AND tablename = 'feedback';
+            """)
+            indexes = []
+            for row in db.execute(indexes_query).fetchall():
+                indexes.append({
+                    "name": row[0],
+                    "definition": row[1]
+                })
+            results["indexes"] = indexes
+        
+        # 4. Check current user and permissions
+        current_user_query = text("SELECT current_user, current_database();")
+        user_info = db.execute(current_user_query).fetchone()
+        results["database_user"] = {
+            "current_user": user_info[0],
+            "current_database": user_info[1]
+        }
+        
+        # 5. Check table permissions for current user
+        if table_exists:
+            permissions_query = text("""
+                SELECT 
+                    privilege_type
+                FROM information_schema.role_table_grants 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                AND grantee = current_user;
+            """)
+            permissions = [row[0] for row in db.execute(permissions_query).fetchall()]
+            results["current_user_permissions"] = permissions
+            
+            # Check all permissions on the table
+            all_permissions_query = text("""
+                SELECT 
+                    grantee,
+                    privilege_type,
+                    is_grantable
+                FROM information_schema.role_table_grants 
+                WHERE table_schema = 'public' 
+                AND table_name = 'feedback'
+                ORDER BY grantee, privilege_type;
+            """)
+            all_permissions = []
+            for row in db.execute(all_permissions_query).fetchall():
+                all_permissions.append({
+                    "grantee": row[0],
+                    "privilege": row[1],
+                    "grantable": row[2]
+                })
+            results["all_permissions"] = all_permissions
+        
+        # 6. Test basic operations
+        operations_test = {}
+        
+        if table_exists:
+            # Test SELECT
+            try:
+                count_result = db.execute(text("SELECT COUNT(*) FROM feedback")).scalar()
+                operations_test["SELECT"] = {"success": True, "count": count_result}
+            except Exception as e:
+                operations_test["SELECT"] = {"success": False, "error": str(e)}
+            
+            # Test INSERT (with rollback)
+            try:
+                test_id = f"test-{current_user.id}-permissions"
+                db.execute(text("""
+                    INSERT INTO feedback (id, user_id, category, description, contact_email, status, created_at, updated_at) 
+                    VALUES (:test_id, :user_id, 'general', 'Permission test', 'test@example.com', 'new', NOW(), NOW())
+                """), {"test_id": test_id, "user_id": current_user.id})
+                db.rollback()
+                operations_test["INSERT"] = {"success": True, "message": "Insert test successful (rolled back)"}
+            except Exception as e:
+                operations_test["INSERT"] = {"success": False, "error": str(e)}
+                db.rollback()
+        
+        results["operations_test"] = operations_test
+        
+        # 7. Check Alembic version
+        try:
+            alembic_query = text("SELECT version_num FROM alembic_version;")
+            alembic_version = db.execute(alembic_query).scalar()
+            results["alembic_version"] = alembic_version
+        except Exception as e:
+            results["alembic_version"] = f"Error: {str(e)}"
+        
+        return {
+            "success": True,
+            "inspection_results": results,
+            "summary": {
+                "table_exists": table_exists,
+                "columns_count": len(results.get("columns", [])),
+                "constraints_count": len(results.get("constraints", [])),
+                "user_can_select": operations_test.get("SELECT", {}).get("success", False),
+                "user_can_insert": operations_test.get("INSERT", {}).get("success", False)
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database inspection failed: {str(e)}")

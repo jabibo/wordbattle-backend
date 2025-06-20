@@ -46,7 +46,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Token ungültig oder abgelaufen",
+        detail="Authentication failed: Token invalid, expired, or missing. Please refresh your login or check if automatic token refresh is working.",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -54,7 +54,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         subject = payload.get("sub")
         if not subject:
             raise credentials_exception
-    except JWTError:
+    except JWTError as e:
         raise credentials_exception
     
     # Try to find user by email first (for email-based tokens), then by username
@@ -64,6 +64,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     
     if not user:
         raise credentials_exception
+    
     return user
 
 def get_token_from_header(authorization: str) -> Optional[str]:

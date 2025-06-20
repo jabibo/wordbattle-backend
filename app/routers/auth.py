@@ -160,7 +160,10 @@ def verify_login_code(request: VerifyCodeRequest, db: Session = Depends(get_db))
             "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
+            "created_at": user.created_at.isoformat() if user.created_at else None,  # Required by contract
+            "is_admin": user.is_admin,
+            "is_word_admin": user.is_word_admin,
+            "language": user.language or "en"
         }
     }
     
@@ -229,7 +232,10 @@ def login_with_persistent_token(request: PersistentLoginRequest, db: Session = D
             "id": str(user.id),  # Convert to string for schema compliance
             "username": user.username,
             "email": user.email,
-            "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
+            "created_at": user.created_at.isoformat() if user.created_at else None,  # Required by contract
+            "is_admin": user.is_admin,
+            "is_word_admin": user.is_word_admin,
+            "language": user.language or "en"
         }
     }
 
@@ -315,7 +321,10 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
                 "id": str(user.id),  # Convert to string for schema compliance
                 "username": user.username,
                 "email": user.email,
-                "created_at": user.created_at.isoformat() if user.created_at else None  # Required by contract
+                "created_at": user.created_at.isoformat() if user.created_at else None,  # Required by contract
+                "is_admin": user.is_admin,
+                "is_word_admin": user.is_word_admin,
+                "language": user.language or "en"
             }
         }
     
@@ -559,3 +568,52 @@ async def simple_admin_login(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Debug login error: {str(e)}")
+
+@router.post("/auto-refresh")
+def auto_refresh_token(current_user = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Automatically refresh access token if it's close to expiring.
+    This endpoint can be called by the frontend before making important requests.
+    """
+    try:
+        # Get the current token from the request
+        from fastapi import Request
+        from app.auth import get_token_from_header
+        
+        # Create a new access token
+        access_token = create_access_token(
+            data={"sub": current_user.email or current_user.username}
+        )
+        
+        # If user has a persistent token, we can also refresh that relationship
+        persistent_token = None
+        persistent_expires_in = None
+        
+        if current_user.persistent_token:
+            # Persistent token is still valid, include it in response
+            persistent_token = current_user.persistent_token
+            # Calculate remaining time for persistent token (30 days from creation)
+            if current_user.persistent_token_expires:
+                remaining = current_user.persistent_token_expires - datetime.utcnow()
+                persistent_expires_in = int(remaining.total_seconds())
+        
+        return {
+            "success": True,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # seconds
+            "persistent_token": persistent_token,
+            "persistent_expires_in": persistent_expires_in,
+            "user": {
+                "id": str(current_user.id),
+                "username": current_user.username,
+                "email": current_user.email,
+                "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+                "is_admin": current_user.is_admin,
+                "is_word_admin": current_user.is_word_admin,
+                "language": current_user.language or "en"
+            },
+            "message": "Token refreshed successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to refresh token: {str(e)}")
