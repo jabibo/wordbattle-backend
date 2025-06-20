@@ -839,7 +839,7 @@ async def join_game(
         GameInvitation.status == InvitationStatus.PENDING
     ).count()
     
-    if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
+    if new_player_count == game.max_players:
         # Auto-start the game immediately when all players have joined
         logger.info(f"🚀 AUTO-START: Game {game_id} is ready with {new_player_count} players. Starting automatically...")
         
@@ -1014,7 +1014,7 @@ async def join_game_with_token(
         GameInvitation.status == InvitationStatus.PENDING
     ).count()
     
-    if new_player_count >= 2 and (pending_invitations == 0 or new_player_count == game.max_players):
+    if new_player_count == game.max_players:
         # Auto-start the game immediately when all players have joined
         logger.info(f"🚀 AUTO-START: Game {game_id} is ready with {new_player_count} players. Starting automatically...")
         
