@@ -76,17 +76,17 @@ def get_database_url(is_test=False):
         db_user = os.getenv("DB_USER", "wordbattle")
         db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
         
-        # Check if SSL is required (production)
+        # Check if SSL is required (production) and if we have a specific DB_HOST
         require_ssl = os.getenv("CLOUD_SQL_REQUIRE_SSL", "false").lower() == "true"
         ssl_mode = os.getenv("CLOUD_SQL_SSL_MODE", "prefer")
+        db_host_override = os.getenv("DB_HOST")
         
-        if require_ssl:
-            # Use TCP connection with SSL for production
-            db_host = os.getenv("DB_HOST", f"{project_id}:{CLOUD_CONFIG['region']}:{instance_name}")
+        if require_ssl and db_host_override:
+            # Use TCP connection with SSL for production (when DB_HOST is specified)
             db_port = os.getenv("DB_PORT", "5432")
-            return f"postgresql+pg8000://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}?sslmode={ssl_mode}"
+            return f"postgresql+pg8000://{db_user}:{db_pass}@{db_host_override}:{db_port}/{db_name}?sslmode={ssl_mode}"
         else:
-            # Use unix socket for testing/development
+            # Use unix socket for testing/development (more secure and reliable for Cloud Run)
             return f"postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock=/cloudsql/{project_id}:{CLOUD_CONFIG['region']}:{instance_name}"
 
 # Use the function to get the main database URL
