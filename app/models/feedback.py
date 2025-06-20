@@ -8,12 +8,12 @@ from app.database import Base
 class FeedbackCategory(enum.Enum):
     BUG_REPORT = "bug_report"
     FEATURE_REQUEST = "feature_request"
+    GAMEPLAY_ISSUE = "gameplay_issue"
     PERFORMANCE_ISSUE = "performance_issue"
     UI_UX_FEEDBACK = "ui_ux_feedback"
-    GAME_LOGIC_ISSUE = "game_logic_issue"
-    AUTHENTICATION_PROBLEM = "authentication_problem"
-    NETWORK_CONNECTION_ISSUE = "network_connection_issue"
-    GENERAL_FEEDBACK = "general_feedback"
+    CONTENT_SUGGESTION = "content_suggestion"
+    TECHNICAL_SUPPORT = "technical_support"
+    ACCOUNT_ISSUE = "account_issue"
     OTHER = "other"
 
 class FeedbackStatus(enum.Enum):
@@ -24,9 +24,9 @@ class FeedbackStatus(enum.Enum):
 
 # Create PostgreSQL enum types
 feedback_category_enum = ENUM(
-    'bug_report', 'feature_request', 'performance_issue', 
-    'ui_ux_feedback', 'game_logic_issue', 'authentication_problem',
-    'network_connection_issue', 'general_feedback', 'other',
+    'bug_report', 'feature_request', 'gameplay_issue', 
+    'performance_issue', 'ui_ux_feedback', 'content_suggestion',
+    'technical_support', 'account_issue', 'other',
     name='feedbackcategory'
 )
 

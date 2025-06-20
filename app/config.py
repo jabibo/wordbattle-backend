@@ -97,7 +97,7 @@ if not SECRET_KEY:
 print(f"✅ Loaded SECRET_KEY starting with: {SECRET_KEY[:8]}...")
 
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "240"))  # 4 hours instead of 30 minutes
 PERSISTENT_TOKEN_EXPIRE_DAYS = int(os.getenv("PERSISTENT_TOKEN_EXPIRE_DAYS", "30"))  # For "remember me"
 
 # Email settings
