@@ -358,20 +358,16 @@ def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> Li
                     letter = pos_data.get("letter", "")
                     is_blank = pos_data.get("is_blank", False)
                     
-                    # Basic point values for tiles (enhanced from simple default)
-                    tile_points = 1  # Default for blanks
+                    # Get language-specific point values from letter_bag
+                    tile_points = 0  # Default for blanks
                     if not is_blank and letter:
-                        # Standard Scrabble point values
-                        point_values = {
-                            'A': 1, 'E': 1, 'I': 1, 'O': 1, 'U': 1, 'L': 1, 'N': 1, 'S': 1, 'T': 1, 'R': 1,
-                            'D': 2, 'G': 2,
-                            'B': 3, 'C': 3, 'M': 3, 'P': 3,
-                            'F': 4, 'H': 4, 'V': 4, 'W': 4, 'Y': 4,
-                            'K': 5,
-                            'J': 8, 'X': 8,
-                            'Q': 10, 'Z': 10
-                        }
-                        tile_points = point_values.get(letter.upper(), 1)
+                        # Get the game to determine language
+                        game = db.query(Game).filter(Game.id == game_id).first()
+                        game_language = game.language if game else "en"
+                        
+                        from app.game_logic.letter_bag import LETTER_DISTRIBUTION
+                        letter_points = LETTER_DISTRIBUTION[game_language]["points"]
+                        tile_points = letter_points.get(letter.upper(), 1)
                     
                     position = {
                         "row": pos_data.get("row", 0),

@@ -160,6 +160,15 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
         
         players.append(player_data)
     
+    # Get game language for calculating correct letter points
+    game_language = game_data.get("language", "en")
+    print(f"🔍 FORMAT_DEBUG: Game language = {game_language}")
+    from app.game_logic.letter_bag import LETTER_DISTRIBUTION
+    print(f"🔍 FORMAT_DEBUG: Available languages in LETTER_DISTRIBUTION = {list(LETTER_DISTRIBUTION.keys())}")
+    letter_points = LETTER_DISTRIBUTION[game_language]["points"]
+    print(f"🔍 FORMAT_DEBUG: Letter points for '{game_language}' = {letter_points}")
+    print(f"🔍 FORMAT_DEBUG: M should be worth {letter_points.get('M', 'NOT_FOUND')} points")
+    
     # Transform board to contract format (contract expects null or tile objects)
     board = game_data.get("board", [])
     contract_board = []
@@ -169,11 +178,32 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
             if cell is None:
                 contract_row.append(None)
             else:
+                # Calculate correct point value based on letter and game language
+                # Handle both PlacedTile objects and serialized dict format
+                if hasattr(cell, 'letter'):
+                    # PlacedTile object
+                    letter = cell.letter.upper()
+                    is_blank = cell.is_blank
+                    print(f"🔍 BOARD_DEBUG: PlacedTile object - letter='{letter}', is_blank={is_blank}")
+                else:
+                    # Serialized dict format from JSON
+                    letter = cell.get("letter", "").upper()
+                    is_blank = cell.get("is_blank", False)
+                    print(f"🔍 BOARD_DEBUG: Dict format - letter='{letter}', is_blank={is_blank}")
+                
+                if is_blank:
+                    points = 0  # Blank tiles are always worth 0 points
+                else:
+                    points = letter_points.get(letter, 1)  # Use language-specific points, default to 1
+                
+                print(f"🎯 BOARD_DEBUG: Final calculation - letter='{letter}' → points={points} (language={game_language})")
+                print(f"🎯 LETTER_POINTS_DEBUG: Available letter_points = {letter_points}")
+                
                 # Convert our PlacedTile format to contract format
                 contract_row.append({
-                    "letter": cell.get("letter", ""),
-                    "points": 1,  # Basic point value, could be calculated
-                    "is_blank": cell.get("is_blank", False)
+                    "letter": letter,
+                    "points": points,
+                    "is_blank": is_blank
                 })
         contract_board.append(contract_row)
     
