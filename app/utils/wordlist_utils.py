@@ -270,7 +270,7 @@ def load_wordlist(language: str) -> Set[str]:
     if not os.getenv("TESTING"):
         try:
             from app.database import get_db
-            from app.models.wordlist import WordList
+            from app.models import WordList
             
             # Use database session
             db = next(get_db())
@@ -329,7 +329,7 @@ def add_word_to_database(word: str, language: str, user_id: int, db: Session) ->
         
     This function automatically invalidates the cache for the affected language.
     """
-    from app.models.wordlist import WordList
+    from app.models import WordList
     from datetime import datetime, timezone
     
     word = word.strip().upper()
@@ -375,7 +375,7 @@ def add_words_to_database(words: list, language: str, user_id: int, db: Session)
         
     This function automatically invalidates the cache for the affected language.
     """
-    from app.models.wordlist import WordList
+    from app.models import WordList
     from datetime import datetime, timezone
     
     language = language.lower()
