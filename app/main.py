@@ -45,8 +45,8 @@ async def lifespan(app: FastAPI):
         if status["is_initialized"]:
             logger.info("Database already initialized - skipping word loading")
         else:
-            logger.info("Database needs initialization - will load words in background")
-            asyncio.create_task(initialize_words_background())
+            logger.info("Database needs initialization - TEMPORARILY SKIPPING word loading to fix import bug")
+            # asyncio.create_task(initialize_words_background())  # Temporarily disabled for deployment
     except Exception as e:
         logger.error(f"Database status check failed: {e}")
     
@@ -213,9 +213,9 @@ async def startup_event():
         if status["is_initialized"]:
             logger.info("Database already initialized - skipping word loading")
         else:
-            logger.info("Database needs initialization - will load words in background")
+            logger.info("Database needs initialization - TEMPORARILY SKIPPING word loading to fix import bug")
             # Schedule immediate background word loading
-            asyncio.create_task(initialize_words_background())
+            # asyncio.create_task(initialize_words_background())  # Temporarily disabled for deployment
             
     except Exception as e:
         logger.error(f"Database status check failed: {e}")
