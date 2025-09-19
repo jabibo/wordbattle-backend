@@ -261,13 +261,14 @@ def load_wordlist(language: str) -> Set[str]:
     """
     language = language.lower()
     
-    # Check if already cached and valid
+    # Check if already cached and valid  
     if language in _DICTIONARY_CACHE and _CACHE_INITIALIZED.get(language, False):
         logger.debug(f"Using cached wordlist for {language} ({len(_DICTIONARY_CACHE[language])} words)")
         return _DICTIONARY_CACHE[language]
     
     # Try to load from database first (if not in test mode)
-    if not os.getenv("TESTING"):
+    testing_mode = os.getenv("TESTING", "").lower() in ("1", "true", "yes")
+    if not testing_mode:
         try:
             from app.database import get_db
             from app.models import WordList

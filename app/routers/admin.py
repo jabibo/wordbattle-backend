@@ -2952,3 +2952,158 @@ async def inspect_feedback_table(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database inspection failed: {str(e)}")
+
+@router.post("/fix-wordlist-database")
+async def fix_wordlist_database(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    ADMIN ONLY: Fix wordlist database by removing Polish words and re-importing German/English.
+    """
+    # Check if user is admin
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    try:
+        from app.models import WordList
+        from sqlalchemy import text
+        
+        # 1. Remove Polish words
+        polish_count = db.query(WordList).filter(WordList.language == "pl").count()
+        if polish_count > 0:
+            logger.info(f"Removing {polish_count} Polish words...")
+            db.query(WordList).filter(WordList.language == "pl").delete()
+            db.commit()
+            logger.info(f"✅ Removed {polish_count} Polish words")
+        
+        # 2. Check German words
+        de_count = db.query(WordList).filter(WordList.language == "de").count()
+        import_results = {"de_imported": False, "en_imported": False, "errors": []}
+        
+        if de_count < 600000:  # Less than expected 601,565
+            try:
+                logger.info(f"German words too few ({de_count}), re-importing...")
+                
+                # Import from file
+                import os
+                file_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "de_words.txt")
+                
+                if not os.path.exists(file_path):
+                    error_msg = f"German words file not found: {file_path}"
+                    logger.error(error_msg)
+                    import_results["errors"].append(error_msg)
+                else:
+                    # Clear existing German words
+                    deleted_count = db.query(WordList).filter(WordList.language == "de").delete()
+                    logger.info(f"Cleared {deleted_count} existing German words")
+                    
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        german_words = [line.strip().upper() for line in f if line.strip()]
+                    
+                    logger.info(f"📚 Found {len(german_words)} German words in file")
+                    
+                    # Batch insert with better error handling
+                    imported_count = 0
+                    batch_size = 1000
+                    for i in range(0, len(german_words), batch_size):
+                        batch = german_words[i:i + batch_size]
+                        word_objects = [WordList(word=word, language="de") for word in batch]
+                        db.add_all(word_objects)
+                        imported_count += len(batch)
+                        
+                        if i % 10000 == 0:
+                            db.commit()  # Commit every 10k words
+                            logger.info(f"Imported {imported_count} German words...")
+                    
+                    db.commit()
+                    import_results["de_imported"] = True
+                    import_results["de_count"] = imported_count
+                    logger.info(f"✅ Imported {imported_count} German words")
+                    
+            except Exception as e:
+                error_msg = f"German import failed: {str(e)}"
+                logger.error(error_msg)
+                import_results["errors"].append(error_msg)
+                db.rollback()
+        
+        # 3. Check English words
+        en_count = db.query(WordList).filter(WordList.language == "en").count()
+        if en_count < 170000:  # Less than expected 178,691
+            try:
+                logger.info(f"English words too few ({en_count}), re-importing...")
+                
+                # Import from file
+                import os
+                file_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "en_words.txt")
+                
+                if not os.path.exists(file_path):
+                    error_msg = f"English words file not found: {file_path}"
+                    logger.error(error_msg)
+                    import_results["errors"].append(error_msg)
+                else:
+                    # Clear existing English words
+                    deleted_count = db.query(WordList).filter(WordList.language == "en").delete()
+                    logger.info(f"Cleared {deleted_count} existing English words")
+                    
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        english_words = [line.strip().upper() for line in f if line.strip()]
+                    
+                    logger.info(f"📚 Found {len(english_words)} English words in file")
+                    
+                    # Batch insert with better error handling
+                    imported_count = 0
+                    batch_size = 1000
+                    for i in range(0, len(english_words), batch_size):
+                        batch = english_words[i:i + batch_size]
+                        word_objects = [WordList(word=word, language="en") for word in batch]
+                        db.add_all(word_objects)
+                        imported_count += len(batch)
+                        
+                        if i % 10000 == 0:
+                            db.commit()  # Commit every 10k words
+                            logger.info(f"Imported {imported_count} English words...")
+                    
+                    db.commit()
+                    import_results["en_imported"] = True
+                    import_results["en_count"] = imported_count
+                    logger.info(f"✅ Imported {imported_count} English words")
+                    
+            except Exception as e:
+                error_msg = f"English import failed: {str(e)}"
+                logger.error(error_msg)
+                import_results["errors"].append(error_msg)
+                db.rollback()
+        
+        # 4. Clear wordlist cache to force reload
+        from app.utils.wordlist_utils import clear_wordlist_cache
+        clear_wordlist_cache()
+        
+        # 5. Final counts
+        final_counts = {}
+        result = db.execute(text("""
+            SELECT language, COUNT(*) as word_count 
+            FROM wordlists 
+            GROUP BY language 
+            ORDER BY language
+        """))
+        for row in result:
+            final_counts[row[0]] = row[1]
+        
+        # 6. Test RAND specifically
+        rand_exists = db.query(WordList).filter(WordList.language == "de", WordList.word == "RAND").count() > 0
+        
+        return {
+            "success": True,
+            "message": "Wordlist database fixed successfully",
+            "removed_polish_words": polish_count,
+            "final_counts": final_counts,
+            "rand_exists": rand_exists,
+            "cache_cleared": True,
+            "import_results": import_results
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error fixing wordlist database: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fixing wordlist database: {str(e)}")
