@@ -45,8 +45,16 @@ async def lifespan(app: FastAPI):
         if status["is_initialized"]:
             logger.info("Database already initialized - skipping word loading")
         else:
-            logger.info("Database needs initialization - TEMPORARILY SKIPPING word loading to fix import bug")
-            # asyncio.create_task(initialize_words_background())  # Temporarily disabled for deployment
+            logger.info("Database needs initialization - TESTING IMPORT FIX")
+            try:
+                # Test the import fix immediately
+                from app.utils.wordlist_utils import load_wordlist_from_database
+                logger.info("✅ IMPORT FIX SUCCESS: wordlist_utils import working")
+                # Don't actually load words, just test the import
+                logger.info("Import fix confirmed - skipping actual word loading for now")
+            except Exception as e:
+                logger.error(f"❌ IMPORT FIX FAILED: {e}")
+            # asyncio.create_task(initialize_words_background())  # Still disabled for testing
     except Exception as e:
         logger.error(f"Database status check failed: {e}")
     
@@ -213,9 +221,17 @@ async def startup_event():
         if status["is_initialized"]:
             logger.info("Database already initialized - skipping word loading")
         else:
-            logger.info("Database needs initialization - TEMPORARILY SKIPPING word loading to fix import bug")
+            logger.info("Database needs initialization - TESTING IMPORT FIX")
+            try:
+                # Test the import fix immediately
+                from app.utils.wordlist_utils import load_wordlist_from_database
+                logger.info("✅ IMPORT FIX SUCCESS: wordlist_utils import working")
+                # Don't actually load words, just test the import
+                logger.info("Import fix confirmed - skipping actual word loading for now")
+            except Exception as e:
+                logger.error(f"❌ IMPORT FIX FAILED: {e}")
             # Schedule immediate background word loading
-            # asyncio.create_task(initialize_words_background())  # Temporarily disabled for deployment
+            # asyncio.create_task(initialize_words_background())  # Still disabled for testing
             
     except Exception as e:
         logger.error(f"Database status check failed: {e}")
