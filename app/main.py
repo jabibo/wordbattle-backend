@@ -554,9 +554,7 @@ app.include_router(feedback.router)
 app.include_router(analytics.router)  # Performance monitoring and analytics
 app.include_router(websocket_routes.router)  # WebSocket routes including notifications
 
-# Quick fix router for word management
-from app.routers.word_quick_fix import router as word_quick_fix_router
-app.include_router(word_quick_fix_router)
+# Quick fix router removed - caused import error
 
 @app.get("/", tags=["root"])
 def read_root():
