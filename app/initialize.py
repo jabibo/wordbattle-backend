@@ -103,12 +103,26 @@ def import_default_wordlists():
                 logger.info("Full word import will continue in background after startup")
             else:
                 logger.warning(f"Default German wordlist not found at {DEFAULT_WORDLIST_PATH}")
-                # Create a minimal wordlist for testing
-                minimal_words = ["HALLO", "WELT", "TEST", "SPIEL", "WORT", "TAG", "TAGE", "BAUM", "HAUS", "AUTO", "TISCH", "STUHL", "ÜBER", "SCHÖN", "GRÜN"]
-                for word in minimal_words:
+                # Create an expanded wordlist for testing with essential German words
+                essential_words = [
+                    "HALLO", "WELT", "TEST", "SPIEL", "WORT", "TAG", "TAGE", "BAUM", "HAUS", "AUTO", "TISCH", "STUHL", "ÜBER", "SCHÖN", "GRÜN",
+                    # Add RAND and other essential words for gameplay
+                    "RAND", "DEUTSCH", "BRIEF", "BUCH", "STADT", "LAND", "HAND", "KIND", "MANN", "FRAU", 
+                    "GELD", "ZEIT", "ARBEIT", "LEBEN", "WASSER", "FEUER", "LUFT", "ERDE", "SONNE", "MOND", 
+                    "STERN", "HIMMEL", "BERG", "TAL", "FLUSS", "MEER", "STRAND", "WALD", "FELD", "GARTEN", 
+                    "BLUME", "TIER", "HUND", "KATZE", "PFERD", "VOGEL", "FISCH", "BROT", "MILCH", "KÄSE", 
+                    "FLEISCH", "OBST", "GEMÜSE", "GRÜN", "BLAU", "ROT", "GELB", "SCHWARZ", "WEISS", "GROSS", 
+                    "KLEIN", "ALT", "NEU", "GUT", "SCHLECHT", "SCHNELL", "LANGSAM", "HEISS", "KALT", "HELL", 
+                    "DUNKEL", "LAUT", "LEISE", "STARK", "SCHWACH", "REICH", "ARM", "JUNG", "MÜDE", "WACH", 
+                    "GLÜCKLICH", "TRAURIG", "KOMMEN", "GEHEN", "SEHEN", "HÖREN", "SPRECHEN", "ESSEN", "TRINKEN",
+                    "SCHLAFEN", "ARBEITEN", "SPIELEN", "LESEN", "SCHREIBEN", "FAHREN", "LAUFEN", "HEUTE", 
+                    "GESTERN", "MORGEN", "JAHR", "MONAT", "WOCHE", "STUNDE", "MINUTE", "HIER", "DORT", "OBEN", 
+                    "UNTEN", "LINKS", "RECHTS", "INNEN", "AUSSEN"
+                ]
+                for word in essential_words:
                     db.add(WordList(word=word, language="de"))
                 db.commit()
-                logger.info(f"Created minimal German wordlist with {len(minimal_words)} words")
+                logger.info(f"Created expanded German wordlist with {len(essential_words)} words including RAND")
         else:
             logger.info(f"German wordlist already exists with {de_count} words")
         
