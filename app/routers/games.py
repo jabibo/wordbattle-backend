@@ -1230,8 +1230,17 @@ def get_my_invitations(
     
     invitation_list = []
     for inv in invitations:
-        # Get current player count for this game
+        # Get current player count for this game (including accepted players)
         current_players = db.query(Player).filter(Player.game_id == inv.game_id).count()
+        
+        # Also count accepted invitations that haven't been processed yet
+        accepted_invitations = db.query(GameInvitation).filter(
+            GameInvitation.game_id == inv.game_id,
+            GameInvitation.status == InvitationStatus.ACCEPTED
+        ).count()
+        
+        # Total players = those who joined + those who accepted invitations
+        total_current_players = current_players + accepted_invitations
         
         invitation_data = {
             "invitation_id": inv.id,
@@ -1246,7 +1255,7 @@ def get_my_invitations(
                 "name": getattr(inv.game, 'name', f"Game by {inv.inviter.username}"),  # Game name with fallback
                 "language": inv.game.language,
                 "max_players": inv.game.max_players,
-                "current_players": current_players,  # Add current player count
+                "current_players": total_current_players,  # Include accepted invitations
                 "status": inv.game.status.value,
                 "created_at": inv.game.created_at.isoformat()
             },
@@ -2147,15 +2156,19 @@ def get_game_invitations(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    """Get all invitations for a game (only for game creator)."""
+    """Get all invitations for a game (accessible by any player in the game)."""
     # Check if game exists
     game = db.query(Game).filter(Game.id == game_id).first()
     if not game:
         raise HTTPException(404, "Game not found")
     
-    # Check if user is the creator
-    if game.creator_id != current_user.id:
-        raise HTTPException(403, "Only the game creator can view invitations")
+    # Check if user is a player in the game or the creator
+    is_player = db.query(Player).filter(
+        and_(Player.game_id == game_id, Player.user_id == current_user.id)
+    ).first()
+    
+    if not is_player and game.creator_id != current_user.id:
+        raise HTTPException(403, "Only players in the game can view invitations")
     
     # Get all invitations for this game
     invitations = db.query(GameInvitation).filter(
