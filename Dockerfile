@@ -14,7 +14,7 @@ COPY . .
 RUN mkdir -p data
 
 # Copy contracts directory if it exists
-COPY wordbattle-contracts/ /app/contracts/
+# COPY wordbattle-contracts/ /app/contracts/
 
 # Copy and rename wordlist files to expected names (only if they don't already exist)
 RUN echo -e "HALLO\nWELT\nTEST\nSPIEL\nWORT\nTAG\nTAGE\nBAUM" > data/de_words.txt
