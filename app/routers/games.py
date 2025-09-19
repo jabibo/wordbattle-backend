@@ -2185,6 +2185,11 @@ def get_game_invitations(
                 "username": inv.inviter.username,
                 "email": inv.inviter.email
             },
+            "invitee": {
+                "id": str(inv.invitee.id),  # Convert to string per contract
+                "username": inv.invitee.username,
+                "email": inv.invitee.email
+            },
             "game": {
                 "id": inv.game.id,
                 "language": inv.game.language,
