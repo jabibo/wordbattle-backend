@@ -1252,9 +1252,18 @@ def get_game(
     if not game:
         raise HTTPException(404, "Game not found")
     
-    # Check if current_user is part of this game
+    # Check if current_user is part of this game, the creator, or has a pending invitation
     is_player = db.query(Player).filter(Player.game_id == game_id, Player.user_id == current_user.id).first()
-    if not is_player and game.creator_id != current_user.id:
+    
+    has_invitation = db.query(GameInvitation).filter(
+        and_(
+            GameInvitation.game_id == game_id, 
+            GameInvitation.invitee_id == current_user.id,
+            GameInvitation.status == InvitationStatus.PENDING
+        )
+    ).first()
+    
+    if not is_player and game.creator_id != current_user.id and not has_invitation:
          # Add admin check here if needed, e.g. if current_user.is_admin:
         raise HTTPException(403, "You are not part of this game.")
 
