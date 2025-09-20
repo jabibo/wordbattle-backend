@@ -42,18 +42,10 @@ if [[ "$ENVIRONMENT" != "production" && "$ENVIRONMENT" != "testing" ]]; then
     exit 1
 fi
 
-# Global configuration
-PROJECT_ID="wordbattle-1748668162"
+# Global configuration (PROJECT_ID will be set from environment file)
 BASE_SERVICE_NAME="wordbattle-backend"
 REGION="europe-west1"
 IMAGE_NAME="wordbattle-backend"
-
-echo "🔧 Configuration:"
-echo "  Project ID: $PROJECT_ID"
-echo "  Base Service: $BASE_SERVICE_NAME"
-echo "  Region: $REGION"
-echo "  Environment: $ENVIRONMENT"
-echo ""
 
 # Environment-specific configuration
 if [[ "$ENVIRONMENT" == "production" ]]; then
@@ -124,6 +116,15 @@ source "$ENV_FILE"
 set +a  # stop automatically exporting
 
 echo "✅ Environment variables loaded from $ENV_FILE"
+
+echo ""
+echo "🔧 Configuration:"
+echo "  Project ID: $PROJECT_ID"
+echo "  Base Service: $BASE_SERVICE_NAME"
+echo "  Region: $REGION"
+echo "  Environment: $ENVIRONMENT"
+echo "  Database Instance: $CLOUD_SQL_INSTANCE_NAME"
+echo ""
 
 # Validate required variables based on environment
 if [[ "$ENVIRONMENT" == "production" ]]; then
