@@ -9,11 +9,15 @@ from app.auth import get_current_user
 from app.game_logic.game_state import GameState, GamePhase
 from app.routers.games import GameStateEncoder
 from app.utils.wordlist_utils import ensure_wordlist_available
+from app.websocket import notification_manager
 from datetime import datetime, timezone, timedelta
 import uuid
 import json
+import logging
 from typing import List
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/game-setup", tags=["game_setup"])
 
@@ -118,7 +122,7 @@ def get_invitations(
     } for inv in invitations]
 
 @router.post("/invitations/respond")
-def respond_to_invitation(
+async def respond_to_invitation(
     response: InvitationResponse,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
@@ -165,6 +169,29 @@ def respond_to_invitation(
         game.status = GameStatus.READY
     
     db.commit()
+    
+    # Send WebSocket notification about invitation status change
+    try:
+        # Notify the inviter about the response
+        await notification_manager.send_invitation_status_changed(
+            user_id=invitation.inviter_id,
+            invitation_id=invitation.id,
+            new_status=invitation.status.value,
+            game_id=game.id
+        )
+        logger.info(f"🔔 WebSocket notification sent: invitation {invitation.id} {invitation.status.value}")
+        
+        # Also notify the invitee (for UI refresh)
+        await notification_manager.send_invitation_status_changed(
+            user_id=current_user.id,
+            invitation_id=invitation.id,
+            new_status=invitation.status.value,
+            game_id=game.id
+        )
+        
+    except Exception as e:
+        logger.error(f"WebSocket notification error: {e}")
+        # Don't fail the response due to WebSocket issues
     
     return {"success": True, "message": "Invitation response recorded"}
 
