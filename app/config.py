@@ -96,10 +96,6 @@ def get_database_url(is_test=False):
 DATABASE_URL = get_database_url(TESTING)
 
 # Debug output for database configuration
-print(f"🔍 DEBUG: GOOGLE_CLOUD_PROJECT env var = {os.getenv('GOOGLE_CLOUD_PROJECT')}")
-print(f"🔍 DEBUG: PROJECT_ID env var = {os.getenv('PROJECT_ID')}")
-print(f"🔍 DEBUG: CLOUD_CONFIG project_id = {CLOUD_CONFIG['project_id']}")
-print(f"🔍 DEBUG: CLOUD_SQL_CONNECTION_NAME = {CLOUD_SQL_CONNECTION_NAME}")
 print(f"Using Cloud SQL Connector for: {CLOUD_CONFIG['project_id']}:{CLOUD_CONFIG['region']}:wordbattle-db/{DB_NAME or CLOUD_SQL_DATABASE_NAME}")
 print(f"Database URL (masked): postgresql+pg8000://***:***@/{DB_NAME or CLOUD_SQL_DATABASE_NAME}?unix_sock=/cloudsql/...")
 
