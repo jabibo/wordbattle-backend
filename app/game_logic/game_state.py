@@ -178,34 +178,34 @@ class GameState:
         
         return True, success_msg, valid_words
 
-    def make_move(self, player_id: int, move_type: MoveType, move_data: List[Tuple[Position, PlacedTile]], dictionary: Set[str], skip_turn_validation: bool = False) -> Tuple[bool, str, int]:
-        """Make a move and return (success, message, points)."""
+    def make_move(self, player_id: int, move_type: MoveType, move_data: List[Tuple[Position, PlacedTile]], dictionary: Set[str], skip_turn_validation: bool = False) -> Tuple[bool, str, int, List[str]]:
+        """Make a move and return (success, message, points, words_formed)."""
         if self.phase != GamePhase.IN_PROGRESS:
             if self.phase == GamePhase.NOT_STARTED:
-                return False, "Game has not started yet. Please wait for the game to begin.", 0
+                return False, "Game has not started yet. Please wait for the game to begin.", 0, []
             elif self.phase == GamePhase.COMPLETED:
-                return False, "Game has already ended. No more moves can be made.", 0
+                return False, "Game has already ended. No more moves can be made.", 0, []
             else:
-                return False, "Game is not in progress.", 0
+                return False, "Game is not in progress.", 0, []
         
         # Turn validation can be bypassed for testing
         if not skip_turn_validation and player_id != self.current_player_id:
-            return False, f"It's not your turn. Please wait for player {self.current_player_id} to make their move.", 0
+            return False, f"It's not your turn. Please wait for player {self.current_player_id} to make their move.", 0, []
 
         if move_type == MoveType.PASS:
             self._handle_pass(player_id)
-            return True, "Turn passed. No tiles placed and no points scored.", 0
+            return True, "Turn passed. No tiles placed and no points scored.", 0, []
         
         elif move_type == MoveType.EXCHANGE:
             if len(self.letter_bag) < 7:
-                return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", []
+                return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", 0, []
             if len(move_data) != 7:
-                return False, "Cannot exchange tiles - you must exchange exactly 7 letters.", []
+                return False, "Cannot exchange tiles - you must exchange exactly 7 letters.", 0, []
             success, msg, new_rack = self._handle_exchange(player_id, move_data)
             if success:
                 # Reset consecutive passes since an exchange was made
                 self.consecutive_passes = 0
-            return success, msg, new_rack
+            return success, msg, 0, []  # Exchange moves don't form words
         
         elif move_type == MoveType.PLACE:
             # First validate that player has the required letters in their rack
@@ -228,13 +228,13 @@ class GameState:
             
             if missing_letters:
                 if len(missing_letters) == 1:
-                    return False, f"You don't have the letter '{missing_letters[0]}' in your rack.", 0
+                    return False, f"You don't have the letter '{missing_letters[0]}' in your rack.", 0, []
                 else:
-                    return False, f"You don't have these letters in your rack: {', '.join(missing_letters)}.", 0
+                    return False, f"You don't have these letters in your rack: {', '.join(missing_letters)}.", 0, []
             
             success, msg, words_formed = self.validate_word_placement(move_data, dictionary)
             if not success:
-                return False, msg, 0
+                return False, msg, 0, []
             
             points = self._calculate_points(move_data)
             self._update_board(move_data)
@@ -261,8 +261,8 @@ class GameState:
                 self.center_used = any(pos.row == 7 and pos.col == 7 for pos, _ in move_data)
             
             self._advance_turn()
-            # Return the detailed success message from validation
-            return True, msg, points
+            # Return the detailed success message from validation with words formed
+            return True, msg, points, words_formed
 
     def _handle_pass(self, player_id: int) -> None:
         """Handle a pass move."""

@@ -1470,7 +1470,7 @@ async def make_move(
     
     # Execute the move logic within GameState
     try:
-        success, message, points_gained = game_state.make_move(
+        success, message, points_gained, words_formed = game_state.make_move(
             current_user.id,
             MoveType.PLACE,
             parsed_move_positions,
@@ -1509,7 +1509,7 @@ async def make_move(
             "data": move_data, 
             "points": points_gained,
             "turn_number": game_state.turn_number,
-            "words": []  # TODO: Extract words formed from the move validation
+            "words": words_formed  # Now properly populated with actual words formed
         }), # Store move type, data, points, turn number, and words in JSON
         timestamp=datetime.now(timezone.utc)
     )
