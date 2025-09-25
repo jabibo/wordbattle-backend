@@ -243,6 +243,9 @@ class GameState:
                 return False, msg, 0, []
             
             points = self._calculate_points(move_data)
+            print(f"🎯 SCORING_DEBUG: Calculated points: {points}")
+            print(f"🎯 SCORING_DEBUG: Player {player_id} current score: {self.scores[player_id]}")
+            
             self._update_board(move_data)
             
             # For blank tiles, we need to remove "?" from rack, not the chosen letter
@@ -255,6 +258,7 @@ class GameState:
             
             self._replenish_rack(player_id, letters_to_remove)
             self.scores[player_id] += points
+            print(f"🎯 SCORING_DEBUG: Player {player_id} new score: {self.scores[player_id]}")
             
             # Record move
             self.last_moves.append((player_id, move_type, move_data))
@@ -331,6 +335,7 @@ class GameState:
         """Calculate points for a move using proper Scrabble scoring rules."""
         # Get all formed words to properly score including blank tiles
         all_words = self._get_all_formed_words(move_data)
+        print(f"🎯 SCORING_DEBUG: Found {len(all_words)} words: {all_words}")
         if not all_words:
             return 0
             
@@ -344,12 +349,15 @@ class GameState:
         # Calculate points for each word formed
         for word in all_words:
             word_points = self._calculate_word_points(word, move_data, board_copy)
+            print(f"🎯 SCORING_DEBUG: Word '{word}' scored {word_points} points")
             total_points += word_points
         
         # Bonus for using all 7 letters
         if len(move_data) == 7:
             total_points += 50
+            print(f"🎯 SCORING_DEBUG: Added 50 bonus for using all 7 letters")
             
+        print(f"🎯 SCORING_DEBUG: Total points calculated: {total_points}")
         return total_points
     
     def _calculate_word_points(self, word: str, move_data: List[Tuple[Position, PlacedTile]], board_copy: List[List]) -> int:
