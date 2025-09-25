@@ -357,25 +357,115 @@ class GameState:
         # Get positions of newly placed tiles
         move_positions = {(pos.row, pos.col) for pos, _ in move_data}
         
-        # Calculate base points for all letters in the word
+        # Find the word positions on the board
+        word_positions = self._find_word_positions(word, move_data, board_copy)
+        if not word_positions:
+            return 0
+        
+        # Calculate points for each letter in the word
         word_points = 0
         word_multiplier = 1
         
-        # For each letter in the word, calculate its points
-        for letter in word:
+        for i, (row, col) in enumerate(word_positions):
+            letter = word[i]
+            
             # Base letter points
             if letter in ('?', '*'):
                 letter_points = 0  # Blank tiles are worth 0
             else:
                 letter_points = LETTER_DISTRIBUTION[self.language]["points"][letter.upper()]
             
+            # Apply letter multipliers only to newly placed tiles
+            if (row, col) in move_positions:
+                # Check for letter multipliers on the board
+                if row < len(self.board) and col < len(self.board[row]):
+                    tile = self.board[row][col]
+                    if hasattr(tile, 'multiplier_type') and tile.multiplier_type == 'letter':
+                        if tile.multiplier_value == 2:
+                            letter_points *= 2
+                        elif tile.multiplier_value == 3:
+                            letter_points *= 3
+                
+                # Check for word multipliers on newly placed tiles
+                if row < len(self.board) and col < len(self.board[row]):
+                    tile = self.board[row][col]
+                    if hasattr(tile, 'multiplier_type') and tile.multiplier_type == 'word':
+                        if tile.multiplier_value == 2:
+                            word_multiplier *= 2
+                        elif tile.multiplier_value == 3:
+                            word_multiplier *= 3
+            
             word_points += letter_points
         
-        # Apply word multiplier (simplified - we'll apply it to the whole word)
-        # In a full implementation, we'd need to track which tiles have word multipliers
+        # Apply word multiplier
         word_points *= word_multiplier
         
         return word_points
+
+    def _find_word_positions(self, word: str, move_data: List[Tuple[Position, PlacedTile]], board_copy: List[List]) -> List[Tuple[int, int]]:
+        """Find the positions of a word on the board."""
+        # Get all positions involved in the move
+        move_positions = [(pos.row, pos.col) for pos, _ in move_data]
+        
+        # Determine if the word is horizontal or vertical
+        if len(move_positions) == 1:
+            # Single tile - check both directions
+            row, col = move_positions[0]
+            # Check horizontal
+            word_positions = []
+            start_col = col
+            while start_col > 0 and board_copy[row][start_col - 1] is not None:
+                start_col -= 1
+            current_col = start_col
+            while current_col < 15 and board_copy[row][current_col] is not None:
+                word_positions.append((row, current_col))
+                current_col += 1
+            
+            if len(word_positions) == len(word):
+                return word_positions
+            
+            # Check vertical
+            word_positions = []
+            start_row = row
+            while start_row > 0 and board_copy[start_row - 1][col] is not None:
+                start_row -= 1
+            current_row = start_row
+            while current_row < 15 and board_copy[current_row][col] is not None:
+                word_positions.append((current_row, col))
+                current_row += 1
+            
+            if len(word_positions) == len(word):
+                return word_positions
+        else:
+            # Multiple tiles - determine direction
+            if all(pos[0] == move_positions[0][0] for pos in move_positions):
+                # Horizontal word
+                row = move_positions[0][0]
+                cols = sorted([pos[1] for pos in move_positions])
+                word_positions = []
+                start_col = cols[0]
+                while start_col > 0 and board_copy[row][start_col - 1] is not None:
+                    start_col -= 1
+                current_col = start_col
+                while current_col < 15 and board_copy[row][current_col] is not None:
+                    word_positions.append((row, current_col))
+                    current_col += 1
+                return word_positions
+            else:
+                # Vertical word
+                col = move_positions[0][1]
+                rows = sorted([pos[0] for pos in move_positions])
+                word_positions = []
+                start_row = rows[0]
+                while start_row > 0 and board_copy[start_row - 1][col] is not None:
+                    start_row -= 1
+                current_row = start_row
+                while current_row < 15 and board_copy[current_row][col] is not None:
+                    word_positions.append((current_row, col))
+                    current_row += 1
+                return word_positions
+        
+        return []
 
     def calculate_detailed_score_breakdown(self, move_data: List[Tuple[Position, PlacedTile]]) -> Dict:
         """Calculate detailed score breakdown with word-by-word and letter-by-letter analysis."""
