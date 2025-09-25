@@ -200,6 +200,11 @@ class GameState:
             print(f"🔄 EXCHANGE_DEBUG: Letter bag has {len(self.letter_bag)} letters")
             print(f"🔄 EXCHANGE_DEBUG: Trying to exchange {len(move_data)} letters: {move_data}")
             
+            # Check if letter bag is completely empty
+            if len(self.letter_bag) == 0:
+                print(f"❌ EXCHANGE_DEBUG: Letter bag is completely empty")
+                return False, "Cannot exchange tiles - the letter bag is empty. No more tiles available for exchange.", 0, []
+            
             if len(self.letter_bag) < 7:
                 print(f"❌ EXCHANGE_DEBUG: Not enough letters in bag ({len(self.letter_bag)} < 7)")
                 return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", 0, []
@@ -306,8 +311,18 @@ class GameState:
         return_letters(self.letter_bag, letters)
         print(f"🔄 EXCHANGE_HANDLE_DEBUG: Letter bag after returning letters: {len(self.letter_bag)} letters")
         
+        # Check if we have enough letters to draw
+        if len(self.letter_bag) < len(letters):
+            print(f"❌ EXCHANGE_HANDLE_DEBUG: Not enough letters in bag after return ({len(self.letter_bag)} < {len(letters)})")
+            return False, f"Cannot exchange - only {len(self.letter_bag)} letters available in bag, need {len(letters)}", []
+        
         new_letters = draw_letters(self.letter_bag, len(letters))
         print(f"🔄 EXCHANGE_HANDLE_DEBUG: Drew {len(new_letters)} new letters: {new_letters}")
+        
+        # Check if we got the expected number of letters
+        if len(new_letters) != len(letters):
+            print(f"❌ EXCHANGE_HANDLE_DEBUG: Expected {len(letters)} letters but got {len(new_letters)}")
+            return False, f"Exchange failed - expected {len(letters)} letters but only got {len(new_letters)}", []
         
         # Update rack
         rack += "".join(new_letters)
