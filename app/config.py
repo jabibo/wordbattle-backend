@@ -143,7 +143,7 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "https://localhost:3000").split(",")
 if ENVIRONMENT == "production" and "*" in CORS_ORIGINS:
     raise ValueError("Wildcard CORS origins not allowed in production")
 
-RATE_LIMIT = int(os.getenv("RATE_LIMIT", "120"))  # Increased from 60 to 120 requests per minute
+RATE_LIMIT = int(os.getenv("RATE_LIMIT", "300"))  # Increased to 300 requests per minute (5 per second)
 
 # Frontend URL settings
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")  # Default to frontend port

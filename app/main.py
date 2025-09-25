@@ -326,7 +326,7 @@ async def initialize_computer_player_background():
     except Exception as e:
         logger.error(f"❌ Computer player initialization failed: {e}")
 
-# Simple rate limiting middleware
+# Improved rate limiting middleware
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     # Skip rate limiting in tests
@@ -341,20 +341,28 @@ async def rate_limit_middleware(request: Request, call_next):
     request.app.state.request_timestamps = getattr(request.app.state, "request_timestamps", {})
     timestamps = request.app.state.request_timestamps.get(client_ip, [])
     
-    # Clean up old timestamps
+    # Clean up old timestamps (keep last 60 seconds)
     timestamps = [ts for ts in timestamps if current_time - ts < 60]
     
     # Check rate limit
     if len(timestamps) >= RATE_LIMIT:
+        logger.warning(f"Rate limit exceeded for IP {client_ip}: {len(timestamps)} requests in last 60 seconds")
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=429,
-            content={"detail": "Too many requests"}
+            content={
+                "detail": f"Rate limit exceeded: {len(timestamps)} requests in last 60 seconds (limit: {RATE_LIMIT})",
+                "retry_after": 60
+            }
         )
     
     # Add current timestamp
     timestamps.append(current_time)
     request.app.state.request_timestamps[client_ip] = timestamps
+    
+    # Log rate limit status for debugging
+    if len(timestamps) > RATE_LIMIT * 0.8:  # Log when approaching limit
+        logger.info(f"Rate limit warning for IP {client_ip}: {len(timestamps)}/{RATE_LIMIT} requests")
     
     # Process the request
     response = await call_next(request)
