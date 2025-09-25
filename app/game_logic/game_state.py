@@ -197,11 +197,17 @@ class GameState:
             return True, "Turn passed. No tiles placed and no points scored.", 0, []
         
         elif move_type == MoveType.EXCHANGE:
+            print(f"🔄 EXCHANGE: Letter bag has {len(self.letter_bag)} letters")
+            print(f"🔄 EXCHANGE: Trying to exchange {len(move_data)} letters")
+            
             if len(self.letter_bag) < 7:
+                print(f"❌ EXCHANGE: Not enough letters in bag ({len(self.letter_bag)} < 7)")
                 return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", 0, []
             if len(move_data) != 7:
+                print(f"❌ EXCHANGE: Wrong number of letters ({len(move_data)} != 7)")
                 return False, "Cannot exchange tiles - you must exchange exactly 7 letters.", 0, []
             success, msg, new_rack = self._handle_exchange(player_id, move_data)
+            print(f"🔄 EXCHANGE: Result - success: {success}, new_rack: '{new_rack}'")
             if success:
                 # Reset consecutive passes since an exchange was made
                 self.consecutive_passes = 0
@@ -290,12 +296,17 @@ class GameState:
                 return False, f"Cannot exchange letters {', '.join(missing_letters)} - you don't have these letters in your rack.", []
         
         # Perform exchange
+        print(f"🔄 EXCHANGE_HANDLE: Letter bag before return: {len(self.letter_bag)} letters")
         return_letters(self.letter_bag, letters)
+        print(f"🔄 EXCHANGE_HANDLE: Letter bag after return: {len(self.letter_bag)} letters")
+        
         new_letters = draw_letters(self.letter_bag, len(letters))
+        print(f"🔄 EXCHANGE_HANDLE: Drew {len(new_letters)} new letters: {new_letters}")
         
         # Update rack
         rack += "".join(new_letters)
         self.players[player_id] = rack
+        print(f"🔄 EXCHANGE_HANDLE: Final rack: '{rack}'")
         
         self.last_moves.append((player_id, MoveType.EXCHANGE, letters_to_exchange))
         self._advance_turn()
