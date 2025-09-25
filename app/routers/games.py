@@ -1701,7 +1701,7 @@ async def test_move(
     
     try:
         # Execute the move logic within GameState
-        success, message, points_gained = game_state.make_move(
+        success, message, points_gained, words_formed = game_state.make_move(
             current_user.id,
             MoveType.PLACE,
             parsed_move_positions,
@@ -1798,7 +1798,7 @@ async def pass_turn(
         game_state.scores[p_rec.user_id] = p_rec.score
     
     # Make pass move
-    success, message, _ = game_state.make_move( # No points for pass
+    success, message, _, _ = game_state.make_move( # No points for pass
         current_user.id,
         MoveType.PASS,
         [], # No move data for pass
@@ -1940,7 +1940,7 @@ async def exchange_letters(
         raise HTTPException(404, "Player not found in game")
     
     # Make exchange move
-    success, message, new_rack_after_exchange = game_state.make_move(
+    success, message, _, new_rack_after_exchange = game_state.make_move(
         current_user.id,
         MoveType.EXCHANGE,
         letters_to_exchange, # Pass the list of letter strings
