@@ -31,6 +31,7 @@ request_counts = defaultdict(int)
 async def lifespan(app: FastAPI):
     # Startup
     print("🚀 WordBattle Backend starting up...")
+    print(f"📊 Rate limit configured: {RATE_LIMIT} requests per minute")
     try:
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created successfully")
@@ -344,12 +345,17 @@ async def rate_limit_middleware(request: Request, call_next):
     # Clean up old timestamps
     timestamps = [ts for ts in timestamps if current_time - ts < 60]
     
+    # Debug: Log rate limit value
+    if len(timestamps) > RATE_LIMIT * 0.8:  # Log when approaching limit
+        logger.info(f"Rate limit warning for IP {client_ip}: {len(timestamps)}/{RATE_LIMIT} requests")
+    
     # Check rate limit
     if len(timestamps) >= RATE_LIMIT:
+        logger.warning(f"Rate limit exceeded for IP {client_ip}: {len(timestamps)} requests in last 60 seconds (limit: {RATE_LIMIT})")
         from fastapi.responses import JSONResponse
         return JSONResponse(
             status_code=429,
-            content={"detail": "Too many requests"}
+            content={"detail": f"Rate limit exceeded: {len(timestamps)} requests in last 60 seconds (limit: {RATE_LIMIT})"}
         )
     
     # Add current timestamp
