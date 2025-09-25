@@ -197,11 +197,17 @@ class GameState:
             return True, "Turn passed. No tiles placed and no points scored.", 0, []
         
         elif move_type == MoveType.EXCHANGE:
+            print(f"🔄 EXCHANGE_DEBUG: Letter bag has {len(self.letter_bag)} letters")
+            print(f"🔄 EXCHANGE_DEBUG: Trying to exchange {len(move_data)} letters: {move_data}")
+            
             if len(self.letter_bag) < 7:
+                print(f"❌ EXCHANGE_DEBUG: Not enough letters in bag ({len(self.letter_bag)} < 7)")
                 return False, "Cannot exchange tiles - not enough letters remaining in the bag (need at least 7 letters in bag for exchange).", 0, []
             if len(move_data) != 7:
+                print(f"❌ EXCHANGE_DEBUG: Wrong number of letters to exchange ({len(move_data)} != 7)")
                 return False, "Cannot exchange tiles - you must exchange exactly 7 letters.", 0, []
             success, msg, new_rack = self._handle_exchange(player_id, move_data)
+            print(f"🔄 EXCHANGE_DEBUG: Exchange result - success: {success}, new_rack: {new_rack}")
             if success:
                 # Reset consecutive passes since an exchange was made
                 self.consecutive_passes = 0
@@ -275,6 +281,10 @@ class GameState:
         letters = letters_to_exchange
         rack = self.players[player_id]
         
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Player {player_id} has rack: '{rack}'")
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Letter bag before exchange: {len(self.letter_bag)} letters")
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Letters to exchange: {letters}")
+        
         # Verify player has these letters and remove them
         missing_letters = []
         for letter in letters:
@@ -284,18 +294,25 @@ class GameState:
                 rack = rack.replace(letter, "", 1)
         
         if missing_letters:
+            print(f"❌ EXCHANGE_HANDLE_DEBUG: Missing letters: {missing_letters}")
             if len(missing_letters) == 1:
                 return False, f"Cannot exchange '{missing_letters[0]}' - you don't have this letter in your rack.", []
             else:
                 return False, f"Cannot exchange letters {', '.join(missing_letters)} - you don't have these letters in your rack.", []
         
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Rack after removing letters: '{rack}'")
+        
         # Perform exchange
         return_letters(self.letter_bag, letters)
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Letter bag after returning letters: {len(self.letter_bag)} letters")
+        
         new_letters = draw_letters(self.letter_bag, len(letters))
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Drew {len(new_letters)} new letters: {new_letters}")
         
         # Update rack
         rack += "".join(new_letters)
         self.players[player_id] = rack
+        print(f"🔄 EXCHANGE_HANDLE_DEBUG: Final rack: '{rack}'")
         
         self.last_moves.append((player_id, MoveType.EXCHANGE, letters_to_exchange))
         self._advance_turn()
