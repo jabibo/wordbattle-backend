@@ -317,54 +317,93 @@ class GameState:
         self.turn_number += 1
 
     def _calculate_points(self, move_data: List[Tuple[Position, PlacedTile]]) -> int:
-        """Calculate points for a move."""
+        """Calculate points for a move using proper Scrabble scoring rules."""
         # Get all formed words to properly score including blank tiles
         all_words = self._get_all_formed_words(move_data)
         if not all_words:
             return 0
             
         total_points = 0
-        word_multiplier = 1
         
-        # For blank tiles, we need to score based on the resolved word
         # Apply temporary move to board to get resolved letters
         board_copy = [[tile for tile in row] for row in self.board]
         for pos, tile in move_data:
             board_copy[pos.row][pos.col] = tile
-            
-        # Calculate points for each newly placed tile
-        move_positions = {(pos.row, pos.col) for pos, _ in move_data}
         
-        for pos, tile in move_data:
-            if tile.is_blank:
-                # Blank tiles are worth 0 points regardless of letter represented
-                points = 0
-            else:
-                # Regular tiles use their letter value
-                points = LETTER_DISTRIBUTION[self.language]["points"][tile.letter.upper()]
-            
-            # Apply letter multipliers only to newly placed tiles
-            if (pos.row, pos.col) in self.multipliers:
-                multi = self.multipliers[(pos.row, pos.col)]
-                if multi == "BL":  # Double letter score
-                    points *= 2
-                elif multi == "BW":  # Triple letter score
-                    points *= 3
-                elif multi == "WL":  # Double word score
-                    word_multiplier *= 2
-                elif multi == "WW":  # Triple word score
-                    word_multiplier *= 3
-            
-            total_points += points
-        
-        # Apply word multiplier
-        total_points *= word_multiplier
+        # Calculate points for each word formed
+        for word in all_words:
+            word_points = self._calculate_word_points(word, move_data, board_copy)
+            total_points += word_points
         
         # Bonus for using all 7 letters
         if len(move_data) == 7:
             total_points += 50
             
         return total_points
+    
+    def _calculate_word_points(self, word: str, move_data: List[Tuple[Position, PlacedTile]], board_copy: List[List]) -> int:
+        """Calculate points for a single word using proper Scrabble rules."""
+        # Find the word on the board to get its positions
+        word_positions = self._find_word_positions(word, board_copy)
+        if not word_positions:
+            return 0
+        
+        # Get positions of newly placed tiles in this word
+        move_positions = {(pos.row, pos.col) for pos, _ in move_data}
+        
+        # Calculate base points for all letters in the word
+        word_points = 0
+        word_multiplier = 1
+        
+        for row, col in word_positions:
+            letter = board_copy[row][col]
+            if letter is None:
+                continue
+                
+            # Base letter points
+            if letter in ('?', '*'):
+                letter_points = 0  # Blank tiles are worth 0
+            else:
+                letter_points = LETTER_DISTRIBUTION[self.language]["points"][letter.upper()]
+            
+            # Apply letter multipliers only to newly placed tiles
+            if (row, col) in move_positions and (row, col) in self.multipliers:
+                multi = self.multipliers[(row, col)]
+                if multi == "BL":  # Double letter score
+                    letter_points *= 2
+                elif multi == "BW":  # Triple letter score
+                    letter_points *= 3
+                elif multi == "WL":  # Double word score
+                    word_multiplier *= 2
+                elif multi == "WW":  # Triple word score
+                    word_multiplier *= 3
+            
+            word_points += letter_points
+        
+        # Apply word multiplier
+        word_points *= word_multiplier
+        
+        return word_points
+    
+    def _find_word_positions(self, word: str, board_copy: List[List]) -> List[Tuple[int, int]]:
+        """Find the positions of a word on the board."""
+        positions = []
+        
+        # Search horizontally
+        for row in range(15):
+            for col in range(15 - len(word) + 1):
+                if all(board_copy[row][col + i] == word[i] for i in range(len(word))):
+                    positions = [(row, col + i) for i in range(len(word))]
+                    return positions
+        
+        # Search vertically
+        for row in range(15 - len(word) + 1):
+            for col in range(15):
+                if all(board_copy[row + i][col] == word[i] for i in range(len(word))):
+                    positions = [(row + i, col) for i in range(len(word))]
+                    return positions
+        
+        return positions
 
     def calculate_detailed_score_breakdown(self, move_data: List[Tuple[Position, PlacedTile]]) -> Dict:
         """Calculate detailed score breakdown with word-by-word and letter-by-letter analysis."""
