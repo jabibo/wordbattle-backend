@@ -190,7 +190,15 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
             "difficulty": "normal"
         },
         "recent_moves": recent_moves,
-        "last_move": last_move
+        "last_move": last_move,
+        # Forfeit information
+        "forfeited": game_data.get("forfeited", False),
+        "forfeited_by": game_data.get("forfeited_by"),
+        "forfeit_time": game_data.get("forfeit_time"),
+        "final_scores": game_data.get("final_scores"),
+        "winners": game_data.get("winners"),
+        "game_ended": game_data.get("game_ended", False),
+        "end_reason": game_data.get("end_reason")
     }
 
 @router.post("/create")
@@ -1145,6 +1153,10 @@ def list_user_games(
     for game in user_games:
         game_summary = get_game_summary_data(game, current_user.id, db)
         games_info.append(game_summary)
+        
+        # Debug: Log forfeit data for forfeited games
+        if game_summary.get('forfeited') or game_summary.get('forfeited_by'):
+            logger.info(f"API RESPONSE DEBUG: Game {game_summary.get('id')} - forfeited: {game_summary.get('forfeited')}, forfeited_by: {game_summary.get('forfeited_by')}")
     
     # Sort games using shared helper function
     games_info = sort_games_by_priority(games_info)
@@ -3080,8 +3092,8 @@ async def forfeit_game(
     
     for player in all_players:
         if player.user_id == current_user.id:
-            # Forfeiting player gets current score (or 0 if you want to penalize)
-            final_scores[str(player.user_id)] = player.score
+            # Forfeiting player loses automatically (gets 0 points or current score, but cannot win)
+            final_scores[str(player.user_id)] = 0  # Forfeiting player gets 0 points
         else:
             # Other players are winners with their current scores
             final_scores[str(player.user_id)] = player.score
@@ -3098,6 +3110,9 @@ async def forfeit_game(
         game_state_data["forfeited_by"] = current_user.id
         game_state_data["forfeit_time"] = datetime.now(timezone.utc).isoformat()
         game_state_data["final_scores"] = final_scores
+        game_state_data["winners"] = winners
+        game_state_data["game_ended"] = True
+        game_state_data["end_reason"] = "forfeit"
         game.state = json.dumps(game_state_data, cls=GameStateEncoder)
     except (json.JSONDecodeError, TypeError):
         # If state parsing fails, create minimal forfeit state
@@ -3105,7 +3120,10 @@ async def forfeit_game(
             "forfeited": True,
             "forfeited_by": current_user.id,
             "forfeit_time": datetime.now(timezone.utc).isoformat(),
-            "final_scores": final_scores
+            "final_scores": final_scores,
+            "winners": winners,
+            "game_ended": True,
+            "end_reason": "forfeit"
         }
         game.state = json.dumps(forfeit_state, cls=GameStateEncoder)
     

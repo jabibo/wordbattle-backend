@@ -295,7 +295,9 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
         "last_move": last_move_info,
         "players": players_info,
         "user_score": next((p["score"] for p in players_info if p["is_current_user"]), 0),
-        "recent_moves": recent_moves
+        "recent_moves": recent_moves,
+        "forfeited": state_data.get("forfeited", False),  # Include forfeit status
+        "forfeited_by": state_data.get("forfeited_by")  # Include forfeiting player ID
     }
 
 def get_recent_moves_data(game_id: str, current_user_id: int, db: Session) -> List[Dict[str, Any]]:
@@ -519,7 +521,15 @@ def get_detailed_game_data(game: Game, current_user_id: int, db: Session) -> Dic
         "turn_number": state_data.get("turn_number", 0),
         "consecutive_passes": state_data.get("consecutive_passes", 0),
         "recent_moves": recent_moves,
-        "last_move": last_move_summary
+        "last_move": last_move_summary,
+        # Forfeit information
+        "forfeited": state_data.get("forfeited", False),
+        "forfeited_by": state_data.get("forfeited_by"),
+        "forfeit_time": state_data.get("forfeit_time"),
+        "final_scores": state_data.get("final_scores"),
+        "winners": state_data.get("winners"),
+        "game_ended": state_data.get("game_ended", False),
+        "end_reason": state_data.get("end_reason")
     }
 
 def sort_games_by_priority(games: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
