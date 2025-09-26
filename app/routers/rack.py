@@ -41,7 +41,7 @@ def get_game_rack(
     if not player:
         raise HTTPException(status_code=404, detail=t.error("player_not_found"))
     
-    return {"rack": player.rack}
+    return {"rack": list(player.rack)}
 
 @router.post("/{game_id}/refill")
 def refill_rack(

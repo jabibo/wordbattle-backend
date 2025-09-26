@@ -1981,6 +1981,11 @@ async def exchange_letters(
         "next_player_id": game.current_player_id
     }
     
+    # Debug: Log the exact format being sent
+    print(f"🔍 EXCHANGE RESPONSE DEBUG: your_new_rack = {response_data['your_new_rack']}")
+    print(f"🔍 EXCHANGE RESPONSE DEBUG: type = {type(response_data['your_new_rack'])}")
+    print(f"🔍 EXCHANGE RESPONSE DEBUG: JSON = {json.dumps(response_data['your_new_rack'])}")
+    
     # Broadcast game update
     try:
         # Get updated player data including new rack
@@ -2007,6 +2012,12 @@ async def exchange_letters(
                 str(current_user.id): list(new_rack_after_exchange)
             }
         }
+        
+        # Debug: Log the exact format being broadcast
+        print(f"🔍 WEBSOCKET BROADCAST DEBUG: player_racks = {broadcast_payload['player_racks']}")
+        print(f"🔍 WEBSOCKET BROADCAST DEBUG: type = {type(broadcast_payload['player_racks'][str(current_user.id)])}")
+        print(f"🔍 WEBSOCKET BROADCAST DEBUG: JSON = {json.dumps(broadcast_payload['player_racks'], cls=GameStateEncoder)}")
+        
         await manager.broadcast_to_game(game_id, broadcast_payload)
     except Exception as e: # pragma: no cover
         logger.error(f"WebSocket broadcast error after exchange in game {game_id}: {e}")
