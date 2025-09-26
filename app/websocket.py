@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from app.auth import get_token_from_header, get_user_from_token
 from app.models import User
 from starlette.websockets import WebSocketDisconnect
+from app.routers.games import GameStateEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,9 @@ class ConnectionManager:
             disconnected = set()
             for connection in self.active_connections[game_id]:
                 try:
-                    await connection.send_json(message)
+                    # Use GameStateEncoder to handle PlacedTile serialization
+                    json_message = json.dumps(message, cls=GameStateEncoder)
+                    await connection.send_text(json_message)
                 except Exception as e:
                     logger.error(f"Error broadcasting to client: {e}")
                     disconnected.add(connection)
