@@ -344,6 +344,19 @@ class GameState:
 
     def _calculate_points(self, move_data: List[Tuple[Position, PlacedTile]]) -> int:
         """Calculate points for a move using proper Scrabble scoring rules."""
+        # Use the same scoring logic as the detailed score breakdown
+        try:
+            score_breakdown = self.calculate_detailed_score_breakdown(move_data)
+            total_points = score_breakdown.get('total_points', 0)
+            print(f"🎯 SCORING_DEBUG: Using detailed score breakdown: {total_points} points")
+            return total_points
+        except Exception as e:
+            print(f"🎯 SCORING_DEBUG: Error in detailed score breakdown, falling back to old method: {e}")
+            # Fallback to old method if detailed breakdown fails
+            return self._calculate_points_old(move_data)
+    
+    def _calculate_points_old(self, move_data: List[Tuple[Position, PlacedTile]]) -> int:
+        """Old scoring method as fallback."""
         # Get all formed words to properly score including blank tiles
         all_words = self._get_all_formed_words(move_data)
         print(f"🎯 SCORING_DEBUG: Found {len(all_words)} words: {all_words}")
@@ -415,13 +428,14 @@ class GameState:
                     print(f"🎯 SCORING_DEBUG: Applied 3x letter multiplier to '{letter}' at ({row},{col})")
                 
                 # Check for word multipliers on newly placed tiles
-                if row < len(self.board) and col < len(self.board[row]):
-                    tile = self.board[row][col]
-                    if hasattr(tile, 'multiplier_type') and tile.multiplier_type == 'word':
-                        if tile.multiplier_value == 2:
-                            word_multiplier *= 2
-                        elif tile.multiplier_value == 3:
-                            word_multiplier *= 3
+                if (row, col) in move_positions:
+                    multiplier = BOARD_MULTIPLIERS.get((row, col))
+                    if multiplier == "WL":  # Double Word Score
+                        word_multiplier *= 2
+                        print(f"🎯 SCORING_DEBUG: Applied 2x word multiplier at ({row},{col})")
+                    elif multiplier == "WW":  # Triple Word Score
+                        word_multiplier *= 3
+                        print(f"🎯 SCORING_DEBUG: Applied 3x word multiplier at ({row},{col})")
             
             word_points += letter_points
         
