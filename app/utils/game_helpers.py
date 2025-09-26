@@ -56,8 +56,19 @@ def get_player_data(player: Player, current_user_id: int, game_status: GameStatu
         is_computer                               # Computer player (for debugging)
     ) and player.rack
     
+    print(f"🔍 RACK_DEBUG: Player {player_user.username} (ID: {player_user.id})")
+    print(f"   Current user ID: {current_user_id}")
+    print(f"   Is current user: {player_user.id == current_user_id}")
+    print(f"   Game status: {game_status}")
+    print(f"   Is computer: {is_computer}")
+    print(f"   Player rack: '{player.rack}' (length: {len(player.rack) if player.rack else 0})")
+    print(f"   Show rack: {show_rack}")
+    
     if show_rack:
-        player_data["rack"] = player.rack
+        player_data["rack"] = list(player.rack)
+        print(f"   ✅ Added rack to response: {list(player.rack)}")
+    else:
+        print(f"   ❌ Not showing rack")
     
     return player_data
 
