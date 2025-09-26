@@ -391,13 +391,13 @@ class GameState:
             # Apply letter multipliers only to newly placed tiles
             if (row, col) in move_positions:
                 # Check for letter multipliers on the board
-                if row < len(self.board) and col < len(self.board[row]):
-                    tile = self.board[row][col]
-                    if hasattr(tile, 'multiplier_type') and tile.multiplier_type == 'letter':
-                        if tile.multiplier_value == 2:
-                            letter_points *= 2
-                        elif tile.multiplier_value == 3:
-                            letter_points *= 3
+                multiplier = BOARD_MULTIPLIERS.get((row, col))
+                if multiplier == "BL":  # Double Letter Score
+                    letter_points *= 2
+                    print(f"🎯 SCORING_DEBUG: Applied 2x letter multiplier to '{letter}' at ({row},{col})")
+                elif multiplier == "BW":  # Triple Letter Score
+                    letter_points *= 3
+                    print(f"🎯 SCORING_DEBUG: Applied 3x letter multiplier to '{letter}' at ({row},{col})")
                 
                 # Check for word multipliers on newly placed tiles
                 if row < len(self.board) and col < len(self.board[row]):
