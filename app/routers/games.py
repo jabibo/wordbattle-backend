@@ -1442,7 +1442,8 @@ async def make_move(
             tile = PlacedTile(
                 letter=m_item["letter"], 
                 is_blank=m_item.get("is_blank", False),
-                tile_id=m_item.get("tile_id")  # Use provided tile_id or None (will auto-generate)
+                tile_id=m_item.get("tile_id"),  # Use provided tile_id or None (will auto-generate)
+                language=game.language  # Pass the game language for correct point calculation
             )
             parsed_move_positions.append((pos, tile))
         except KeyError: # pragma: no cover
@@ -1668,7 +1669,8 @@ async def test_move(
             tile = PlacedTile(
                 letter=m_item["letter"], 
                 is_blank=m_item.get("is_blank", False),
-                tile_id=m_item.get("tile_id")
+                tile_id=m_item.get("tile_id"),
+                language=game.language  # Pass the game language for correct point calculation
             )
             parsed_move_positions.append((pos, tile))
         except KeyError:

@@ -46,11 +46,20 @@ class PlacedTile:
     letter: str
     is_blank: bool = False
     tile_id: Optional[str] = None
+    points: int = 0
+    language: str = "en"  # Default to English
     
     def __post_init__(self):
-        """Generate a unique tile ID if not provided."""
+        """Generate a unique tile ID if not provided and calculate points."""
         if self.tile_id is None:
             self.tile_id = str(uuid.uuid4())
+        
+        # Calculate points for the tile
+        if self.is_blank:
+            self.points = 0  # Blank tiles are worth 0 points
+        else:
+            # Get points from letter distribution for the specified language
+            self.points = LETTER_DISTRIBUTION.get(self.language, {}).get("points", {}).get(self.letter.upper(), 1)
 
 class GameState:
     def __init__(self, language: str = "en", short_game: bool = None):
@@ -246,7 +255,9 @@ class GameState:
             print(f"🎯 SCORING_DEBUG: Calculated points: {points}")
             print(f"🎯 SCORING_DEBUG: Player {player_id} current score: {self.scores[player_id]}")
             
-            self._update_board(move_data)
+            # Update the board with the placed tiles
+            for pos, tile in move_data:
+                self.board[pos.row][pos.col] = tile
             
             # For blank tiles, we need to remove "?" from rack, not the chosen letter
             letters_to_remove = []

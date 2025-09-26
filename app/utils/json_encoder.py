@@ -11,7 +11,7 @@ class GameStateEncoder(json.JSONEncoder):
         elif isinstance(obj, Position):
             return {"row": obj.row, "col": obj.col}
         elif isinstance(obj, PlacedTile):
-            return {"letter": obj.letter, "is_blank": obj.is_blank, "tile_id": obj.tile_id}
+            return {"letter": obj.letter, "is_blank": obj.is_blank, "tile_id": obj.tile_id, "points": obj.points}
         elif isinstance(obj, set):
             return list(obj)
         return super().default(obj)
