@@ -356,6 +356,11 @@ class GameState:
         if len(move_data) == 7:
             total_points += 50
             print(f"🎯 SCORING_DEBUG: Added 50 bonus for using all 7 letters")
+        
+        # First move bonus (double points)
+        if not self.center_used:
+            total_points *= 2
+            print(f"🎯 SCORING_DEBUG: First move bonus - doubled points to {total_points}")
             
         print(f"🎯 SCORING_DEBUG: Total points calculated: {total_points}")
         return total_points
