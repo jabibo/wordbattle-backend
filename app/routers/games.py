@@ -1486,10 +1486,8 @@ async def make_move(
     
     # Update Player records in DB (rack, score)
     for p_rec in db_players:
-        old_score = p_rec.score
         p_rec.rack = "".join(game_state.players[p_rec.user_id])
         p_rec.score = game_state.scores[p_rec.user_id]
-        print(f"🔍 DB_UPDATE: Player {p_rec.user_id} score: {old_score} → {p_rec.score} (GameState: {game_state.scores[p_rec.user_id]})")
     
     # Record the move in Moves table
     move_entry = Move(
