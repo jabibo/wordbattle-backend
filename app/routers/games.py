@@ -1994,6 +1994,9 @@ async def exchange_letters(
     
     # Broadcast game update
     try:
+        # Get updated player data including new rack
+        updated_player = db.query(Player).filter(Player.game_id == game_id, Player.user_id == current_user.id).first()
+        
         broadcast_payload = {
             "type": "game_update",
             "game_id": game_id,
@@ -2002,13 +2005,18 @@ async def exchange_letters(
                 "type": MoveType.EXCHANGE.value,
                 "player_id": current_user.id,
                 "username": current_user.username,
-                "exchange_count": len(letters_to_exchange) # Inform how many letters were exchanged
+                "exchange_count": len(letters_to_exchange), # Inform how many letters were exchanged
+                "new_rack": list(new_rack_after_exchange) # Include the new rack
             },
             "letter_bag_count": len(game_state.letter_bag),
             "turn_number": game_state.turn_number,
             "consecutive_passes": game_state.consecutive_passes, # Will be 0
             "scores": {p.user_id: p.score for p in db_players}, # Scores don't change
-            "recent_moves": get_recent_moves_data(game_id, current_user.id, db)
+            "recent_moves": get_recent_moves_data(game_id, current_user.id, db),
+            # Include updated rack information for the current player
+            "player_racks": {
+                str(current_user.id): list(new_rack_after_exchange)
+            }
         }
         await manager.broadcast_to_game(game_id, broadcast_payload)
     except Exception as e: # pragma: no cover
