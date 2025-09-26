@@ -23,7 +23,7 @@ def get_rack(
     
     return {
         "racks": [
-            {"game_id": player.game_id, "rack": player.rack}
+            {"game_id": player.game_id, "rack": list(player.rack)}
             for player in players
         ]
     }

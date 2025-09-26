@@ -1977,7 +1977,7 @@ async def exchange_letters(
     
     response_data = {
         "message": "Letters exchanged successfully.",
-        "your_new_rack": new_rack_after_exchange,
+        "your_new_rack": list(new_rack_after_exchange),
         "next_player_id": game.current_player_id
     }
     
