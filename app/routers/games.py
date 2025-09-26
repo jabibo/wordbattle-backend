@@ -2004,7 +2004,7 @@ async def exchange_letters(
             "recent_moves": get_recent_moves_data(game_id, current_user.id, db),
             # Include updated rack information for the current player
             "player_racks": {
-                str(current_user.id): list(new_rack_after_exchange)
+                str(current_user.id): new_rack_after_exchange
             }
         }
         await manager.broadcast_to_game(game_id, broadcast_payload)
