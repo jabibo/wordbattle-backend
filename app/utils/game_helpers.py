@@ -57,7 +57,7 @@ def get_player_data(player: Player, current_user_id: int, game_status: GameStatu
     ) and player.rack
     
     if show_rack:
-        player_data["rack"] = list(player.rack)
+        player_data["rack"] = player.rack
     
     return player_data
 

@@ -23,7 +23,7 @@ def get_rack(
     
     return {
         "racks": [
-            {"game_id": player.game_id, "rack": list(player.rack)}
+            {"game_id": player.game_id, "rack": player.rack}
             for player in players
         ]
     }
@@ -41,7 +41,7 @@ def get_game_rack(
     if not player:
         raise HTTPException(status_code=404, detail=t.error("player_not_found"))
     
-    return {"rack": list(player.rack)}
+    return {"rack": player.rack}
 
 @router.post("/{game_id}/refill")
 def refill_rack(
