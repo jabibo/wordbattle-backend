@@ -211,7 +211,7 @@ class GameState:
             if success:
                 # Reset consecutive passes since an exchange was made
                 self.consecutive_passes = 0
-            return success, msg, 0, []  # Exchange moves don't form words
+            return success, msg, 0, new_rack  # Return the new rack in the 4th position
         
         elif move_type == MoveType.PLACE:
             # First validate that player has the required letters in their rack
