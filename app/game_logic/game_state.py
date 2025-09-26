@@ -403,6 +403,7 @@ class GameState:
             if (row, col) in move_positions:
                 # Check for letter multipliers on the board
                 multiplier = BOARD_MULTIPLIERS.get((row, col))
+                print(f"🎯 SCORING_DEBUG: Checking multiplier for '{letter}' at ({row},{col}): {multiplier}")
                 if multiplier == "BL":  # Double Letter Score
                     letter_points *= 2
                     print(f"🎯 SCORING_DEBUG: Applied 2x letter multiplier to '{letter}' at ({row},{col})")
