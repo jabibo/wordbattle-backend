@@ -391,6 +391,9 @@ class GameState:
         word_multiplier = 1
         
         for i, (row, col) in enumerate(word_positions):
+            if i >= len(word):
+                print(f"🎯 SCORING_DEBUG: Warning: word_positions has more positions than word length. Word: '{word}' (len={len(word)}), positions: {len(word_positions)}")
+                break
             letter = word[i]
             
             # Base letter points
