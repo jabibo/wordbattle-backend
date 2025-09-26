@@ -32,7 +32,7 @@ if CLOUD_PROVIDER == CloudProvider.AWS:
 # GCP-specific Configuration
 elif CLOUD_PROVIDER == CloudProvider.GCP:
     CLOUD_CONFIG.update({
-        "project_id": os.getenv("GOOGLE_CLOUD_PROJECT", "wordbattle-1748668162"),
+        "project_id": os.getenv("GOOGLE_CLOUD_PROJECT", "wordbattle-secure"),
         "service_account_key": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
     })
 
@@ -44,7 +44,7 @@ DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
 DB_NAME = os.environ.get("DB_NAME", "wordbattle")
 
 # Cloud SQL settings for production/testing
-CLOUD_SQL_CONNECTION_NAME = os.environ.get("CLOUD_SQL_CONNECTION_NAME", "wordbattle-1748668162:europe-west1:wordbattle-db")
+CLOUD_SQL_CONNECTION_NAME = os.environ.get("CLOUD_SQL_CONNECTION_NAME", "wordbattle-secure:europe-west1:wordbattle-db")
 CLOUD_SQL_DATABASE_NAME = os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_test")
 
 # Test database settings
