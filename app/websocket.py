@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from app.auth import get_token_from_header, get_user_from_token
 from app.models import User
 from starlette.websockets import WebSocketDisconnect
-from app.routers.games import GameStateEncoder
+from app.utils.json_encoder import GameStateEncoder
 
 logger = logging.getLogger(__name__)
 

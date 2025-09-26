@@ -31,6 +31,7 @@ from app.utils.game_helpers import (
 )
 from app.config import FRONTEND_URL
 from app.websocket import manager, notification_manager
+from app.utils.json_encoder import GameStateEncoder
 from jose import JWTError, jwt
 from app.auth import SECRET_KEY, ALGORITHM
 import random
@@ -95,19 +96,7 @@ class CreateGameWithInvitationsRequest(BaseModel):
     add_computer_player: bool = False  # Add computer opponent during creation
     computer_difficulty: str = "medium"  # easy, medium, hard
 
-class GameStateEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return obj.isoformat()
-        elif isinstance(obj, (GamePhase, MoveType)):
-            return obj.value
-        elif isinstance(obj, Position):
-            return {"row": obj.row, "col": obj.col}
-        elif isinstance(obj, PlacedTile):
-            return {"letter": obj.letter, "is_blank": obj.is_blank, "tile_id": obj.tile_id}
-        elif isinstance(obj, set):
-            return list(obj)
-        return super().default(obj)
+# GameStateEncoder moved to app/utils/json_encoder.py to avoid circular imports
 
 router = APIRouter(prefix="/games", tags=["games"])
 
