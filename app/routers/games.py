@@ -1943,7 +1943,7 @@ async def exchange_letters(
     game.current_player_id = game_state.current_player_id
     
     # Update player's rack in Player table
-    current_player_record.rack = "".join(new_rack_after_exchange)
+    current_player_record.rack = new_rack_after_exchange
     
     # Record exchange action in Moves table
     move_entry = Move(
