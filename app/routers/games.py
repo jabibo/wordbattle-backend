@@ -1104,12 +1104,16 @@ def list_user_games(
 ):
     """List all games the current user participates in using shared helper functions.
     
+    Games are automatically filtered to exclude:
+    - Setup/Ready games: Games where any player declined an invitation
+    - Completed games: Games with declined invitations OR computer players
+    
     Args:
         status_filter: List of game statuses to include. Valid values: 
-                      - "setup": Games being set up, waiting for invitations
-                      - "ready": All players accepted, waiting to start  
+                      - "setup": Games being set up, waiting for invitations (filtered to exclude declined invitations)
+                      - "ready": All players accepted, waiting to start (filtered to exclude declined invitations)
                       - "in_progress": Games currently being played
-                      - "completed": Finished games
+                      - "completed": Finished games (filtered to exclude declined invitations and computer games)
                       - "cancelled": Cancelled games
                       If not provided, shows all games.
     """
@@ -1147,16 +1151,72 @@ def list_user_games(
     # If status_filter is None or empty, no filtering is applied (shows all games)
     
     user_games = query.all()
+    
+    # Pre-fetch data for filtering games to avoid N+1 queries
+    completed_game_ids = [game.id for game in user_games if game.status == GameStatus.COMPLETED]
+    waiting_game_ids = [game.id for game in user_games if game.status in [GameStatus.SETUP, GameStatus.READY]]
+    
+    # Get games with declined invitations (for both completed and waiting games)
+    games_with_declined_invitations = set()
+    all_filterable_game_ids = completed_game_ids + waiting_game_ids
+    if all_filterable_game_ids:
+        declined_invitations = db.query(GameInvitation.game_id).filter(
+            GameInvitation.game_id.in_(all_filterable_game_ids),
+            GameInvitation.status == InvitationStatus.DECLINED
+        ).all()
+        games_with_declined_invitations = {inv.game_id for inv in declined_invitations}
+    
+    # Get games with computer players
+    games_with_computer_players = set()
+    if completed_game_ids:
+        computer_user = db.query(User).filter(User.username == "computer_player").first()
+        if computer_user:
+            computer_games = db.query(Player.game_id).filter(
+                Player.game_id.in_(completed_game_ids),
+                Player.user_id == computer_user.id
+            ).all()
+            games_with_computer_players = {cg.game_id for cg in computer_games}
 
     # Use shared helper function to get game summary data
     games_info = []
+    excluded_count = 0
+    
     for game in user_games:
         game_summary = get_game_summary_data(game, current_user.id, db)
+        
+        # Filter out games based on status
+        game_status = game_summary.get('status')
+        should_exclude = False
+        
+        if game_status == 'completed':
+            # For completed games: exclude declined invitations OR computer players
+            if game.id in games_with_declined_invitations:
+                logger.debug(f"Excluding completed game {game.id} - has declined invitation")
+                should_exclude = True
+                excluded_count += 1
+            elif game.id in games_with_computer_players:
+                logger.debug(f"Excluding completed game {game.id} - has computer player")
+                should_exclude = True
+                excluded_count += 1
+        elif game_status in ['setup', 'ready']:
+            # For waiting list games: exclude only declined invitations
+            if game.id in games_with_declined_invitations:
+                logger.debug(f"Excluding waiting game {game.id} - has declined invitation")
+                should_exclude = True
+                excluded_count += 1
+        
+        # Skip this game if it should be excluded
+        if should_exclude:
+            continue
+        
         games_info.append(game_summary)
         
         # Debug: Log forfeit data for forfeited games
         if game_summary.get('forfeited') or game_summary.get('forfeited_by'):
             logger.info(f"API RESPONSE DEBUG: Game {game_summary.get('id')} - forfeited: {game_summary.get('forfeited')}, forfeited_by: {game_summary.get('forfeited_by')}")
+    
+    if excluded_count > 0:
+        logger.info(f"Filtered out {excluded_count} games (declined invitations and computer players)")
     
     # Sort games using shared helper function
     games_info = sort_games_by_priority(games_info)
@@ -3143,12 +3203,16 @@ async def forfeit_game(
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
         
-        # Notify all players in the game
-        for player in all_players:
-            await manager.send_personal_message(forfeit_message, player.user_id)
+        logger.info(f"🏳️ Sending forfeit WebSocket message for game {game_id}: {forfeit_message}")
+        
+        # Notify all players in the game via WebSocket
+        await manager.broadcast_to_game(game_id, forfeit_message)
+        
+        logger.info(f"✅ Forfeit WebSocket message sent successfully for game {game_id}")
             
     except Exception as e:
-        logger.warning(f"Failed to send forfeit WebSocket notification: {e}")
+        logger.error(f"❌ Failed to send forfeit WebSocket notification: {e}")
+        logger.exception("Full forfeit WebSocket error traceback:")
     
     logger.info(f"Player {current_user.id} forfeited game {game_id}")
     

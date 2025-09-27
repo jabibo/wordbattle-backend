@@ -1,431 +1,467 @@
 # 🚀 WordBattle Backend Deployment Guide
 
-This guide provides step-by-step instructions for deploying the WordBattle backend to AWS using multiple deployment strategies.
+This guide provides step-by-step instructions for deploying the WordBattle backend to Google Cloud Platform using the unified deployment script.
 
 ## 📋 Prerequisites
 
 Before deploying, ensure you have:
 
-- **AWS Account** with appropriate permissions
-- **AWS CLI** installed and configured
+- **Google Cloud Account** with appropriate permissions
+- **Google Cloud CLI** installed and authenticated (`gcloud auth login`)
 - **Docker** installed and running
-- **Terraform** (optional, for infrastructure as code)
 - **Git** for version control
+- **Access to project**: `wordbattle-secure`
 
 ## 🎯 Quick Start (Recommended)
 
-The fastest way to deploy is using our automated script:
-
-### For Linux/macOS (Bash):
-```bash
-# Make the script executable
-chmod +x deploy/aws-app-runner.sh
-
-# Run the deployment
-./deploy/aws-app-runner.sh
-```
-
-### For Windows (PowerShell):
-```powershell
-# Run the PowerShell deployment script
-.\deploy\aws-app-runner.ps1
-```
-
-This script will:
-- ✅ Create ECR repository
-- ✅ Build and push Docker image
-- ✅ Create RDS PostgreSQL database
-- ✅ Deploy App Runner service
-- ✅ Configure networking and security
-- ✅ Test the deployment
-
-## 🔧 Manual Deployment Options
-
-### Option 1: AWS App Runner (Simplest)
-
-**Best for**: MVP, quick deployment, low maintenance
-**Cost**: ~$25-50/month
-**Complexity**: ⭐⭐☆☆☆
-
-#### Step 1: Build and Push Docker Image
+The fastest way to deploy is using our unified deployment script:
 
 ```bash
-# Get your AWS account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION="eu-central-1"
-REPOSITORY_NAME="wordbattle-backend"
+# Navigate to backend directory
+cd wordbattle-backend
 
-# Create ECR repository
-aws ecr create-repository --repository-name $REPOSITORY_NAME --region $REGION
+# Deploy to development environment
+./deploy-unified.sh dev
 
-# Login to ECR
-aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
+# Deploy to testing environment  
+./deploy-unified.sh testing
 
-# Build and push image
-docker build -f Dockerfile.prod -t $REPOSITORY_NAME .
-docker tag $REPOSITORY_NAME:latest $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPOSITORY_NAME:latest
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPOSITORY_NAME:latest
+# Deploy to production environment
+./deploy-unified.sh production
 ```
 
-#### Step 2: Create Database
+The script handles everything automatically:
+- ✅ Environment validation
+- ✅ Docker image building and pushing
+- ✅ Cloud Run service deployment
+- ✅ Health checks and validation
+- ✅ Git integration and tagging
+
+## 🚀 Unified Deployment Script
+
+### Basic Usage
 
 ```bash
-# Generate secure password
-DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+# Syntax
+./deploy-unified.sh [environment] [git-branch] [options]
 
-# Create RDS instance
-aws rds create-db-instance \
-    --db-instance-identifier wordbattle-db \
-    --db-instance-class db.t3.micro \
-    --engine postgres \
-    --master-username postgres \
-    --master-user-password "$DB_PASSWORD" \
-    --allocated-storage 20 \
-    --db-name wordbattle \
-    --backup-retention-period 7 \
-    --storage-encrypted \
-    --region $REGION
-
-# Wait for database to be available
-aws rds wait db-instance-available --db-instance-identifier wordbattle-db --region $REGION
+# Examples
+./deploy-unified.sh dev                          # Deploy current branch to dev
+./deploy-unified.sh testing feature/new-ui      # Deploy specific branch to testing
+./deploy-unified.sh production --skip-git-check # Deploy to production without git validation
 ```
 
-#### Step 3: Create App Runner Service
+### Supported Environments
+
+#### 🛠️ Development Environment (`dev`)
+```bash
+./deploy-unified.sh dev
+```
+
+- **Service**: `wordbattle-backend-dev`
+- **URL**: `https://wordbattle-backend-dev-idgnvgsvva-ew.a.run.app`
+- **Database**: `wordbattle_dev` (contains production data copy)
+- **Resources**: 2 CPU, 2GB RAM
+- **Scaling**: 0-10 instances (scales to zero when idle)
+- **Features**: Debug enabled, realistic test data
+
+#### 🧪 Testing Environment (`testing`)
+```bash
+./deploy-unified.sh testing
+```
+
+- **Service**: `wordbattle-backend-test`
+- **Database**: `wordbattle_test`
+- **Resources**: 1 CPU, 1GB RAM
+- **Scaling**: 0-10 instances
+- **Features**: Debug enabled, contract validation
+
+#### 🏭 Production Environment (`production`)
+```bash
+./deploy-unified.sh production
+```
+
+- **Service**: `wordbattle-backend-prod`
+- **URL**: `https://wordbattle-backend-prod-15814336315.europe-west1.run.app`
+- **Database**: `wordbattle_prod`
+- **Resources**: 2 CPU, 2GB RAM
+- **Scaling**: 1-100 instances (always-on)
+- **Features**: Optimized for performance, strict validation, Git tagging
+
+### Script Features
+
+The deployment script automatically handles:
+
+✅ **Environment Validation**: Checks required variables and configuration
+✅ **Git Integration**: Validates git state, creates tags for production
+✅ **Docker Building**: Builds optimized images with environment-specific tags
+✅ **Container Registry**: Pushes to Google Container Registry (GCR)
+✅ **Cloud Run Deployment**: Deploys with proper configuration and scaling
+✅ **Health Checks**: Tests endpoints after deployment
+✅ **Contract Validation**: Validates API contracts (if available)
+✅ **Cleanup**: Removes temporary build artifacts
+
+## 📁 Environment Configuration
+
+Each environment uses a dedicated configuration file in the backend directory:
+
+### `deploy.dev.env` (Development)
+```bash
+# Development Environment Configuration
+ENVIRONMENT=testing
+PROJECT_ID=wordbattle-secure
+GOOGLE_CLOUD_PROJECT=wordbattle-secure
+
+# Database Configuration
+DB_NAME=wordbattle_dev
+DB_USER=wordbattle
+DB_PASSWORD=p2n1kqcYFLbx51nsbhUkMYzAHz8oWUGOfwvK3H+okVI=
+
+# Cloud SQL Configuration
+CLOUD_SQL_INSTANCE_NAME=wordbattle-db
+CLOUD_REGION=europe-west1
+CLOUD_SQL_CONNECTION_NAME=wordbattle-secure:europe-west1:wordbattle-db
+
+# SMTP Configuration (TLS on port 587)
+SMTP_USERNAME=service@binge-wordbattle.de
+SMTP_PASSWORD=z1nUNGrz1ZDmu4J
+FROM_EMAIL=service@binge-wordbattle.de
+SMTP_SERVER=smtp.strato.de
+SMTP_PORT=587
+SMTP_USE_SSL=false
+
+# Security
+SECRET_KEY=09a7f7fbd3bc514c5f51365b58c8055fc00261961ecfe048292dbf81ebcfe44f
+ADMIN_EMAIL=jan@binge.de
+```
+
+### `deploy.testing.env` (Testing)
+Similar configuration with `DB_NAME=wordbattle_test` and testing-specific settings.
+
+### `deploy.production.env` (Production)
+Production configuration with `DB_NAME=wordbattle_prod` and production-optimized settings.
+
+## 🛠️ Manual Deployment (Advanced)
+
+For advanced users or custom deployments:
+
+### Step 1: Build Docker Image
 
 ```bash
-# Get database endpoint
-DB_ENDPOINT=$(aws rds describe-db-instances --db-instance-identifier wordbattle-db --query "DBInstances[0].Endpoint.Address" --output text --region $REGION)
+# Navigate to backend directory
+cd wordbattle-backend
 
-# Create App Runner service configuration
-cat > apprunner-config.json << EOF
-{
-    "ServiceName": "wordbattle-backend",
-    "SourceConfiguration": {
-        "ImageRepository": {
-            "ImageIdentifier": "$AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPOSITORY_NAME:latest",
-            "ImageConfiguration": {
-                "Port": "8000",
-                "RuntimeEnvironmentVariables": {
-                    "DATABASE_URL": "postgresql://postgres:$DB_PASSWORD@$DB_ENDPOINT:5432/wordbattle",
-                    "SECRET_KEY": "$(openssl rand -base64 64 | tr -d '=+/' | cut -c1-64)",
-                    "SMTP_SERVER": "smtp.strato.de",
-                    "SMTP_PORT": "465",
-                    "SMTP_USE_SSL": "true",
-                    "SMTP_USERNAME": "your-email@domain.com",
-                    "SMTP_PASSWORD": "your-email-password",
-                    "FROM_EMAIL": "your-email@domain.com",
-                    "CORS_ORIGINS": "*",
-                    "ENVIRONMENT": "production"
-                }
-            },
-            "ImageRepositoryType": "ECR"
-        },
-        "AutoDeploymentsEnabled": true
-    },
-    "InstanceConfiguration": {
-        "Cpu": "0.25 vCPU",
-        "Memory": "0.5 GB"
-    },
-    "HealthCheckConfiguration": {
-        "Protocol": "HTTP",
-        "Path": "/health",
-        "Interval": 10,
-        "Timeout": 5,
-        "HealthyThreshold": 1,
-        "UnhealthyThreshold": 5
-    }
-}
-EOF
-
-# Create the service
-aws apprunner create-service --cli-input-json file://apprunner-config.json --region $REGION
+# Build image
+gcloud builds submit --tag gcr.io/wordbattle-secure/wordbattle-backend:latest --project=wordbattle-secure
 ```
 
-### Option 2: Terraform (Infrastructure as Code)
-
-**Best for**: Production environments, team collaboration
-**Cost**: ~$30-60/month
-**Complexity**: ⭐⭐⭐☆☆
-
-#### Step 1: Configure Terraform
+### Step 2: Deploy to Cloud Run
 
 ```bash
-cd terraform
-
-# Copy example variables
-cp terraform.tfvars.example terraform.tfvars
-
-# Edit terraform.tfvars with your values
-nano terraform.tfvars
+# Deploy with environment variables
+gcloud run deploy wordbattle-backend-dev \
+  --image gcr.io/wordbattle-secure/wordbattle-backend:latest \
+  --region=europe-west1 \
+  --project=wordbattle-secure \
+  --platform=managed \
+  --allow-unauthenticated \
+  --memory=2Gi \
+  --cpu=2 \
+  --set-env-vars="DB_NAME=wordbattle_dev,GOOGLE_CLOUD_PROJECT=wordbattle-secure" \
+  --add-cloudsql-instances=wordbattle-secure:europe-west1:wordbattle-db
 ```
-
-#### Step 2: Deploy Infrastructure
-
-```bash
-# Initialize Terraform
-terraform init
-
-# Plan the deployment
-terraform plan
-
-# Apply the configuration
-terraform apply
-```
-
-#### Step 3: Build and Deploy Application
-
-```bash
-# Get ECR repository URL from Terraform output
-ECR_URL=$(terraform output -raw ecr_repository_url)
-
-# Build and push image
-docker build -f Dockerfile.prod -t wordbattle-backend .
-docker tag wordbattle-backend:latest $ECR_URL:latest
-docker push $ECR_URL:latest
-
-# Trigger App Runner deployment
-SERVICE_ARN=$(terraform output -raw app_runner_service_arn)
-aws apprunner start-deployment --service-arn $SERVICE_ARN
-```
-
-### Option 3: GitHub Actions CI/CD
-
-**Best for**: Automated deployments, team development
-**Cost**: Same as base deployment + GitHub Actions minutes
-**Complexity**: ⭐⭐⭐⭐☆
-
-#### Step 1: Set up GitHub Secrets
-
-In your GitHub repository, add these secrets:
-
-```
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-AWS_ACCOUNT_ID=your-account-id
-SLACK_WEBHOOK_URL=your-slack-webhook (optional)
-```
-
-#### Step 2: Push to Main Branch
-
-```bash
-git add .
-git commit -m "Deploy to AWS"
-git push origin main
-```
-
-The GitHub Actions workflow will automatically:
-- Run tests
-- Build Docker image
-- Push to ECR
-- Deploy to App Runner
-- Run health checks
 
 ## 🔐 Security Configuration
 
-### Environment Variables
+### Required Environment Variables
 
-Set these environment variables for production:
+| Category | Variable | Description | Example |
+|----------|----------|-------------|---------|
+| **Core** | `PROJECT_ID` | Google Cloud Project ID | `wordbattle-secure` |
+| | `ENVIRONMENT` | Environment identifier | `testing`, `production` |
+| | `SECRET_KEY` | Application secret key | (64-char random string) |
+| **Database** | `DB_NAME` | Target database name | `wordbattle_dev` |
+| | `DB_USER` | Database user | `wordbattle` |
+| | `DB_PASSWORD` | Database password | (from Secret Manager) |
+| | `CLOUD_SQL_CONNECTION_NAME` | Cloud SQL connection | `wordbattle-secure:europe-west1:wordbattle-db` |
+| **Email** | `SMTP_USERNAME` | SMTP login | `service@binge-wordbattle.de` |
+| | `SMTP_PASSWORD` | SMTP password | (secure password) |
+| | `FROM_EMAIL` | Sender email | `service@binge-wordbattle.de` |
+| | `SMTP_SERVER` | SMTP server | `smtp.strato.de` |
+| | `SMTP_PORT` | SMTP port | `587` (TLS) |
+| | `SMTP_USE_SSL` | Use SSL/TLS | `false` (use TLS) |
+
+### Secret Manager Setup
+
+For production deployments, use Google Cloud Secret Manager:
 
 ```bash
-# Required
-DATABASE_URL=postgresql://username:password@host:5432/database
-SECRET_KEY=your-64-character-secret-key
+# Create database password secret
+echo "your-secure-password" | gcloud secrets create prod-db-password --data-file=- --project=wordbattle-secure
 
-# Email Configuration
-SMTP_SERVER=smtp.your-provider.com
-SMTP_PORT=465
-SMTP_USE_SSL=true
-SMTP_USERNAME=your-email@domain.com
-SMTP_PASSWORD=your-email-password
-FROM_EMAIL=your-email@domain.com
+# Create SMTP password secret
+echo "your-smtp-password" | gcloud secrets create dev-smtp-password --data-file=- --project=wordbattle-secure
 
-# Optional
-CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
-ENVIRONMENT=production
+# Grant access to Cloud Run service account
+gcloud secrets add-iam-policy-binding prod-db-password \
+  --member="serviceAccount:15814336315-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor" \
+  --project=wordbattle-secure
 ```
 
 ### Database Security
 
-1. **Use strong passwords**: Generate with `openssl rand -base64 32`
-2. **Enable encryption**: Always use `storage_encrypted = true`
-3. **Restrict access**: Use security groups to limit database access
-4. **Regular backups**: Set appropriate backup retention periods
+1. **Cloud SQL Connector**: Uses unix sockets for secure connections
+2. **Private IP**: Database uses private networking
+3. **SSL Encryption**: All connections encrypted in transit
+4. **IAM Authentication**: Service accounts for access control
 
-### Network Security
+## 📊 Monitoring and Health Checks
 
-1. **VPC isolation**: Deploy database in private subnets
-2. **Security groups**: Restrict traffic to necessary ports only
-3. **SSL/TLS**: Use HTTPS for all external communication
-4. **WAF**: Consider AWS WAF for additional protection
+### Built-in Health Endpoints
 
-## 📊 Monitoring and Logging
+```bash
+# Health check
+curl https://your-service-url/health
 
-### CloudWatch Integration
+# Database status
+curl https://your-service-url/database/status
+
+# API documentation
+curl https://your-service-url/docs
+```
+
+### Cloud Logging
+
+View deployment and runtime logs:
+
+```bash
+# View deployment logs
+gcloud run services logs tail wordbattle-backend-dev --region=europe-west1 --project=wordbattle-secure
+
+# Filter for errors
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=wordbattle-backend-dev AND severity>=ERROR" --project=wordbattle-secure --limit=10
+```
+
+### Cloud Monitoring
 
 The deployment automatically sets up:
-
-- **Application logs**: `/aws/apprunner/wordbattle-backend`
-- **Health checks**: Automatic monitoring of `/health` endpoint
+- **Application logs**: Structured logging to Cloud Logging
+- **Health checks**: Automatic monitoring of `/health` endpoint  
 - **Metrics**: CPU, memory, and request metrics
-
-### Custom Monitoring
-
-Add custom metrics to your application:
-
-```python
-import boto3
-
-cloudwatch = boto3.client('cloudwatch')
-
-def put_custom_metric(metric_name, value, unit='Count'):
-    cloudwatch.put_metric_data(
-        Namespace='WordBattle',
-        MetricData=[
-            {
-                'MetricName': metric_name,
-                'Value': value,
-                'Unit': unit
-            }
-        ]
-    )
-```
+- **Alerts**: Can be configured for critical metrics
 
 ## 🔄 Deployment Strategies
 
+### Development Workflow
+
+1. **Feature Development**: Use `dev` environment
+   ```bash
+   ./deploy-unified.sh dev
+   ```
+
+2. **Testing**: Deploy to `testing` environment
+   ```bash
+   ./deploy-unified.sh testing
+   ```
+
+3. **Production**: Deploy stable features
+   ```bash
+   ./deploy-unified.sh production
+   ```
+
+### Git Integration
+
+- **Development/Testing**: Allows uncommitted changes
+- **Production**: Requires clean git state
+- **Automatic Tagging**: Production deployments create git tags
+- **Branch Deployment**: Can deploy specific branches to testing
+
 ### Blue-Green Deployment
 
-For zero-downtime deployments:
-
-1. Deploy new version to staging environment
-2. Run tests against staging
-3. Switch traffic to new version
-4. Keep old version as backup
-
-### Rolling Updates
-
-App Runner automatically handles rolling updates:
-
-- New instances are created with updated code
-- Health checks ensure new instances are healthy
-- Old instances are terminated after successful deployment
+Cloud Run automatically handles blue-green deployments:
+- New revisions are created for each deployment
+- Traffic gradually shifts to new revision
+- Old revisions remain available for rollback
 
 ## 🚨 Troubleshooting
 
 ### Common Issues
 
-#### 1. Database Connection Failed
-
+#### 1. Environment File Not Found
 ```bash
-# Check database status
-aws rds describe-db-instances --db-instance-identifier wordbattle-db
-
-# Check security groups
-aws ec2 describe-security-groups --group-ids sg-xxxxxxxxx
+# Error: Environment file deploy.dev.env not found
+# Solution: Create environment file
+cp deploy.testing.env deploy.dev.env
+# Edit deploy.dev.env with correct values
 ```
 
-#### 2. App Runner Service Failed
+#### 2. Database Connection Failed
+```bash
+# Check Cloud SQL instance status
+gcloud sql instances describe wordbattle-db --project=wordbattle-secure
+
+# Check if instance is stopped
+gcloud sql instances patch wordbattle-db --activation-policy=ALWAYS --project=wordbattle-secure
+```
+
+#### 3. Docker Build Failed
+```bash
+# Ensure Docker is running
+docker ps
+
+# Check disk space
+df -h
+
+# Clear Docker cache if needed
+docker system prune -f
+```
+
+#### 4. Permission Denied Errors
+```bash
+# Re-authenticate with gcloud
+gcloud auth login
+
+# Set correct project
+gcloud config set project wordbattle-secure
+
+# Check IAM permissions
+gcloud projects get-iam-policy wordbattle-secure
+```
+
+#### 5. SMTP Configuration Issues
+```bash
+# Check SMTP settings in environment file
+cat deploy.dev.env | grep SMTP
+
+# Test SMTP connectivity
+curl -s https://your-service-url/health | jq .
+
+# Check logs for SMTP errors
+gcloud logging read "resource.labels.service_name=wordbattle-backend-dev AND textPayload:(SMTP OR email)" --project=wordbattle-secure --limit=5
+```
+
+### Debugging Commands
 
 ```bash
 # Check service status
-aws apprunner describe-service --service-arn your-service-arn
+gcloud run services describe wordbattle-backend-dev --region=europe-west1 --project=wordbattle-secure
 
-# View logs
-aws logs tail /aws/apprunner/wordbattle-backend --follow
-```
+# View current configuration
+gcloud run services describe wordbattle-backend-dev --region=europe-west1 --project=wordbattle-secure --format="yaml"
 
-#### 3. Image Push Failed
+# Test health endpoint
+curl -s https://your-service-url/health | jq .
 
-```bash
-# Re-authenticate with ECR
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin your-account-id.dkr.ecr.us-east-1.amazonaws.com
-
-# Check repository exists
-aws ecr describe-repositories --repository-names wordbattle-backend
-```
-
-### Health Check Endpoints
-
-Test your deployment:
-
-```bash
-# Health check
-curl https://your-app-url/health
-
-# API documentation
-curl https://your-app-url/docs
-
-# Test authentication
-curl -X POST https://your-app-url/auth/email-login \
-  -H "Content-Type: application/json" \
-  -d '{"email": "test@example.com"}'
+# Check recent logs
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=wordbattle-backend-dev" --project=wordbattle-secure --limit=10 --format="value(timestamp,textPayload)"
 ```
 
 ## 💰 Cost Optimization
 
 ### Development Environment
+- **Auto-scaling**: Scales to 0 when not in use
+- **Resource limits**: 2 CPU, 2GB RAM maximum
+- **Storage**: Shared database with production data
 
-- Use `db.t3.micro` for database
-- Use `0.25 vCPU, 0.5 GB` for App Runner
-- Set shorter log retention (7 days)
+### Testing Environment  
+- **Minimal resources**: 1 CPU, 1GB RAM
+- **Separate database**: Independent test data
+- **Cost-effective**: Pay only when running
 
 ### Production Environment
-
-- Use `db.t3.small` or larger for database
-- Use `0.5 vCPU, 1 GB` or larger for App Runner
-- Enable performance insights
-- Set longer log retention (30+ days)
+- **Always-on**: Minimum 1 instance for availability
+- **Performance**: Optimized resources for production load
+- **Monitoring**: Enhanced logging and monitoring
 
 ### Cost Monitoring
 
 Set up billing alerts:
-
 ```bash
-aws budgets create-budget \
-  --account-id your-account-id \
-  --budget file://budget.json
+# Create budget alert
+gcloud billing budgets create \
+  --billing-account=YOUR-BILLING-ACCOUNT \
+  --display-name="WordBattle Backend Budget" \
+  --budget-amount=100USD
 ```
 
-## 🔄 Backup and Recovery
+## 🔄 Data Management
 
-### Database Backups
+### Environment Data Strategy
 
-Automated backups are configured with:
-- Daily backups during maintenance window
-- Point-in-time recovery
-- Cross-region backup replication (optional)
+- **Production**: Live user data (`wordbattle_prod`)
+- **Development**: Copy of production data (`wordbattle_dev`) for realistic testing
+- **Testing**: Minimal test data (`wordbattle_test`) for automated tests
 
-### Application Backups
+### Data Refresh
 
-- Docker images are stored in ECR
-- Infrastructure code is in Git
-- Configuration is in Terraform state
+Refresh development data from production:
+```bash
+# Use the copy script (if available)
+python scripts/copy-prod-to-dev.py
 
-### Disaster Recovery
+# Or use the deployment script with fresh data
+./deploy-unified.sh dev
+```
 
-1. **RTO (Recovery Time Objective)**: < 1 hour
-2. **RPO (Recovery Point Objective)**: < 15 minutes
-3. **Multi-region deployment**: For critical applications
+## 📞 Support and Best Practices
 
-## 📞 Support
+### Best Practices
 
-For deployment issues:
+1. **Use the deployment script**: Ensures consistent deployments
+2. **Test in dev first**: Always test changes in development
+3. **Environment isolation**: Keep environments separate
+4. **Monitor deployments**: Check health endpoints after deployment
+5. **Keep credentials secure**: Use Secret Manager for sensitive data
 
-1. Check the troubleshooting section above
-2. Review AWS CloudWatch logs
-3. Consult the [AWS App Runner documentation](https://docs.aws.amazon.com/apprunner/)
-4. Open an issue in the GitHub repository
+### Getting Help
+
+1. **Check troubleshooting section** above
+2. **Review Cloud Run logs** for specific errors
+3. **Consult Google Cloud documentation**
+4. **Check environment configuration** files
 
 ## 🎉 Next Steps
 
 After successful deployment:
 
-1. **Set up monitoring**: Configure CloudWatch alarms
-2. **Configure domain**: Set up custom domain with Route 53
-3. **SSL certificate**: Use AWS Certificate Manager
-4. **CDN**: Set up CloudFront for static assets
-5. **Scaling**: Configure auto-scaling policies
-6. **Security**: Implement WAF and security headers
+1. **Configure monitoring**: Set up Cloud Monitoring alerts
+2. **Custom domain**: Configure custom domain with Cloud DNS
+3. **SSL certificates**: Managed SSL certificates are automatic
+4. **CDN**: Consider Cloud CDN for static assets
+5. **Security**: Implement Cloud Armor for additional protection
+6. **Backup strategy**: Configure automated database backups
+
+## 📋 Environment Checklist
+
+After deployment, verify:
+
+### ✅ Core Functionality
+- [ ] Health endpoint returns "healthy"
+- [ ] Database connection working
+- [ ] API documentation accessible
+- [ ] Authentication endpoints working
+
+### ✅ Email Functionality  
+- [ ] SMTP configuration correct
+- [ ] Email sending working
+- [ ] Verification codes being sent
+- [ ] Invitation emails working
+
+### ✅ Performance
+- [ ] Response times acceptable
+- [ ] Auto-scaling configured
+- [ ] Resource limits appropriate
+- [ ] Monitoring enabled
+
+### ✅ Security
+- [ ] HTTPS enabled (automatic)
+- [ ] Database using private networking
+- [ ] Secrets stored in Secret Manager
+- [ ] IAM permissions configured
 
 ---
 
 **Happy Deploying! 🚀**
+
+For questions or issues, refer to the troubleshooting section or check the logs using the commands provided above.

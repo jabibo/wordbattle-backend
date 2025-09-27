@@ -30,12 +30,13 @@ echo "Script Version: 2.0 (Unified)"
 echo ""
 
 # Validate environment
-if [[ "$ENVIRONMENT" != "production" && "$ENVIRONMENT" != "testing" ]]; then
+if [[ "$ENVIRONMENT" != "production" && "$ENVIRONMENT" != "testing" && "$ENVIRONMENT" != "dev" ]]; then
     echo "❌ Invalid environment: $ENVIRONMENT"
-    echo "Valid options: production, testing"
+    echo "Valid options: production, testing, dev"
     echo ""
     echo "Usage examples:"
     echo "  ./deploy-unified.sh testing                    # Deploy to testing environment"
+    echo "  ./deploy-unified.sh dev                        # Deploy to dev environment"
     echo "  ./deploy-unified.sh production                 # Deploy to production environment"
     echo "  ./deploy-unified.sh testing feature/branch    # Deploy specific branch to testing"
     echo "  ./deploy-unified.sh production --skip-git-check  # Skip git validation"
@@ -57,6 +58,20 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     CPU="2"
     CLOUD_SQL_DATABASE_NAME="wordbattle_db"
     echo "🏭 Production Environment Selected"
+    echo "  Service Name: $SERVICE_NAME"
+    echo "  Config File: $ENV_FILE"
+    echo "  Resources: $CPU CPU, $MEMORY RAM"
+    echo "  Scaling: $MIN_INSTANCES-$MAX_INSTANCES instances"
+    echo "  Database: $CLOUD_SQL_DATABASE_NAME"
+elif [[ "$ENVIRONMENT" == "dev" ]]; then
+    SERVICE_NAME="$BASE_SERVICE_NAME-dev"
+    ENV_FILE="deploy.dev.env"
+    MIN_INSTANCES=0
+    MAX_INSTANCES=10
+    MEMORY="2Gi"
+    CPU="2"
+    CLOUD_SQL_DATABASE_NAME="wordbattle_dev"
+    echo "🛠️  Development Environment Selected"
     echo "  Service Name: $SERVICE_NAME"
     echo "  Config File: $ENV_FILE"
     echo "  Resources: $CPU CPU, $MEMORY RAM"
@@ -130,6 +145,9 @@ echo ""
 if [[ "$ENVIRONMENT" == "production" ]]; then
     REQUIRED_VARS=("DB_USER" "DB_PASSWORD" "SECRET_KEY" "SMTP_USERNAME" "SMTP_PASSWORD" "ADMIN_EMAIL")
     echo "🔍 Validating production environment variables..."
+elif [[ "$ENVIRONMENT" == "dev" ]]; then
+    REQUIRED_VARS=("DB_USER" "DB_PASSWORD" "SECRET_KEY" "SMTP_USERNAME" "SMTP_PASSWORD" "ADMIN_EMAIL")
+    echo "🔍 Validating development environment variables..."
 else
     REQUIRED_VARS=("DB_USER" "DB_PASSWORD" "SECRET_KEY" "ADMIN_EMAIL")
     echo "🔍 Validating testing environment variables..."
@@ -443,6 +461,26 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     # Security settings
     ENV_VARS="$ENV_VARS,ENABLE_CONTRACT_VALIDATION=${ENABLE_CONTRACT_VALIDATION:-true}"
     ENV_VARS="$ENV_VARS,CONTRACT_VALIDATION_STRICT=${CONTRACT_VALIDATION_STRICT:-true}"
+    
+elif [[ "$ENVIRONMENT" == "dev" ]]; then
+    # Development-specific environment variables
+    ENV_VARS="$ENV_VARS,CORS_ORIGINS=*"
+    ENV_VARS="$ENV_VARS,FRONTEND_URL=http://localhost:3000"
+    ENV_VARS="$ENV_VARS,RATE_LIMIT=${RATE_LIMIT:-60}"
+    ENV_VARS="$ENV_VARS,LOG_LEVEL=DEBUG"
+    ENV_VARS="$ENV_VARS,DEBUG=true"
+    
+    # SMTP configuration for development
+    ENV_VARS="$ENV_VARS,SMTP_SERVER=${SMTP_SERVER}"
+    ENV_VARS="$ENV_VARS,SMTP_PORT=${SMTP_PORT}"
+    ENV_VARS="$ENV_VARS,SMTP_USERNAME=${SMTP_USERNAME}"
+    ENV_VARS="$ENV_VARS,SMTP_PASSWORD=${SMTP_PASSWORD}"
+    ENV_VARS="$ENV_VARS,FROM_EMAIL=${FROM_EMAIL}"
+    ENV_VARS="$ENV_VARS,SMTP_USE_SSL=${SMTP_USE_SSL:-false}"
+    
+    # Relaxed settings for development
+    ENV_VARS="$ENV_VARS,ENABLE_CONTRACT_VALIDATION=${ENABLE_CONTRACT_VALIDATION:-true}"
+    ENV_VARS="$ENV_VARS,CONTRACT_VALIDATION_STRICT=${CONTRACT_VALIDATION_STRICT:-false}"
     
 else
     # Testing-specific environment variables
