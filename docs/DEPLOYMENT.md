@@ -23,12 +23,48 @@ cd wordbattle-backend
 # Deploy to development environment
 ./deploy-unified.sh dev
 
-# Deploy to testing environment  
-./deploy-unified.sh testing
-
 # Deploy to production environment
 ./deploy-unified.sh production
 ```
+
+### Complete Deployment Workflow
+
+For a full deployment across backend and frontend:
+
+```bash
+# 1. Deploy backend
+cd wordbattle-backend
+./deploy-unified.sh production
+
+# 2. Switch frontend environment
+cd ../wordbattle-frontend
+./scripts/switch_environment.sh production
+
+# 3. Deploy to TestFlight (iOS)
+./scripts/deploy_production_automated.sh
+```
+
+### Frontend Environment Switching
+
+The frontend environment switch script automatically updates configuration files:
+
+```bash
+# Navigate to frontend directory
+cd wordbattle-frontend
+
+# Switch frontend to development backend
+./scripts/switch_environment.sh dev
+
+# Switch frontend to production backend  
+./scripts/switch_environment.sh production
+```
+
+**What the script does:**
+- ✅ Updates `currentEnvironment` setting
+- ✅ Configures backend API and WebSocket URLs
+- ✅ Sets development features (debug mode, logging)
+- ✅ Creates automatic backup of previous configuration
+- ✅ Validates changes and provides verification
 
 The script handles everything automatically:
 - ✅ Environment validation
@@ -47,8 +83,9 @@ The script handles everything automatically:
 
 # Examples
 ./deploy-unified.sh dev                          # Deploy current branch to dev
-./deploy-unified.sh testing feature/new-ui      # Deploy specific branch to testing
-./deploy-unified.sh production --skip-git-check # Deploy to production without git validation
+./deploy-unified.sh production                   # Deploy to production
+./deploy-unified.sh production main              # Deploy specific branch to production
+./deploy-unified.sh production --skip-git-check  # Deploy to production without git validation
 ```
 
 ### Supported Environments
@@ -59,22 +96,11 @@ The script handles everything automatically:
 ```
 
 - **Service**: `wordbattle-backend-dev`
-- **URL**: `https://wordbattle-backend-dev-idgnvgsvva-ew.a.run.app`
+- **URL**: `https://wordbattle-backend-dev-15814336315.europe-west1.run.app`
 - **Database**: `wordbattle_dev` (contains production data copy)
 - **Resources**: 2 CPU, 2GB RAM
 - **Scaling**: 0-10 instances (scales to zero when idle)
-- **Features**: Debug enabled, realistic test data
-
-#### 🧪 Testing Environment (`testing`)
-```bash
-./deploy-unified.sh testing
-```
-
-- **Service**: `wordbattle-backend-test`
-- **Database**: `wordbattle_test`
-- **Resources**: 1 CPU, 1GB RAM
-- **Scaling**: 0-10 instances
-- **Features**: Debug enabled, contract validation
+- **Features**: Debug enabled, realistic test data, SMTP configured
 
 #### 🏭 Production Environment (`production`)
 ```bash
@@ -404,6 +430,51 @@ python scripts/copy-prod-to-dev.py
 ./deploy-unified.sh dev
 ```
 
+## 📱 Frontend Deployment (TestFlight)
+
+### iOS TestFlight Deployment
+
+After deploying the backend, deploy the frontend to TestFlight:
+
+```bash
+# Navigate to frontend directory
+cd wordbattle-frontend
+
+# Ensure environment is set correctly
+./scripts/switch_environment.sh production
+
+# Deploy to TestFlight using automated script
+./scripts/deploy_production_automated.sh
+```
+
+### Prerequisites for TestFlight
+
+- **macOS** with Xcode installed
+- **Apple Developer Account** with appropriate permissions
+- **Environment file** (`.env`) with Apple credentials:
+  ```bash
+  APPLE_ID=your-apple-id@example.com
+  APPLE_APP_SPECIFIC_PASSWORD=your-app-specific-password
+  ```
+
+### TestFlight Deployment Process
+
+The automated script handles:
+1. ✅ **Environment validation**: Checks Git status and credentials
+2. ✅ **Dependency installation**: Updates Flutter packages and CocoaPods
+3. ✅ **iOS archive building**: Creates optimized production build
+4. ✅ **Direct upload**: Uploads directly to App Store Connect
+5. ✅ **Processing verification**: Build appears in TestFlight within 10-15 minutes
+
+### Frontend Environment Configuration
+
+| Environment | Backend URL | Features |
+|-------------|-------------|----------|
+| Development | `wordbattle-backend-dev-*` | Debug enabled, development features |
+| Production | `wordbattle-backend-prod-*` | Optimized performance, production ready |
+
+Use the environment switch script to ensure frontend points to the correct backend before deployment.
+
 ## 📞 Support and Best Practices
 
 ### Best Practices
@@ -413,6 +484,7 @@ python scripts/copy-prod-to-dev.py
 3. **Environment isolation**: Keep environments separate
 4. **Monitor deployments**: Check health endpoints after deployment
 5. **Keep credentials secure**: Use Secret Manager for sensitive data
+6. **Frontend-backend alignment**: Use environment switch script before deploying frontend
 
 ### Getting Help
 
