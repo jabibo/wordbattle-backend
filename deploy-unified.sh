@@ -143,8 +143,9 @@ echo ""
 
 # Validate required variables based on environment
 if [[ "$ENVIRONMENT" == "production" ]]; then
-    REQUIRED_VARS=("DB_USER" "DB_PASSWORD" "SECRET_KEY" "SMTP_USERNAME" "SMTP_PASSWORD" "ADMIN_EMAIL")
-    echo "🔍 Validating production environment variables..."
+    # Production uses secret references for DB_PASSWORD and SMTP_PASSWORD
+    REQUIRED_VARS=("DB_USER" "SECRET_KEY" "SMTP_USERNAME" "ADMIN_EMAIL")
+    echo "🔍 Validating production environment variables (excluding secret references)..."
 elif [[ "$ENVIRONMENT" == "dev" ]]; then
     REQUIRED_VARS=("DB_USER" "DB_PASSWORD" "SECRET_KEY" "SMTP_USERNAME" "SMTP_PASSWORD" "ADMIN_EMAIL")
     echo "🔍 Validating development environment variables..."
@@ -429,14 +430,19 @@ ENV_VARS="$ENV_VARS,DB_HOST=${DB_HOST:-localhost}"
 ENV_VARS="$ENV_VARS,DB_PORT=${DB_PORT:-5432}"
 ENV_VARS="$ENV_VARS,DB_NAME=${DB_NAME}"
 ENV_VARS="$ENV_VARS,DB_USER=${DB_USER}"
-ENV_VARS="$ENV_VARS,DB_PASSWORD=${DB_PASSWORD}"
+# DB_PASSWORD is managed as secret reference for production
+if [[ "$ENVIRONMENT" != "production" ]]; then
+    ENV_VARS="$ENV_VARS,DB_PASSWORD=${DB_PASSWORD}"
+fi
 ENV_VARS="$ENV_VARS,CLOUD_REGION=${CLOUD_REGION}"
 ENV_VARS="$ENV_VARS,CLOUD_SQL_INSTANCE_NAME=${CLOUD_SQL_INSTANCE_NAME}"
 ENV_VARS="$ENV_VARS,CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME}"
-# Also provide the constructed DATABASE_URL as backup
-DB_NAME_TO_USE="${DB_NAME:-${CLOUD_SQL_DATABASE_NAME}}"
-DATABASE_URL="postgresql+pg8000://${DB_USER}:${DB_PASSWORD}@/${DB_NAME_TO_USE}?unix_sock=/cloudsql/${PROJECT_ID}:${CLOUD_REGION}:${CLOUD_SQL_INSTANCE_NAME}"
-ENV_VARS="$ENV_VARS,DATABASE_URL=${DATABASE_URL}"
+# Also provide the constructed DATABASE_URL as backup (for non-production)
+if [[ "$ENVIRONMENT" != "production" ]]; then
+    DB_NAME_TO_USE="${DB_NAME:-${CLOUD_SQL_DATABASE_NAME}}"
+    DATABASE_URL="postgresql+pg8000://${DB_USER}:${DB_PASSWORD}@/${DB_NAME_TO_USE}?unix_sock=/cloudsql/${PROJECT_ID}:${CLOUD_REGION}:${CLOUD_SQL_INSTANCE_NAME}"
+    ENV_VARS="$ENV_VARS,DATABASE_URL=${DATABASE_URL}"
+fi
 ENV_VARS="$ENV_VARS,SECRET_KEY=${SECRET_KEY}"
 ENV_VARS="$ENV_VARS,ADMIN_EMAIL=${ADMIN_EMAIL}"
 ENV_VARS="$ENV_VARS,ADMIN_USERNAME=${ADMIN_USERNAME:-admin}"
@@ -450,11 +456,11 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     ENV_VARS="$ENV_VARS,LOG_LEVEL=INFO"
     ENV_VARS="$ENV_VARS,DEBUG=false"
     
-    # SMTP configuration for production
+    # SMTP configuration for production (SMTP_PASSWORD is managed as secret reference)
     ENV_VARS="$ENV_VARS,SMTP_SERVER=${SMTP_SERVER}"
     ENV_VARS="$ENV_VARS,SMTP_PORT=${SMTP_PORT}"
     ENV_VARS="$ENV_VARS,SMTP_USERNAME=${SMTP_USERNAME}"
-    ENV_VARS="$ENV_VARS,SMTP_PASSWORD=${SMTP_PASSWORD}"
+    # SMTP_PASSWORD is managed as secret reference for production
     ENV_VARS="$ENV_VARS,FROM_EMAIL=${FROM_EMAIL}"
     ENV_VARS="$ENV_VARS,SMTP_USE_SSL=${SMTP_USE_SSL:-true}"
     
