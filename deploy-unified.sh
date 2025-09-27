@@ -452,7 +452,7 @@ if [[ "$ENVIRONMENT" == "production" ]]; then
     # Production-specific environment variables
     ENV_VARS="$ENV_VARS,CORS_ORIGINS=${CORS_ORIGINS:-https://wordbattle.binge-dev.de}"
     ENV_VARS="$ENV_VARS,FRONTEND_URL=${FRONTEND_URL:-https://wordbattle.binge-dev.de}"
-    ENV_VARS="$ENV_VARS,RATE_LIMIT=${RATE_LIMIT:-30}"
+    ENV_VARS="$ENV_VARS,RATE_LIMIT=${RATE_LIMIT:-200}"
     ENV_VARS="$ENV_VARS,LOG_LEVEL=INFO"
     ENV_VARS="$ENV_VARS,DEBUG=false"
     
