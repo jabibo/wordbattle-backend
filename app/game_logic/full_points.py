@@ -1,10 +1,9 @@
 from typing import List, Tuple, Dict, Optional, Set
+from app.game_logic.letter_bag import LETTER_DISTRIBUTION
 
-LETTER_POINTS = {
-    'A': 1, 'B': 3, 'C': 4, 'D': 1, 'E': 1, 'F': 4, 'G': 2, 'H': 2, 'I': 1, 'J': 6, 'K': 4, 'L': 2,
-    'M': 3, 'N': 1, 'O': 2, 'P': 4, 'Q': 10, 'R': 1, 'S': 1, 'T': 1, 'U': 1, 'V': 6, 'W': 3, 'X': 8,
-    'Y': 10, 'Z': 3, '?': 0, '*': 0
-}
+def get_letter_points(letter: str, language: str = "en") -> int:
+    """Get letter point value for the specified language from LETTER_DISTRIBUTION."""
+    return LETTER_DISTRIBUTION.get(language, {}).get("points", {}).get(letter.upper(), 1)
 
 def is_blank(letter: str) -> bool:
     return letter in ('?', '*')
@@ -36,7 +35,7 @@ def get_word_vertical(board: List[List[Optional[str]]], row: int, col: int) -> T
 def calculate_full_move_points(
     board: List[List[Optional[str]]],
     move_letters: List[Tuple[int, int, str]],
-    letter_points: Dict[str, int],
+    language: str,
     multipliers: Dict[Tuple[int,int], str],
     dictionary: Set[str]
 ) -> Dict:
@@ -45,7 +44,7 @@ def calculate_full_move_points(
     Args:
         board: Current game board
         move_letters: List of (row, col, letter) tuples for the move
-        letter_points: Dictionary of letter point values
+        language: Game language for letter point values
         multipliers: Dictionary of board multipliers
         dictionary: Set of valid words
     
@@ -57,7 +56,7 @@ def calculate_full_move_points(
         - details: List of scoring details
     """
     print(f"DEBUG: Calculating points for move: {move_letters}")
-    print(f"DEBUG: Using letter points: {letter_points}")
+    print(f"DEBUG: Using language: {language}")
     print(f"DEBUG: Using multipliers: {multipliers}")
     
     # Create board copy and apply move
@@ -126,7 +125,7 @@ def calculate_full_move_points(
         # Calculate base points with letter multipliers
         for (r, c) in coords:
             letter = board_copy[r][c]
-            base_points = 0 if is_blank(letter) else letter_points.get(letter.upper(), 0)
+            base_points = 0 if is_blank(letter) else get_letter_points(letter, language)
             letter_multi = 1
             local_word_multi = 1
             

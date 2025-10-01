@@ -7,7 +7,7 @@ from typing import List, Dict
 import json
 from datetime import datetime, timezone
 from app.game_logic.board_utils import apply_move_to_board, BOARD_MULTIPLIERS
-from app.game_logic.full_points import calculate_full_move_points, LETTER_POINTS
+from app.game_logic.full_points import calculate_full_move_points
 from app.game_logic.validate_move import validate_move
 from app.auth import get_current_user
 from app.game_logic.rules import get_next_player
@@ -197,7 +197,7 @@ async def make_move(
         )
     
     # Calculate points
-    result = calculate_full_move_points(board, parsed_moves, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, parsed_moves, game.language, BOARD_MULTIPLIERS, dictionary)
     if not result["valid"]:
         raise HTTPException(
             status_code=400,

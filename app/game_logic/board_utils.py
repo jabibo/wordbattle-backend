@@ -188,7 +188,7 @@ def find_word_placements(
         is_valid, _ = validate_move(board, move_letters, player_rack, dictionary)
         if is_valid:
             # Calculate score for this placement
-            score_result = calculate_full_move_points(board, move_letters, letter_points, BOARD_MULTIPLIERS, dictionary)
+            score_result = calculate_full_move_points(board, move_letters, language, BOARD_MULTIPLIERS, dictionary)
             
             # Check if score calculation was successful
             if score_result.get("valid", True):
