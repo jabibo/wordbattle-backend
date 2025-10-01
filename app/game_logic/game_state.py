@@ -347,8 +347,9 @@ class GameState:
         # Use the same scoring logic as the detailed score breakdown
         try:
             score_breakdown = self.calculate_detailed_score_breakdown(move_data)
-            total_points = score_breakdown.get('total_points', 0)
-            print(f"🎯 SCORING_DEBUG: Using detailed score breakdown: {total_points} points")
+            # Use grand_total which includes bonuses, not just total_points
+            total_points = score_breakdown.get('grand_total', 0)
+            print(f"🎯 SCORING_DEBUG: Using detailed score breakdown: {total_points} points (including bonuses)")
             return total_points
         except Exception as e:
             print(f"🎯 SCORING_DEBUG: Error in detailed score breakdown, falling back to old method: {e}")

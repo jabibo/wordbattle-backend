@@ -106,7 +106,7 @@ def detect_center_used_from_board(board):
         return False
     return board[7][7] is not None
 
-def reconstruct_board_from_json(board_data):
+def reconstruct_board_from_json(board_data, language="en"):
     """Helper function to reconstruct board with proper PlacedTile objects from JSON data."""
     if not board_data:
         return [[None]*15 for _ in range(15)]
@@ -118,11 +118,12 @@ def reconstruct_board_from_json(board_data):
             if cell is None:
                 reconstructed_row.append(None)
             else:
-                # Reconstruct PlacedTile object from JSON dict
+                # Reconstruct PlacedTile object from JSON dict with correct language
                 tile = PlacedTile(
                     letter=cell["letter"],
                     is_blank=cell.get("is_blank", False),
-                    tile_id=cell.get("tile_id")  # Preserve existing tile_id or None (will auto-generate)
+                    tile_id=cell.get("tile_id"),  # Preserve existing tile_id or None (will auto-generate)
+                    language=language  # Pass the game language for correct point calculation
                 )
                 reconstructed_row.append(tile)
         reconstructed_board.append(reconstructed_row)
@@ -389,7 +390,7 @@ def create_game_impl(
         # Load current game state from DB JSON
         persisted_state_data = json.loads(game.state)
         game_state = GameState(language=game.language)
-        game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
+        game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"), game.language)
         game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.NOT_STARTED.value))
         
         # Reconstruct LetterBag object from persisted data
