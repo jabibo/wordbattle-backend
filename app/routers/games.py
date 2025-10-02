@@ -1471,7 +1471,7 @@ async def make_move(
     # Load game state from DB JSON (game.state)
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"), game.language)
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value)) # Default to IN_PROGRESS
     game_state.current_player_id = game.current_player_id # From Game table
     
@@ -1687,7 +1687,7 @@ async def test_move(
     # Load game state from DB JSON (game.state)
     persisted_state_data = json.loads(game.state)
     game_state = GameState(language=game.language)
-    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"))
+    game_state.board = reconstruct_board_from_json(persisted_state_data.get("board"), game.language)
     game_state.phase = GamePhase(persisted_state_data.get("phase", GamePhase.IN_PROGRESS.value))
     game_state.current_player_id = game.current_player_id
     
