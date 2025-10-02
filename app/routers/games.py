@@ -154,15 +154,21 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
     board = game_data.get("board", [])
     game_language = game_data.get("language", "en")
     contract_board = []
-    for row in board:
+    for row_idx, row in enumerate(board):
         contract_row = []
-        for cell in row:
+        for col_idx, cell in enumerate(row):
             if cell is None:
                 contract_row.append(None)
             else:
                 # Convert our PlacedTile format to contract format
                 # Use the points from the cell if available, otherwise calculate from language
-                points = cell.get("points", 1)
+                points = cell.get("points")
+                if points is None:
+                    # Fallback: calculate points from letter and language
+                    from app.game_logic.letter_bag import LETTER_DISTRIBUTION
+                    letter = cell.get("letter", "")
+                    points = LETTER_DISTRIBUTION.get(game_language, {}).get("points", {}).get(letter.upper(), 1)
+                    print(f"🔍 TILE_POINTS_DEBUG: Cell at ({row_idx},{col_idx}) has no points, calculated {points} for '{letter}' in '{game_language}'")
                 contract_row.append({
                     "letter": cell.get("letter", ""),
                     "points": points,
