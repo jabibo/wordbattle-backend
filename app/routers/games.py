@@ -152,6 +152,7 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
     
     # Transform board to contract format (contract expects null or tile objects)
     board = game_data.get("board", [])
+    game_language = game_data.get("language", "en")
     contract_board = []
     for row in board:
         contract_row = []
@@ -160,9 +161,11 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
                 contract_row.append(None)
             else:
                 # Convert our PlacedTile format to contract format
+                # Use the points from the cell if available, otherwise calculate from language
+                points = cell.get("points", 1)
                 contract_row.append({
                     "letter": cell.get("letter", ""),
-                    "points": 1,  # Basic point value, could be calculated
+                    "points": points,
                     "is_blank": cell.get("is_blank", False)
                 })
         contract_board.append(contract_row)
