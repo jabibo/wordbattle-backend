@@ -82,10 +82,11 @@ def get_database_url(is_test=False):
         db_host_override = os.getenv("DB_HOST")
         
         if db_host_override and db_host_override != "localhost":
-            # Use TCP connection with explicit host (external database)
+            # Use TCP connection with explicit host (external database or Docker test database)
+            # Use psycopg2 for TCP connections (better compatibility with SQLAlchemy 2.0)
             db_port = os.getenv("DB_PORT", "5432")
             ssl_param = f"?sslmode={ssl_mode}" if require_ssl else ""
-            return f"postgresql+pg8000://{db_user}:{db_pass}@{db_host_override}:{db_port}/{db_name}{ssl_param}"
+            return f"postgresql+psycopg2://{db_user}:{db_pass}@{db_host_override}:{db_port}/{db_name}{ssl_param}"
         else:
             # Use unix socket for Cloud SQL (both localhost and no host specified)
             # This works for both testing and production Cloud Run environments
