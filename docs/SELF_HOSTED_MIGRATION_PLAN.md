@@ -713,7 +713,12 @@ openssl rand -base64 24  # For REDIS_PASSWORD
 ssh your-server-user@your-server-ip
 
 # Navigate to WordBattle directory
-cd /opt/wordbattle
+# NOTE: The actual location may vary based on your setup
+cd /home/wordbattle/wordbattle  # Standard location from this guide
+# OR: cd /opt/wordbattle         # Alternative location
+
+# Verify you're in the correct directory:
+ls -la .env docker-compose*.yml
 
 # Edit .env file
 nano .env
@@ -750,13 +755,16 @@ SMTP_USE_SSL=true
 **3. Apply configuration:**
 
 ```bash
-# Option A: Use the configuration script
+# Option A: Use the configuration script (if available)
 ./scripts/configure-smtp.sh
 
-# Option B: Manual restart
+# Option B: Docker Compose restart (if docker-compose.yml is in current directory)
 docker-compose restart backend
 
-# Option C: Full rebuild (if needed)
+# Option C: Direct container restart (works from any directory)
+docker restart wordbattle-backend
+
+# Option D: Full rebuild (if needed)
 docker-compose down
 docker-compose up -d
 ```
@@ -807,8 +815,9 @@ docker logs wordbattle-backend -f
 
 **Issue: "SMTP_PASSWORD not set"**
 ```bash
-# Check if variable is in .env
-grep SMTP_PASSWORD /opt/wordbattle/.env
+# Check if variable is in .env (use correct path for your setup)
+grep SMTP_PASSWORD /home/wordbattle/wordbattle/.env
+# OR: grep SMTP_PASSWORD /opt/wordbattle/.env
 
 # Ensure no extra spaces or quotes
 # Should be: SMTP_PASSWORD=your_password
@@ -871,7 +880,8 @@ docker logs wordbattle-backend | grep -i "email\|smtp"
 
 ```bash
 # View current SMTP config (without password)
-grep "^SMTP\|^FROM_EMAIL" /opt/wordbattle/.env | grep -v PASSWORD
+grep "^SMTP\|^FROM_EMAIL" /home/wordbattle/wordbattle/.env | grep -v PASSWORD
+# OR: grep "^SMTP\|^FROM_EMAIL" /opt/wordbattle/.env | grep -v PASSWORD
 
 # Test SMTP with curl
 curl -v --url "smtps://$SMTP_SERVER:$SMTP_PORT" \
