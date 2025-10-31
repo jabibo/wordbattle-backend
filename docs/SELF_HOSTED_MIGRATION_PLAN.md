@@ -724,7 +724,7 @@ ls -la .env docker-compose*.yml
 nano .env
 ```
 
-**2. Add/Update SMTP configuration:**
+**2. Add/Update SMTP configuration in .env:**
 
 ```bash
 # For Strato email (used in this setup)
@@ -752,35 +752,98 @@ SMTP_USE_SSL=true
 # SMTP_USE_SSL=false
 ```
 
-**3. Apply configuration:**
+**3. ⚠️ CRITICAL: Update docker-compose.production.yml to pass SMTP vars to backend:**
 
 ```bash
-# Option A: Use the configuration script (if available)
-./scripts/configure-smtp.sh
+# Edit docker-compose.production.yml
+nano docker-compose.production.yml
 
-# Option B: Docker Compose restart (if docker-compose.yml is in current directory)
-docker-compose restart backend
-
-# Option C: Direct container restart (works from any directory)
-docker restart wordbattle-backend
-
-# Option D: Full rebuild (if needed)
-docker-compose down
-docker-compose up -d
+# In the 'backend' service section, add SMTP environment variables after RATE_LIMIT_PER_MINUTE:
 ```
 
-**4. Verify configuration:**
+```yaml
+  backend:
+    # ... other settings ...
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      ENVIRONMENT: ${ENVIRONMENT}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE}
+      # Add these SMTP variables:
+      SMTP_SERVER: ${SMTP_SERVER}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      FROM_EMAIL: ${FROM_EMAIL}
+      SMTP_USE_SSL: ${SMTP_USE_SSL}
+```
+
+**4. Apply configuration:**
 
 ```bash
-# Check backend logs
-docker logs wordbattle-backend --tail 50 | grep -i smtp
+# Stop and remove the old backend container
+docker stop wordbattle-backend
+docker rm wordbattle-backend
 
-# Should see:
-✅ "SMTP configured successfully" or similar
-❌ "SMTP_PASSWORD not set" means configuration failed
+# Load environment variables and recreate container
+cd /home/wordbattle/wordbattle
+source .env
+
+# Recreate backend with all SMTP variables
+docker run -d \
+  --name wordbattle-backend \
+  --restart unless-stopped \
+  --network wordbattle_wordbattle-net \
+  -p 127.0.0.1:8000:8000 \
+  -v /home/wordbattle/wordbattle/logs/app:/app/logs \
+  -e DB_HOST=postgres \
+  -e DB_PORT=5432 \
+  -e DB_NAME="$DB_NAME" \
+  -e DB_USER="$DB_USER" \
+  -e DB_PASSWORD="$DB_PASSWORD" \
+  -e ENVIRONMENT="$ENVIRONMENT" \
+  -e SECRET_KEY="$SECRET_KEY" \
+  -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
+  -e ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
+  -e RATE_LIMIT_PER_MINUTE="$RATE_LIMIT_PER_MINUTE" \
+  -e SMTP_SERVER="$SMTP_SERVER" \
+  -e SMTP_PORT="$SMTP_PORT" \
+  -e SMTP_USERNAME="$SMTP_USERNAME" \
+  -e SMTP_PASSWORD="$SMTP_PASSWORD" \
+  -e FROM_EMAIL="$FROM_EMAIL" \
+  -e SMTP_USE_SSL="$SMTP_USE_SSL" \
+  wordbattle-backend:latest
 ```
 
-**5. Test email sending:**
+**5. Verify configuration:**
+
+```bash
+# Check if SMTP environment variables are loaded in the container
+docker exec wordbattle-backend env | grep -E "^SMTP|^FROM_EMAIL"
+
+# Should show:
+# SMTP_SERVER=smtp.strato.de
+# SMTP_PORT=465
+# SMTP_USERNAME=service@binge-wordbattle.de
+# SMTP_PASSWORD=your_password
+# FROM_EMAIL=service@binge-wordbattle.de
+# SMTP_USE_SSL=true
+
+# Check backend logs for SMTP warnings (no output = success!)
+docker logs wordbattle-backend --tail 50 | grep -i "smtp.*not set"
+
+# If you see "SMTP_PASSWORD not set" or "SMTP_USERNAME not set", 
+# the environment variables are NOT being passed to the container.
+# Recreate the container using the docker run command in step 4.
+```
+
+**6. Test email sending:**
 
 ```bash
 # From your app, try email login
