@@ -287,6 +287,7 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
         "created_at": game.created_at.isoformat(),
         "started_at": game.started_at.isoformat() if game.started_at else None,
         "completed_at": game.completed_at.isoformat() if game.completed_at else None,
+        "last_move_at": last_activity.isoformat(),  # Add timestamp of last move for "X hours ago" display
         "current_player_id": str(game.current_player_id) if game.current_player_id else None,
         "turn_number": state_data.get("turn_number", 0),
         "is_user_turn": (game.status == GameStatus.IN_PROGRESS and game.current_player_id == current_user_id),
