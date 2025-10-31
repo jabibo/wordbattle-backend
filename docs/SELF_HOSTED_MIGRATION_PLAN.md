@@ -673,11 +673,13 @@ REDIS_PASSWORD=<GENERATE_STRONG_PASSWORD>
 # CORS
 ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
 
-# Email (if using)
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=noreply@yourdomain.com
-SMTP_PASSWORD=<EMAIL_PASSWORD>
+# Email/SMTP Configuration (Required for email verification)
+SMTP_SERVER=smtp.strato.de
+SMTP_PORT=465
+SMTP_USERNAME=service@binge-wordbattle.de
+SMTP_PASSWORD=<YOUR_SMTP_PASSWORD>
+FROM_EMAIL=service@binge-wordbattle.de
+SMTP_USE_SSL=true
 
 # Monitoring
 SENTRY_DSN=<optional_sentry_dsn>
@@ -690,6 +692,196 @@ openssl rand -hex 32  # For SECRET_KEY
 openssl rand -hex 32  # For JWT_SECRET_KEY
 openssl rand -base64 24  # For DB_PASSWORD
 openssl rand -base64 24  # For REDIS_PASSWORD
+```
+
+---
+
+### 📧 SMTP Email Configuration
+
+**Purpose:** Enable email verification for user authentication
+
+#### Prerequisites
+- Email account with SMTP access (e.g., Strato, Gmail, SendGrid)
+- SMTP credentials (username, password, server, port)
+
+#### Configuration Steps
+
+**1. Update .env file on server:**
+
+```bash
+# SSH to your server
+ssh your-server-user@your-server-ip
+
+# Navigate to WordBattle directory
+cd /opt/wordbattle
+
+# Edit .env file
+nano .env
+```
+
+**2. Add/Update SMTP configuration:**
+
+```bash
+# For Strato email (used in this setup)
+SMTP_SERVER=smtp.strato.de
+SMTP_PORT=465
+SMTP_USERNAME=service@binge-wordbattle.de
+SMTP_PASSWORD=your_smtp_password_here
+FROM_EMAIL=service@binge-wordbattle.de
+SMTP_USE_SSL=true
+
+# For Gmail (alternative)
+# SMTP_SERVER=smtp.gmail.com
+# SMTP_PORT=587
+# SMTP_USERNAME=your-email@gmail.com
+# SMTP_PASSWORD=your-app-password
+# FROM_EMAIL=your-email@gmail.com
+# SMTP_USE_SSL=false
+
+# For SendGrid (alternative)
+# SMTP_SERVER=smtp.sendgrid.net
+# SMTP_PORT=587
+# SMTP_USERNAME=apikey
+# SMTP_PASSWORD=your-sendgrid-api-key
+# FROM_EMAIL=noreply@yourdomain.com
+# SMTP_USE_SSL=false
+```
+
+**3. Apply configuration:**
+
+```bash
+# Option A: Use the configuration script
+./scripts/configure-smtp.sh
+
+# Option B: Manual restart
+docker-compose restart backend
+
+# Option C: Full rebuild (if needed)
+docker-compose down
+docker-compose up -d
+```
+
+**4. Verify configuration:**
+
+```bash
+# Check backend logs
+docker logs wordbattle-backend --tail 50 | grep -i smtp
+
+# Should see:
+✅ "SMTP configured successfully" or similar
+❌ "SMTP_PASSWORD not set" means configuration failed
+```
+
+**5. Test email sending:**
+
+```bash
+# From your app, try email login
+# Check logs for email sending:
+docker logs wordbattle-backend -f
+
+# Look for:
+# "Sending email to user@example.com"
+# "Email sent successfully"
+```
+
+#### SMTP Provider Setup
+
+**For Strato:**
+1. Log into Strato email settings
+2. Enable SMTP access
+3. Use settings above (Port 465, SSL enabled)
+
+**For Gmail:**
+1. Enable 2-Factor Authentication
+2. Generate App Password: https://myaccount.google.com/apppasswords
+3. Use App Password (not your regular password)
+4. Port 587, TLS (SMTP_USE_SSL=false)
+
+**For SendGrid:**
+1. Sign up at sendgrid.com
+2. Create API Key: Settings → API Keys
+3. Use "apikey" as username, API key as password
+4. Port 587, TLS (SMTP_USE_SSL=false)
+
+#### Troubleshooting
+
+**Issue: "SMTP_PASSWORD not set"**
+```bash
+# Check if variable is in .env
+grep SMTP_PASSWORD /opt/wordbattle/.env
+
+# Ensure no extra spaces or quotes
+# Should be: SMTP_PASSWORD=your_password
+# Not: SMTP_PASSWORD = "your_password"
+```
+
+**Issue: "Connection refused" or "Authentication failed"**
+```bash
+# Test SMTP connection manually
+apt-get install -y swaks
+
+# Test connection
+swaks --to test@example.com \
+      --from $FROM_EMAIL \
+      --server $SMTP_SERVER \
+      --port $SMTP_PORT \
+      --auth LOGIN \
+      --auth-user $SMTP_USERNAME \
+      --auth-password "$SMTP_PASSWORD" \
+      --tls
+
+# Check if port is correct:
+# Port 465 = SSL (SMTP_USE_SSL=true)
+# Port 587 = TLS (SMTP_USE_SSL=false)
+```
+
+**Issue: Emails going to spam**
+1. Add SPF record to DNS: `v=spf1 include:_spf.strato.de ~all`
+2. Add DKIM record (provided by email host)
+3. Ensure FROM_EMAIL matches your domain
+4. Test with mail-tester.com
+
+**Issue: Rate limiting**
+- Most providers limit emails per hour
+- Strato: ~100 emails/hour
+- Gmail: ~500 emails/day
+- SendGrid: varies by plan
+
+#### Security Best Practices
+
+```bash
+# 1. Never commit SMTP password to git
+echo ".env" >> .gitignore
+
+# 2. Use environment-specific configs
+# .env.production (secure password)
+# .env.development (test credentials)
+
+# 3. Rotate passwords regularly
+# Change SMTP password every 90 days
+
+# 4. Monitor email logs
+docker logs wordbattle-backend | grep -i "email\|smtp"
+
+# 5. Set up email alerts for failures
+# Use monitoring tools to alert on SMTP errors
+```
+
+#### Quick Reference
+
+```bash
+# View current SMTP config (without password)
+grep "^SMTP\|^FROM_EMAIL" /opt/wordbattle/.env | grep -v PASSWORD
+
+# Test SMTP with curl
+curl -v --url "smtps://$SMTP_SERVER:$SMTP_PORT" \
+     --user "$SMTP_USERNAME:$SMTP_PASSWORD" \
+     --mail-from "$FROM_EMAIL" \
+     --mail-rcpt "test@example.com" \
+     --upload-file email.txt
+
+# Monitor email sending in real-time
+docker logs -f wordbattle-backend | grep -i email
 ```
 
 ---
