@@ -278,6 +278,9 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
     last_activity = last_move.timestamp if last_move else game.created_at
     time_since_str = format_time_since_activity(last_activity)
     
+    # Get last move timestamp for frontend (same as detailed game data)
+    last_move_at = last_move.timestamp if last_move else game.created_at
+    
     return {
         "id": game.id,
         "status": game.status.value,
@@ -287,6 +290,7 @@ def get_game_summary_data(game: Game, current_user_id: int, db: Session) -> Dict
         "created_at": game.created_at.isoformat(),
         "started_at": game.started_at.isoformat() if game.started_at else None,
         "completed_at": game.completed_at.isoformat() if game.completed_at else None,
+        "last_move_at": last_move_at.isoformat(),  # Add timestamp for frontend time calculation
         "current_player_id": str(game.current_player_id) if game.current_player_id else None,
         "turn_number": state_data.get("turn_number", 0),
         "is_user_turn": (game.status == GameStatus.IN_PROGRESS and game.current_player_id == current_user_id),
