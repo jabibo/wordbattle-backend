@@ -191,6 +191,7 @@ def format_game_state_response(game_data: dict, game_name: str) -> dict:
         "max_players": game_data.get("max_players"),
         "created_at": game_data.get("created_at"),
         "updated_at": game_data.get("started_at") or game_data.get("created_at"),  # Use started_at or created_at
+        "last_move_at": game_data.get("last_move_at"),  # Add timestamp for "X hours ago" display
         "players": players,
         "board": contract_board,
         "tiles_remaining": game_data.get("letter_bag_count", 0),
