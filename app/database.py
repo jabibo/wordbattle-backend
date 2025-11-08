@@ -10,41 +10,44 @@ if os.getenv("TESTING") == "1":
     DATABASE_URL = get_database_url(is_test=True)
 # DATABASE_URL is already set from config.py which respects environment variables
 
-# For GCP Cloud SQL, use the Cloud SQL Python Connector
+# For legacy GCP Cloud SQL unix socket connections, use the Cloud SQL Python Connector
 if CLOUD_PROVIDER == CloudProvider.GCP and "unix_sock" in DATABASE_URL:
-    from google.cloud.sql.connector import Connector
-    import asyncpg
-    import re
-    
-    # Extract connection details from URL
-    match = re.match(r'postgresql\+pg8000://([^:]+):([^@]+)@/([^?]+)\?unix_sock=/cloudsql/(.+)', DATABASE_URL)
-    if match:
-        user, password, db_name, instance_connection_name = match.groups()
+    try:
+        from google.cloud.sql.connector import Connector
+        import re
         
-        # Create a custom connection function using Cloud SQL Connector
-        def getconn():
-            connector = Connector()
-            conn = connector.connect(
-                instance_connection_name,
-                "pg8000",
-                user=user,
-                password=password,
-                db=db_name
+        # Extract connection details from URL
+        match = re.match(r'postgresql\+pg8000://([^:]+):([^@]+)@/([^?]+)\?unix_sock=/cloudsql/(.+)', DATABASE_URL)
+        if match:
+            user, password, db_name, instance_connection_name = match.groups()
+            
+            # Create a custom connection function using Cloud SQL Connector
+            def getconn():
+                connector = Connector()
+                conn = connector.connect(
+                    instance_connection_name,
+                    "pg8000",
+                    user=user,
+                    password=password,
+                    db=db_name
+                )
+                return conn
+            
+            # Create engine with custom connection function
+            engine = create_engine(
+                "postgresql+pg8000://",
+                creator=getconn,
             )
-            return conn
-        
-        # Create engine with custom connection function
-        engine = create_engine(
-            "postgresql+pg8000://",
-            creator=getconn,
-        )
-        print(f"Using Cloud SQL Connector for: {instance_connection_name}/{db_name}")
-    else:
-        # Fallback to original URL
+            print(f"Using Cloud SQL Connector for: {instance_connection_name}/{db_name}")
+        else:
+            # Fallback to original URL
+            engine = create_engine(DATABASE_URL)
+            print(f"Using database: {DATABASE_URL}")
+    except ImportError:
+        print("⚠️  Cloud SQL Connector not available, using standard connection")
         engine = create_engine(DATABASE_URL)
-        print(f"Using database: {DATABASE_URL}")
 else:
-    # Create database engine with URL from config
+    # Standard PostgreSQL connection (self-hosted, AWS RDS, or any TCP connection)
     engine = create_engine(
         DATABASE_URL,
         # Only use check_same_thread for SQLite

@@ -1129,39 +1129,64 @@ def list_user_games(
                       If not provided, shows all games.
     """
     
-    # Optimized query with eager loading to prevent N+1 queries
-    query = db.query(Game).join(Player).filter(
-        Player.user_id == current_user.id
-    ).options(
-        selectinload(Game.players).joinedload(Player.user)
-    )
+    # Determine which statuses to fetch based on status_filter
+    fetch_completed = True
+    fetch_non_completed = True
     
-    # Add filter for specific statuses if requested
-    if status_filter and len(status_filter) > 0:  # Show all games if None or empty list
+    if status_filter and len(status_filter) > 0:
         # Validate status values
         valid_statuses = ["setup", "ready", "in_progress", "completed", "cancelled"]
         invalid_statuses = [s for s in status_filter if s not in valid_statuses]
         if invalid_statuses:
             raise HTTPException(400, f"Invalid status values: {invalid_statuses}. Valid values: {valid_statuses}")
         
-        # Convert string values to GameStatus enum values for filtering
-        status_enums = []
-        for status_str in status_filter:
-            if status_str == "setup":
-                status_enums.append(GameStatus.SETUP)
-            elif status_str == "ready":
-                status_enums.append(GameStatus.READY)
-            elif status_str == "in_progress":
-                status_enums.append(GameStatus.IN_PROGRESS)
-            elif status_str == "completed":
-                status_enums.append(GameStatus.COMPLETED)
-            elif status_str == "cancelled":
-                status_enums.append(GameStatus.CANCELLED)
-        
-        query = query.filter(Game.status.in_(status_enums))
-    # If status_filter is None or empty, no filtering is applied (shows all games)
+        # Determine what to fetch
+        fetch_completed = "completed" in status_filter
+        fetch_non_completed = any(s in status_filter for s in ["setup", "ready", "in_progress", "cancelled"])
     
-    user_games = query.all()
+    user_games = []
+    
+    # Query 1: Fetch non-completed games (no limit needed)
+    if fetch_non_completed:
+        non_completed_statuses = []
+        if not status_filter or len(status_filter) == 0:
+            # Fetch all non-completed
+            non_completed_statuses = [GameStatus.SETUP, GameStatus.READY, GameStatus.IN_PROGRESS, GameStatus.CANCELLED]
+        else:
+            # Only fetch requested non-completed statuses
+            if "setup" in status_filter:
+                non_completed_statuses.append(GameStatus.SETUP)
+            if "ready" in status_filter:
+                non_completed_statuses.append(GameStatus.READY)
+            if "in_progress" in status_filter:
+                non_completed_statuses.append(GameStatus.IN_PROGRESS)
+            if "cancelled" in status_filter:
+                non_completed_statuses.append(GameStatus.CANCELLED)
+        
+        if non_completed_statuses:
+            non_completed_query = db.query(Game).join(Player).filter(
+                Player.user_id == current_user.id,
+                Game.status.in_(non_completed_statuses)
+            ).options(
+                selectinload(Game.players).joinedload(Player.user)
+            ).order_by(Game.created_at.desc())
+            
+            user_games.extend(non_completed_query.all())
+    
+    # Query 2: Fetch only the last 5 completed games (LIMIT at database level)
+    if fetch_completed:
+        completed_query = db.query(Game).join(Player).filter(
+            Player.user_id == current_user.id,
+            Game.status == GameStatus.COMPLETED
+        ).options(
+            selectinload(Game.players).joinedload(Player.user)
+        ).order_by(
+            Game.completed_at.desc().nullslast(),
+            Game.created_at.desc()
+        ).limit(5)
+        
+        user_games.extend(completed_query.all())
+        logger.info(f"Limited completed games to 5 at database query level")
     
     # Pre-fetch data for filtering games to avoid N+1 queries
     completed_game_ids = [game.id for game in user_games if game.status == GameStatus.COMPLETED]

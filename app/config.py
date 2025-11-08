@@ -13,11 +13,11 @@ TESTING = os.getenv("TESTING", "0") == "1"
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
 # Cloud Provider Configuration
-CLOUD_PROVIDER = CloudProvider(os.getenv("CLOUD_PROVIDER", "gcp"))
+CLOUD_PROVIDER = CloudProvider(os.getenv("CLOUD_PROVIDER", "self-hosted"))
 
 # Common Cloud Configuration
 CLOUD_CONFIG: Dict[str, Any] = {
-    "region": os.getenv("CLOUD_REGION", "europe-west1"),
+    "region": os.getenv("CLOUD_REGION", "eu-central"),
     "bucket_name": os.getenv("STORAGE_BUCKET", "wordbattle-assets"),
 }
 
@@ -29,10 +29,10 @@ if CLOUD_PROVIDER == CloudProvider.AWS:
         "aws_secret_access_key": os.getenv("AWS_SECRET_ACCESS_KEY"),
     })
 
-# GCP-specific Configuration
+# GCP-specific Configuration (legacy support)
 elif CLOUD_PROVIDER == CloudProvider.GCP:
     CLOUD_CONFIG.update({
-        "project_id": os.getenv("GOOGLE_CLOUD_PROJECT", "wordbattle-secure"),
+        "project_id": os.getenv("GOOGLE_CLOUD_PROJECT", ""),
         "service_account_key": os.getenv("GOOGLE_APPLICATION_CREDENTIALS"),
     })
 
@@ -43,61 +43,46 @@ DB_USER = os.environ.get("DB_USER", "postgres")
 DB_PASSWORD = os.environ.get("DB_PASSWORD", "postgres")
 DB_NAME = os.environ.get("DB_NAME", "wordbattle")
 
-# Cloud SQL settings for production/testing
-CLOUD_SQL_CONNECTION_NAME = os.environ.get("CLOUD_SQL_CONNECTION_NAME", "wordbattle-secure:europe-west1:wordbattle-db")
-CLOUD_SQL_DATABASE_NAME = os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_test")
+# Legacy Cloud SQL settings (kept for backwards compatibility)
+CLOUD_SQL_CONNECTION_NAME = os.environ.get("CLOUD_SQL_CONNECTION_NAME", "")
+CLOUD_SQL_DATABASE_NAME = os.getenv("CLOUD_SQL_DATABASE_NAME", "")
 
 # Test database settings
 TEST_DB_NAME = os.environ.get("TEST_DB_NAME", "wordbattle_test")
 
 def get_database_url(is_test=False):
     """Get database URL with proper encoding."""
-    if CLOUD_PROVIDER == CloudProvider.AWS:
-        # AWS RDS Connection
-        db_host = os.getenv("DB_HOST", "localhost")
-        db_port = os.getenv("DB_PORT", "5432")
-        # Use environment variables for database name
-        if is_test:
-            db_name = os.getenv("TEST_DB_NAME", "wordbattle_test")
-        else:
-            db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_db"))
-        db_user = os.getenv("DB_USER", "wordbattle")
-        db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
-        return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
+    # Use environment variables for database configuration
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "5432")
+    db_user = os.getenv("DB_USER", "wordbattle")
+    db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
+    
+    # Use environment variables for database name
+    if is_test:
+        db_name = os.getenv("TEST_DB_NAME", "wordbattle_test")
     else:
-        # GCP Cloud SQL Connection
-        project_id = CLOUD_CONFIG["project_id"]
-        instance_name = "wordbattle-db"
-        # Use environment variables for database name
-        if is_test:
-            db_name = os.getenv("TEST_DB_NAME", "wordbattle_test")
-        else:
-            db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_db"))
-        db_user = os.getenv("DB_USER", "wordbattle")
-        db_pass = os.getenv("DB_PASSWORD", "wordbattle123")
-        
-        # Check if SSL is required and connection method
-        require_ssl = os.getenv("CLOUD_SQL_REQUIRE_SSL", "false").lower() == "true"
-        ssl_mode = os.getenv("CLOUD_SQL_SSL_MODE", "prefer")
-        db_host_override = os.getenv("DB_HOST")
-        
-        if db_host_override and db_host_override != "localhost":
-            # Use TCP connection with explicit host (external database)
-            db_port = os.getenv("DB_PORT", "5432")
-            ssl_param = f"?sslmode={ssl_mode}" if require_ssl else ""
-            return f"postgresql+pg8000://{db_user}:{db_pass}@{db_host_override}:{db_port}/{db_name}{ssl_param}"
-        else:
-            # Use unix socket for Cloud SQL (both localhost and no host specified)
-            # This works for both testing and production Cloud Run environments
+        db_name = os.getenv("DB_NAME", os.getenv("CLOUD_SQL_DATABASE_NAME", "wordbattle_prod"))
+    
+    # Check for legacy Cloud SQL unix socket configuration
+    if CLOUD_PROVIDER == CloudProvider.GCP and not os.getenv("DB_HOST"):
+        # Legacy GCP Cloud SQL unix socket connection
+        project_id = CLOUD_CONFIG.get("project_id", "")
+        instance_name = os.getenv("CLOUD_SQL_INSTANCE_NAME", "wordbattle-db")
+        if project_id:
             return f"postgresql+pg8000://{db_user}:{db_pass}@/{db_name}?unix_sock=/cloudsql/{project_id}:{CLOUD_CONFIG['region']}:{instance_name}"
+    
+    # Standard PostgreSQL connection (self-hosted, AWS RDS, or any TCP connection)
+    return f"postgresql://{db_user}:{db_pass}@{db_host}:{db_port}/{db_name}"
 
 # Use the function to get the main database URL
 # Check if we're in testing mode to use test database
 DATABASE_URL = get_database_url(TESTING)
 
 # Debug output for database configuration
-print(f"Using Cloud SQL Connector for: {CLOUD_CONFIG['project_id']}:{CLOUD_CONFIG['region']}:wordbattle-db/{DB_NAME or CLOUD_SQL_DATABASE_NAME}")
-print(f"Database URL (masked): postgresql+pg8000://***:***@/{DB_NAME or CLOUD_SQL_DATABASE_NAME}?unix_sock=/cloudsql/...")
+db_host_display = os.getenv("DB_HOST", "localhost")
+print(f"Database configuration: {db_host_display}:{DB_PORT}/{DB_NAME}")
+print(f"Database URL (masked): postgresql://***:***@{db_host_display}:{DB_PORT}/{DB_NAME}")
 
 # Security settings - CRITICAL: These must be set via environment variables in production
 SECRET_KEY = os.getenv("SECRET_KEY")
