@@ -270,7 +270,7 @@ def load_wordlist(language: str) -> Set[str]:
     testing_mode = os.getenv("TESTING", "").lower() in ("1", "true", "yes")
     if not testing_mode:
         try:
-            from app.database import get_db
+            from app.db import get_db
             from app.models import WordList
             
             # Use database session
