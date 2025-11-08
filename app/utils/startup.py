@@ -7,10 +7,12 @@ import os
 import secrets
 import string
 from datetime import datetime, timezone
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import User
 from app.auth import get_password_hash
+from app.utils.email_utils import normalize_email
 import logging
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,7 @@ def ensure_admin_user_exists() -> dict:
     """
     admin_username = os.environ.get("ADMIN_USERNAME")
     admin_email = os.environ.get("ADMIN_EMAIL")
+    admin_email_normalized = normalize_email(admin_email)
     
     if not admin_username or not admin_email:
         logger.info("No ADMIN_USERNAME or ADMIN_EMAIL configured - skipping admin user creation")
@@ -45,7 +48,7 @@ def ensure_admin_user_exists() -> dict:
         
         # Check if admin user already exists (by username or email)
         existing_admin = db.query(User).filter(
-            (User.username == admin_username) | (User.email == admin_email)
+            (User.username == admin_username) | (func.lower(User.email) == admin_email_normalized)
         ).first()
         
         if existing_admin:
@@ -77,7 +80,7 @@ def ensure_admin_user_exists() -> dict:
         # Create new admin user
         admin_user = User(
             username=admin_username,
-            email=admin_email,
+            email=admin_email_normalized,
             hashed_password=get_password_hash(admin_password),
             is_admin=True,
             is_email_verified=True,  # Admin is pre-verified
@@ -88,7 +91,7 @@ def ensure_admin_user_exists() -> dict:
         db.commit()
         db.refresh(admin_user)
         
-        logger.info(f"Created admin user '{admin_username}' with email '{admin_email}'")
+        logger.info(f"Created admin user '{admin_username}' with email '{admin_email_normalized}'")
         logger.warning(f"🔑 ADMIN PASSWORD: {admin_password}")
         logger.warning("⚠️  Please save this password securely and change it after first login!")
         

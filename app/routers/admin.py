@@ -12,6 +12,7 @@ import tempfile
 from datetime import datetime, timezone
 import logging
 from app.database import SessionLocal
+from app.utils.email_utils import normalize_email
 from pydantic import BaseModel
 from typing import Optional, List
 import json
@@ -45,10 +46,10 @@ async def create_test_tokens(
     try:
         test_users = []
         
-        # Define email mapping for test users
+        # Define email mapping for test users (normalized)
         email_mapping = {
-            "player01": "player01@binge.de",
-            "player02": "player02@binge.de"
+            "player01": normalize_email("player01@binge.de"),
+            "player02": normalize_email("player02@binge.de")
         }
         
         for username in ["player01", "player02"]:
@@ -944,12 +945,13 @@ async def ensure_primary_admin(
         from datetime import datetime, timezone
         
         primary_admin_email = "jan@binge.de"
+        primary_admin_email_normalized = normalize_email(primary_admin_email)
         primary_admin_username = "janbinge"
         
         actions = []
         
         # First check if jan@binge.de exists
-        existing_user = db.query(User).filter(User.email == primary_admin_email).first()
+        existing_user = db.query(User).filter(func.lower(User.email) == primary_admin_email_normalized).first()
         
         if existing_user:
             # User exists - ensure admin privileges
@@ -958,28 +960,28 @@ async def ensure_primary_admin(
             if not existing_user.is_admin:
                 existing_user.is_admin = True
                 changes_made = True
-                actions.append(f"Granted admin privileges to {primary_admin_email}")
+                actions.append(f"Granted admin privileges to {primary_admin_email_normalized}")
             
             if not existing_user.is_word_admin:
                 existing_user.is_word_admin = True
                 changes_made = True
-                actions.append(f"Granted word admin privileges to {primary_admin_email}")
+                actions.append(f"Granted word admin privileges to {primary_admin_email_normalized}")
             
             if not existing_user.is_email_verified:
                 existing_user.is_email_verified = True
                 changes_made = True
-                actions.append(f"Verified email for {primary_admin_email}")
+                actions.append(f"Verified email for {primary_admin_email_normalized}")
             
             if changes_made:
                 db.commit()
                 action_type = "upgraded"
             else:
                 action_type = "already_admin"
-                actions.append(f"User {primary_admin_email} already has all admin privileges")
+                actions.append(f"User {primary_admin_email_normalized} already has all admin privileges")
             
             return {
                 "message": f"Primary admin user ensured successfully",
-                "email": primary_admin_email,
+                "email": primary_admin_email_normalized,
                 "username": existing_user.username,
                 "user_id": existing_user.id,
                 "action": action_type,
@@ -1000,7 +1002,7 @@ async def ensure_primary_admin(
             # Create the primary admin user
             new_admin = User(
                 username=primary_admin_username,
-                email=primary_admin_email,
+                email=primary_admin_email_normalized,
                 hashed_password=get_password_hash("admin123456"),  # Default secure password
                 is_admin=True,
                 is_word_admin=True,
@@ -1015,11 +1017,11 @@ async def ensure_primary_admin(
             db.commit()
             db.refresh(new_admin)
             
-            actions.append(f"Created primary admin user: {primary_admin_email}")
+            actions.append(f"Created primary admin user: {primary_admin_email_normalized}")
             
             return {
                 "message": f"Primary admin user created successfully",
-                "email": primary_admin_email,
+                "email": primary_admin_email_normalized,
                 "username": new_admin.username,
                 "user_id": new_admin.id,
                 "action": "created",
@@ -2078,8 +2080,9 @@ async def fix_admin_privileges(
         jan_admin = db.query(User).filter(User.username == "jan_admin").first()
         
         if not jan_admin:
-            # Try to find by email
-            jan_admin = db.query(User).filter(User.email == "jan@binge.de").first()
+            # Try to find by email (case-insensitive)
+            jan_admin_email = normalize_email("jan@binge.de")
+            jan_admin = db.query(User).filter(func.lower(User.email) == jan_admin_email).first()
         
         if jan_admin:
             # Ensure they have admin privileges
@@ -2108,7 +2111,7 @@ async def fix_admin_privileges(
             hashed_password = pwd_context.hash("admin123456")  # Default password
             jan_admin = User(
                 username="jan_admin",
-                email="jan@binge.de",
+                email=normalize_email("jan@binge.de"),
                 hashed_password=hashed_password,
                 is_admin=True,
                 is_email_verified=True
@@ -2146,8 +2149,9 @@ async def debug_simple_login(
         raise HTTPException(status_code=403, detail="Debug endpoints disabled in production")
     
     try:
-        # Find user by email
-        user = db.query(User).filter(User.email == email).first()
+        normalized_email = normalize_email(email)
+        # Find user by email (case-insensitive)
+        user = db.query(User).filter(func.lower(User.email) == normalized_email).first()
         
         if not user:
             raise HTTPException(status_code=404, detail=f"User with email {email} not found")

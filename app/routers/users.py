@@ -8,6 +8,7 @@ from app.db import get_db
 from app.dependencies import get_translation_helper
 from app.utils.email_service import email_service
 from app.utils.i18n import TranslationHelper
+from app.utils.email_utils import normalize_email
 from sqlalchemy.future import select
 from typing import List, Optional
 import logging
@@ -242,8 +243,9 @@ def register(user: RegisterUser, db: Session = Depends(get_db)):
         from app.utils.i18n import get_translation
         raise HTTPException(status_code=400, detail=get_translation("error.username_taken", "en"))
     
-    # Check if email already exists
-    result = db.execute(select(User).where(User.email == user.email))
+    normalized_email = normalize_email(user.email)
+    # Check if email already exists (case-insensitive)
+    result = db.execute(select(User).where(func.lower(User.email) == normalized_email))
     existing_email = result.scalars().first()
     if existing_email:
         from app.utils.i18n import get_translation
@@ -253,7 +255,7 @@ def register(user: RegisterUser, db: Session = Depends(get_db)):
     hashed_password = get_password_hash(user.password) if user.password else None
     new_user = User(
         username=user.username,
-        email=user.email,
+        email=normalized_email,
         hashed_password=hashed_password
     )
     db.add(new_user)
@@ -262,7 +264,7 @@ def register(user: RegisterUser, db: Session = Depends(get_db)):
     
     # Send welcome email
     try:
-        email_service.send_welcome_email(user.email, user.username)
+        email_service.send_welcome_email(normalized_email, user.username)
     except Exception as e:
         logger.error(f"Failed to send welcome email to {user.email}: {e}")
         # Don't fail registration if email fails
@@ -283,8 +285,9 @@ def register_email_only(user: RegisterUserEmailOnly, db: Session = Depends(get_d
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken")
     
-    # Check if email already exists
-    result = db.execute(select(User).where(User.email == user.email))
+    normalized_email = normalize_email(user.email)
+    # Check if email already exists (case-insensitive)
+    result = db.execute(select(User).where(func.lower(User.email) == normalized_email))
     existing_email = result.scalars().first()
     if existing_email:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -292,7 +295,7 @@ def register_email_only(user: RegisterUserEmailOnly, db: Session = Depends(get_d
     # Create new user without password
     new_user = User(
         username=user.username,
-        email=user.email,
+        email=normalized_email,
         hashed_password=None  # No password for email-only auth
     )
     db.add(new_user)
@@ -301,7 +304,7 @@ def register_email_only(user: RegisterUserEmailOnly, db: Session = Depends(get_d
     
     # Send welcome email
     try:
-        email_service.send_welcome_email(user.email, user.username)
+        email_service.send_welcome_email(normalized_email, user.username)
     except Exception as e:
         logger.error(f"Failed to send welcome email to {user.email}: {e}")
         # Don't fail registration if email fails

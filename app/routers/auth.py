@@ -11,6 +11,7 @@ from app.auth import (
 from datetime import timedelta, datetime, timezone
 from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, VERIFICATION_CODE_EXPIRE_MINUTES
 from app.utils.email_service import email_service
+from app.utils.email_utils import normalize_email
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import logging
@@ -79,15 +80,16 @@ def request_email_login(request: EmailLoginRequest, db: Session = Depends(get_db
     user.verification_code_expires = expires_at
     db.commit()
     
+    target_email = user.email
     # Send verification code via email
     email_sent = email_service.send_verification_code(
-        to_email=request.email,
+        to_email=target_email,
         verification_code=verification_code,
         username=user.username
     )
     
     if not email_sent:
-        logger.error(f"Failed to send verification code to {request.email}")
+        logger.error(f"Failed to send verification code to {target_email}")
         # Don't reveal the failure to the user for security
     
     return {
@@ -351,7 +353,7 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
                 
                 # Send verification email
                 email_service.send_verification_code(
-                    to_email=request.email,
+                    to_email=existing_user.email,
                     verification_code=verification_code,
                     username=existing_user.username
                 )
@@ -365,7 +367,9 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
         # Create new user
         from app.models import User
         
-        username = request.username or request.email.split('@')[0]
+        normalized_email = normalize_email(request.email)
+        username_source_email = normalized_email or request.email
+        username = request.username or username_source_email.split('@')[0]
         
         # Check if username is taken
         existing_username = db.query(User).filter(User.username == username).first()
@@ -380,7 +384,7 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
         
         new_user = User(
             username=username,
-            email=request.email,
+            email=normalized_email,
             verification_code=verification_code,
             verification_code_expires=expires_at,
             is_email_verified=False
@@ -392,7 +396,7 @@ def register_user(request: RegisterRequest, db: Session = Depends(get_db)):
         
         # Send verification email
         email_service.send_verification_code(
-            to_email=request.email,
+            to_email=new_user.email,
             verification_code=verification_code,
             username=username
         )

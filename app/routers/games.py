@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import desc, text, and_
+from sqlalchemy import desc, text, and_, func
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import json
@@ -29,6 +29,7 @@ from app.utils.game_helpers import (
     is_computer_user_id as helper_is_computer_user_id,
     get_recent_moves_data
 )
+from app.utils.email_utils import normalize_email
 from app.config import FRONTEND_URL
 from app.websocket import manager, notification_manager
 from app.utils.json_encoder import GameStateEncoder
@@ -628,10 +629,16 @@ async def create_game_with_invitations_impl(
     failed_invitations = []
     
     for invitee_identifier in game_data.invitees:
-        # Try to find user by username first, then by email
-        invitee = db.query(User).filter(
-            (User.username == invitee_identifier) | (User.email == invitee_identifier)
-        ).first()
+        invitee_email_normalized = None
+        if isinstance(invitee_identifier, str) and "@" in invitee_identifier:
+            invitee_email_normalized = normalize_email(invitee_identifier)
+        
+        if invitee_email_normalized:
+            invitee = db.query(User).filter(
+                (User.username == invitee_identifier) | (func.lower(User.email) == invitee_email_normalized)
+            ).first()
+        else:
+            invitee = db.query(User).filter(User.username == invitee_identifier).first()
         
         if not invitee:
             failed_invitations.append({
