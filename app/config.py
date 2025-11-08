@@ -13,7 +13,7 @@ TESTING = os.getenv("TESTING", "0") == "1"
 DEBUG = os.getenv("DEBUG", "0") == "1"
 
 # Cloud Provider Configuration
-CLOUD_PROVIDER = CloudProvider(os.getenv("CLOUD_PROVIDER", "self-hosted"))
+CLOUD_PROVIDER = CloudProvider(os.getenv("CLOUD_PROVIDER", "gcp"))
 
 # Common Cloud Configuration
 CLOUD_CONFIG: Dict[str, Any] = {
