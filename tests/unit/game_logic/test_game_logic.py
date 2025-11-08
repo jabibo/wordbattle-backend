@@ -1,5 +1,5 @@
 from app.game_logic.validate_move import validate_move
-from app.game_logic.full_points import calculate_full_move_points
+from app.game_logic.full_points import calculate_full_move_points, LETTER_POINTS
 from app.game_logic.board_utils import apply_move_to_board, find_word_placements, BOARD_MULTIPLIERS
 from app.models.game import GameStatus
 
@@ -42,7 +42,7 @@ def test_calculate_points_with_multipliers():
     move_letters = [(7, 7, "T"), (7, 8, "E"), (7, 9, "S"), (7, 10, "T")]  # TEST
     dictionary = set(["TEST"])
     
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"]
     assert result["total"] > 0
     assert "TEST" in [word for word, _ in result["words"]]
@@ -55,7 +55,7 @@ def test_all_letters_bonus():
     move_letters = [(7, 7, "T"), (7, 8, "E"), (7, 9, "S"), (7, 10, "T"), (7, 11, "I"), (7, 12, "N"), (7, 13, "G")]
     dictionary = set(["TESTING"])
     
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"]
     assert result["total"] > 0
     assert "TESTING" in [word for word, _ in result["words"]]
@@ -106,7 +106,7 @@ def test_validate_words_with_placements():
     assert is_valid
     
     # Calculate points
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"]
     assert result["total"] > 0
     assert "TEST" in [word for word, _ in result["words"]]
@@ -121,12 +121,12 @@ def test_find_word_placements_first_move():
     
     # Try placing horizontally through center
     move_letters = [(7, 6, "T"), (7, 7, "E"), (7, 8, "S"), (7, 9, "T")]
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"], f"Move should be valid, got error: {result.get('error', '')}"
     
     # Try placing vertically through center
     move_letters = [(5, 7, "T"), (6, 7, "E"), (7, 7, "S"), (8, 7, "T")]
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"], f"Move should be valid, got error: {result.get('error', '')}"
 
 def test_find_word_placements_subsequent_move():
@@ -145,5 +145,5 @@ def test_find_word_placements_subsequent_move():
     # Try placing vertically connecting to the existing word (using the E)
     # Place B-E-S-T vertically where E connects to existing E at (7,8)
     move_letters = [(6, 8, "B"), (8, 8, "S"), (9, 8, "T")]  # Skip (7,8) since E is already there
-    result = calculate_full_move_points(board, move_letters, "en", BOARD_MULTIPLIERS, dictionary)
+    result = calculate_full_move_points(board, move_letters, LETTER_POINTS, BOARD_MULTIPLIERS, dictionary)
     assert result["valid"], f"Move should be valid, got error: {result.get('error', '')}"

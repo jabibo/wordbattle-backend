@@ -31,11 +31,15 @@ def test_move_and_score_rotation():
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
 
-    # Second player joins (game will auto-start)
+    # Second player joins
     join_response = client.post(f"/games/{game_id}/join", headers=headers2)
     assert join_response.status_code == 200
 
-    # Get initial game state (game should be auto-started)
+    # Start game
+    start_response = client.post(f"/games/{game_id}/start", headers=headers)
+    assert start_response.status_code == 200
+
+    # Get initial game state
     game_state = client.get(f"/games/{game_id}", headers=headers).json()
     current_player_id = str(game_state["current_player_id"])
     

@@ -1,0 +1,21 @@
+# Testing Framework
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+
+# Test Data & Mocking
+factory-boy>=3.3.0
+faker>=19.2.0
+
+# Performance Testing
+locust>=2.15.1
+
+# Security Testing
+bandit>=1.7.5
+safety>=2.3.5
+
+# Code Quality
+pytest-xdist>=3.3.1  # Parallel test execution
+pytest-timeout>=2.1.0  # Test timeout handling
+pytest-env>=0.8.2  # Environment variable management

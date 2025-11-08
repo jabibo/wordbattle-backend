@@ -24,7 +24,7 @@ def test_letter_exchange():
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
 
-    # Create second player and join (game will auto-start)
+    # Create second player and join
     username2 = f"exchange_test2_{uuid.uuid4().hex[:6]}"
     response = create_test_user(client, username2, password)
     assert response.status_code == 200
@@ -33,7 +33,17 @@ def test_letter_exchange():
     join_response = client.post(f"/games/{game_id}/join", headers=headers2)
     assert join_response.status_code == 200
 
-    # Verify game state (game should be auto-started)
+    # Verify game state before starting
+    game_state = client.get(f"/games/{game_id}", headers=headers).json()
+    assert game_state["phase"] == GamePhase.NOT_STARTED.value
+    assert game_state["status"] == GameStatus.READY.value
+    assert len(game_state["players"]) == 2
+
+    # Start game
+    start_response = client.post(f"/games/{game_id}/start", headers=headers)
+    assert start_response.status_code == 200
+
+    # Verify game state after starting
     game_state = client.get(f"/games/{game_id}", headers=headers).json()
     assert game_state["phase"] == GamePhase.IN_PROGRESS.value
     assert game_state["status"] == GameStatus.IN_PROGRESS.value
@@ -109,11 +119,15 @@ def test_deal_letters():
     assert game_response.status_code == 200
     game_id = game_response.json()["id"]
     
-    # Second player joins (game will auto-start)
+    # Second player joins
     join_response = client.post(f"/games/{game_id}/join", headers=headers2)
     assert join_response.status_code == 200
     
-    # Get game state (game should be auto-started)
+    # Start game
+    start_response = client.post(f"/games/{game_id}/start", headers=headers1)
+    assert start_response.status_code == 200
+    
+    # Get game state
     game_state = client.get(f"/games/{game_id}", headers=headers1).json()
     
     # Find the authenticated user's rack

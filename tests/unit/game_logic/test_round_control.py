@@ -25,10 +25,11 @@ def test_turn_rotation_after_move():
     t2 = get_test_token(u2)
     h2 = {"Authorization": f"Bearer {t2}"}
 
-    # Spiel anlegen, beitreten (game will auto-start)
+    # Spiel anlegen, beitreten, starten
     game_data = {"language": "en", "max_players": 2}
     gid = client.post("/games/", headers=h1, json=game_data).json()["id"]
     client.post(f"/games/{gid}/join", headers=h2)
+    client.post(f"/games/{gid}/start", headers=h1)
 
     # Get initial game state
     game_state = client.get(f"/games/{gid}", headers=h1).json()
@@ -151,14 +152,22 @@ def test_pass_turn():
     game_data = {"language": "en", "max_players": 2}
     gid = client.post("/games/", headers=h1, json=game_data).json()["id"]
     
-    # Player 2 joins (game will auto-start)
+    # Player 2 joins
     join_response = client.post(f"/games/{gid}/join", headers=h2)
     assert join_response.status_code == 200
     
-    # Verify game started (should be auto-started)
+    # Verify game state before starting
+    game_state = client.get(f"/games/{gid}", headers=h1).json()
+    assert game_state["status"] == "ready"
+    assert len(game_state["players"]) == 2
+    
+    # Start game
+    start_response = client.post(f"/games/{gid}/start", headers=h1)
+    assert start_response.status_code == 200
+    
+    # Verify game started
     game_state = client.get(f"/games/{gid}", headers=h1).json()
     assert game_state["status"] == "in_progress"
-    assert len(game_state["players"]) == 2
     
     # Pass turn
     response = client.post(f"/games/{gid}/pass", headers=h1)
