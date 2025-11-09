@@ -70,7 +70,7 @@ Add these lines to the end of your `.env` file:
 SMTP_SERVER=smtp.strato.de
 SMTP_PORT=465
 SMTP_USERNAME=service@binge-wordbattle.de
-SMTP_PASSWORD=z1nUNGrz1ZDmu4J
+SMTP_PASSWORD=your-smtp-password-here
 FROM_EMAIL=service@binge-wordbattle.de
 SMTP_USE_SSL=true
 ```
@@ -139,7 +139,7 @@ cat /opt/wordbattle/.env | grep SMTP
 # Make sure you're in /opt/wordbattle directory
 
 # Check for syntax errors (no spaces around =)
-# CORRECT:   SMTP_PASSWORD=z1nUNGrz1ZDmu4J
+# CORRECT:   SMTP_PASSWORD=your-smtp-password-here
 # INCORRECT: SMTP_PASSWORD = z1nUNGrz1ZDmu4J
 ```
 

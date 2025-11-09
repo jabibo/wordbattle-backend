@@ -44,6 +44,8 @@ scripts/*
 .env
 .env.*
 !.env.example
+deploy.*.env
+!deploy.*.env.example
 terraform/**/.terraform/
 terraform/
 cloud_sql_proxy

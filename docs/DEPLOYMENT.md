@@ -150,7 +150,7 @@ CLOUD_SQL_CONNECTION_NAME=wordbattle-secure:europe-west1:wordbattle-db
 
 # SMTP Configuration (TLS on port 587)
 SMTP_USERNAME=service@binge-wordbattle.de
-SMTP_PASSWORD=z1nUNGrz1ZDmu4J
+SMTP_PASSWORD=your-smtp-password-here
 FROM_EMAIL=service@binge-wordbattle.de
 SMTP_SERVER=smtp.strato.de
 SMTP_PORT=587
