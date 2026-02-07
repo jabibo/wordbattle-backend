@@ -33,3 +33,6 @@ jsonschema==4.20.0
 
 # OpenAI dependency
 openai>=1.0.0
+
+# Push Notifications
+firebase-admin==6.3.0

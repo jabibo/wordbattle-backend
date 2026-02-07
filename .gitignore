@@ -46,6 +46,15 @@ scripts/*
 !.env.example
 deploy.*.env
 !deploy.*.env.example
+
+# Firebase credentials (NEVER commit)
+*firebase*.json
+firebase-credentials.json
+*adminsdk*.json
+
+# Cloud credentials
+credentials.json
+service-account.json
 terraform/**/.terraform/
 terraform/
 cloud_sql_proxy
