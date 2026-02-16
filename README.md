@@ -2,15 +2,15 @@
 
 [![Coverage](https://img.shields.io/badge/coverage-83%25-green.svg)](https://github.com/yourusername/wordbattle-backend)
 
-A FastAPI backend for a multiplayer word game similar to Scrabble, deployed on Google Cloud Platform.
+A FastAPI backend for a multiplayer word game similar to Scrabble.
 
 ## 🚀 Current Deployment Status
 
-**Production Environment**: Google Cloud Run  
+**Production Environment**: Self-hosted (wordbattle2.de)  
 **Current Branch**: `main`  
-**Deployment**: Unified deployment pipeline via `deploy-unified.sh`  
+**Deployment**: Automated deployment via `deploy-self-hosted.sh`  
 
-The application is currently running on GCP with multi-environment support (production and testing).
+The application is running on a self-hosted Docker infrastructure with PostgreSQL, Redis, and Nginx.
 
 ## 📁 Project Structure
 
@@ -39,8 +39,8 @@ wordbattle-backend/
 │   ├── old-deployment-scripts/   # Previous deployment attempts
 │   ├── old-configs/              # Deprecated configurations
 │   └── alternative-deployments/ # Other platform deployments
-├── deploy-unified.sh             # 🚀 Main deployment script
-├── Dockerfile.cloudrun           # Docker configuration for GCP
+├── deploy-self-hosted.sh         # 🚀 Production deployment script
+├── Dockerfile                    # Docker configuration
 └── requirements.txt              # Python dependencies
 ```
 
@@ -48,11 +48,28 @@ wordbattle-backend/
 
 ### Prerequisites
 - Python 3.11+
-- Docker
-- Google Cloud SDK (for deployment)
+- Docker & Docker Compose
 - Git
+- SSH access to production server (for deployment)
 
 ### Local Development
+
+**Option A: Docker (recommended for push notifications)**
+
+```bash
+cd wordbattle-backend
+
+# Optional: Copy .env for overrides
+cp .env.dev.example .env
+
+# For push notifications: Place firebase-credentials.json in config/
+# See docs/PUSH_NOTIFICATIONS_DEV_SETUP.md
+
+docker compose -f docker-compose.dev.yml up -d --build
+# API at http://localhost:8000
+```
+
+**Option B: Python venv**
 
 1. **Clone and setup:**
 ```bash
@@ -83,29 +100,22 @@ API available at: http://localhost:8000
 
 ## 🌐 Deployment
 
-### Unified Deployment Script
+### Self-Hosted Production (wordbattle2.de)
 
-The project uses a single, comprehensive deployment script for both environments:
+Deploy to your self-hosted server:
 
-**Testing Environment:**
 ```bash
-./deploy-unified.sh testing
-```
-
-**Production Environment:**
-```bash
-./deploy-unified.sh production
+./deploy-self-hosted.sh
 ```
 
 The script automatically handles:
-- ✅ Environment validation
-- ✅ Git integration and tagging
-- ✅ Docker image building and pushing
-- ✅ Contract validation
-- ✅ Health checks and verification
-- ✅ Comprehensive testing
+- ✅ Git repository management on server
+- ✅ Docker image building with latest code
+- ✅ Container deployment with health checks
+- ✅ Automatic backups before deployment
+- ✅ Zero-downtime rolling updates
 
-For detailed deployment instructions, see [docs/deployment/DEPLOYMENT_GUIDE.md](docs/deployment/DEPLOYMENT_GUIDE.md).
+**Documentation**: [docs/SELF_HOSTED_DEPLOYMENT.md](docs/SELF_HOSTED_DEPLOYMENT.md)
 
 ## 📖 Key Environment Variables
 
@@ -162,7 +172,6 @@ python -m pytest tests/test_game_logic.py
 
 #### Historical Documentation
 - **[docs/archived-features/](docs/archived-features/)** - Completed projects and migrations
-  - GCP Migration Summary
   - Security Assessment
   - Project Status Reports
 
@@ -190,10 +199,11 @@ These files are preserved for reference but are not part of the current producti
 
 ## 🏗️ Infrastructure
 
-- **Platform**: Google Cloud Platform
-- **Compute**: Cloud Run (serverless containers)  
-- **Database**: Cloud SQL PostgreSQL
-- **Container Registry**: Google Container Registry
+- **Platform**: Self-hosted (wordbattle2.de)
+- **Compute**: Docker containers
+- **Database**: PostgreSQL (containerized)
+- **Cache**: Redis (containerized)
+- **Reverse Proxy**: Nginx
 - **Secrets**: Google Secret Manager  
 - **Monitoring**: Cloud Logging and Error Reporting
 

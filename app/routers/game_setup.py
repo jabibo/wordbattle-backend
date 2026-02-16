@@ -180,6 +180,20 @@ async def respond_to_invitation(
             game_id=game.id
         )
         logger.info(f"🔔 WebSocket notification sent: invitation {invitation.id} {invitation.status.value}")
+
+        # Push notification when invitation is accepted
+        if response.response:
+            try:
+                from app.utils.push_notifications import send_notification_to_user
+                game_name = getattr(game, "name", None) or f"Game by {invitation.inviter.username}"
+                await send_notification_to_user(
+                    db, invitation.inviter_id, "invitation",
+                    title="Invitation accepted",
+                    body=f"{current_user.username} accepted your invitation to {game_name}.",
+                    game_id=game.id,
+                )
+            except Exception as e:
+                logger.warning(f"Push notification error for invitation accept: {e}")
         
         # Also notify the invitee (for UI refresh)
         await notification_manager.send_invitation_status_changed(

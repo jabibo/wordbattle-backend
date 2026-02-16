@@ -42,3 +42,7 @@ class User(Base):
     
     # Words added by this user as word admin
     words_added = relationship("WordList", back_populates="added_by_user")
+
+    # Push notifications
+    push_tokens = relationship("PushToken", back_populates="user", cascade="all, delete-orphan")
+    notification_preferences = relationship("NotificationPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan")

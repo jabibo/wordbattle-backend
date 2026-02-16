@@ -116,7 +116,8 @@ VERIFICATION_CODE_EXPIRE_MINUTES = int(os.getenv("VERIFICATION_CODE_EXPIRE_MINUT
 # Mobile app settings
 MOBILE_DEEP_LINK_SCHEME = os.getenv("MOBILE_DEEP_LINK_SCHEME", "wordbattle")
 ENABLE_PUSH_NOTIFICATIONS = os.getenv("ENABLE_PUSH_NOTIFICATIONS", "false").lower() == "true"
-FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")  # For Firebase push notifications
+FIREBASE_CREDENTIALS_PATH = os.getenv("FIREBASE_CREDENTIALS_PATH", "")  # Path to service account JSON
+FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")  # Legacy: Firebase push notifications
 
 # Game settings
 DEFAULT_WORDLIST_PATH = os.getenv("DEFAULT_WORDLIST_PATH", "data/de_words.txt")

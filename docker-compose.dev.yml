@@ -1,0 +1,74 @@
+# WordBattle Backend - Development Docker Setup
+# Usage: docker compose -f docker-compose.dev.yml up -d
+#
+# Prerequisites:
+# 1. Create .env from .env.example (optional - defaults work for local dev)
+# 2. For push notifications: Place firebase-credentials.json in config/
+#    Get from: Firebase Console → Project Settings → Service Accounts → Generate Key
+
+services:
+  db:
+    image: postgres:14-alpine
+    container_name: wordbattle-db-dev
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-wordbattle}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloudrun
+    image: wordbattle-backend:dev
+    container_name: wordbattle-backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-wordbattle}
+      ENVIRONMENT: development
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      CORS_ORIGINS: http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000
+      RATE_LIMIT: 600
+      # Firebase / Push Notifications (optional - set ENABLE_PUSH_NOTIFICATIONS=true when ready)
+      ENABLE_PUSH_NOTIFICATIONS: ${ENABLE_PUSH_NOTIFICATIONS:-false}
+      FIREBASE_CREDENTIALS_PATH: /app/config/firebase-credentials.json
+      # SMTP for email verification (optional - without these, code is logged and returned in response for dev)
+      SMTP_SERVER: ${SMTP_SERVER:-smtp.strato.de}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-true}
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+      # Mount app code for hot reload during development
+      - ./app:/app/app:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_dev_data:

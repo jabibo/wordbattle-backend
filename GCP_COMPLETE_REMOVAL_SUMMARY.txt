@@ -1,0 +1,35 @@
+# GCP Complete Removal Summary
+Date: 2026-02-15
+
+## Files Archived (Moved to archive/gcp-deployment/)
+✅ docs/DEPLOYMENT.md
+✅ docs/deployment/ (entire folder)
+✅ docs/DEPLOYMENT_CONFIGURATION.md
+✅ docs/MIGRATION_GCP_TO_SELF_HOSTED.md
+✅ deploy-unified.sh
+✅ Dockerfile.cloudrun
+✅ deploy.dev.env
+✅ deploy.testing.env
+✅ deploy.production.env
+✅ deploy.secure-production.env
+
+## Files Updated (GCP References Removed)
+✅ README.md - Completely cleaned
+✅ docs/README_DEPLOYMENTS.md - Rewritten for self-hosted
+✅ docs/SELF_HOSTED_DEPLOYMENT.md - GCP reference removed
+✅ SELF_HOSTED_DEPLOYMENT_SETUP.md - Updated scripts list
+
+## Active Files (Self-Hosted Only)
+✅ deploy-self-hosted.sh
+✅ deploy-resilient.sh
+✅ recovery-script.sh
+✅ Dockerfile (standard Docker)
+✅ docker-compose.production.yml (on server)
+
+## Result
+ALL GCP references removed from active documentation.
+Only historical mentions remain in:
+- archive/gcp-deployment/ (intentionally archived)
+- docs/archived-features/ (historical project docs)
+
+Production is 100% self-hosted with clean documentation.

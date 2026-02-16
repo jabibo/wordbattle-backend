@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request, Depends, WebSocket, WebSocketDisconnect, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup, config, feedback, websocket_routes, analytics
+from app.routers import users, games, moves, rack, profile, admin, auth, chat, game_setup, config, feedback, websocket_routes, analytics, push_notifications
 from app.config import CORS_ORIGINS, RATE_LIMIT, SECRET_KEY, ALGORITHM
 import time
 import os
@@ -559,6 +559,7 @@ app.include_router(config.router)
 app.include_router(feedback.router)
 app.include_router(analytics.router)  # Performance monitoring and analytics
 app.include_router(websocket_routes.router)  # WebSocket routes including notifications
+app.include_router(push_notifications.router)
 
 # Quick fix router removed - caused import error
 
@@ -666,6 +667,24 @@ async def websocket_endpoint(
                                     "timestamp": chat_message.timestamp.isoformat()
                                 }
                             )
+                            # Push notification to other players (who may not be connected)
+                            try:
+                                from app.models import Player
+                                from app.utils.push_notifications import send_notification_to_user
+                                players = db.query(Player).filter(Player.game_id == game_id).all()
+                                game = db.query(Game).filter(Game.id == game_id).first()
+                                game_name = getattr(game, "name", None) or "WordBattle"
+                                for p in players:
+                                    if p.user_id != user.id:
+                                        await send_notification_to_user(
+                                            db, p.user_id, "chat",
+                                            title=f"{user.username}",
+                                            body=message_text[:100] + ("..." if len(message_text) > 100 else ""),
+                                            game_id=game_id,
+                                            data={"sender_username": user.username},
+                                        )
+                            except Exception as e:
+                                logger.warning(f"Push notification error for chat: {e}")
             except WebSocketDisconnect:
                 manager.disconnect(websocket, game_id)
         except Exception as e:

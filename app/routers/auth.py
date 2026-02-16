@@ -9,7 +9,7 @@ from app.auth import (
     create_persistent_token, get_current_user
 )
 from datetime import timedelta, datetime, timezone
-from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, VERIFICATION_CODE_EXPIRE_MINUTES
+from app.config import ACCESS_TOKEN_EXPIRE_MINUTES, VERIFICATION_CODE_EXPIRE_MINUTES, ENVIRONMENT
 from app.utils.email_service import email_service
 from app.utils.email_utils import normalize_email
 from pydantic import BaseModel, EmailStr
@@ -92,11 +92,16 @@ def request_email_login(request: EmailLoginRequest, db: Session = Depends(get_db
         logger.error(f"Failed to send verification code to {target_email}")
         # Don't reveal the failure to the user for security
     
-    return {
+    response = {
         "success": True,
         "message": "If this email is registered, you will receive a verification code.",
         "expires_in": VERIFICATION_CODE_EXPIRE_MINUTES * 60  # Convert minutes to seconds for consistency
     }
+    # In development, include the code in response so user can login without email (SMTP often not configured)
+    if ENVIRONMENT == "development":
+        response["verification_code"] = verification_code
+        response["message"] = "Development mode: Use the code below (email may not have been sent)."
+    return response
 
 @router.options("/email-login")
 def email_login_options():

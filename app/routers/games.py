@@ -752,7 +752,20 @@ async def create_game_with_invitations_impl(
             # Send WebSocket notification to invitee
             await notification_manager.send_invitation_received(invitation.invitee_id, invitation_data)
             logger.info(f"🔔 WebSocket invitation notification sent to user {invitation.invitee_id}")
-            
+
+            # Push notification to invitee
+            try:
+                from app.utils.push_notifications import send_notification_to_user
+                game_name = getattr(game, "name", None) or f"Game by {current_user.username}"
+                await send_notification_to_user(
+                    db, invitation.invitee_id, "invitation",
+                    title="Game invitation",
+                    body=f"{current_user.username} invited you to {game_name}.",
+                    game_id=game.id,
+                )
+            except Exception as e:
+                logger.warning(f"Push notification error for new invitation: {e}")
+
     except Exception as e:
         logger.error(f"WebSocket notification error: {e}")
         # Don't fail the response due to WebSocket issues
@@ -840,6 +853,18 @@ async def join_game(
                 )
             )
             logger.info(f"🔔 WebSocket invitation status notification sent to user {pending_invitation.inviter_id}")
+            # Push notification to inviter
+            try:
+                from app.utils.push_notifications import send_notification_to_user
+                game_name = getattr(game, "name", None) or f"Game by {pending_invitation.inviter.username}"
+                await send_notification_to_user(
+                    db, pending_invitation.inviter_id, "invitation",
+                    title="Invitation accepted",
+                    body=f"{current_user.username} accepted your invitation to {game_name}.",
+                    game_id=game_id,
+                )
+            except Exception as e:
+                logger.warning(f"Push notification error for invitation accept: {e}")
         except Exception as e:
             logger.error(f"WebSocket notification error for invitation status: {e}")
         
@@ -1015,11 +1040,23 @@ async def join_game_with_token(
             )
         )
         logger.info(f"🔔 WebSocket invitation status notification sent to user {invitation.inviter_id}")
+        # Push notification to inviter
+        try:
+            from app.utils.push_notifications import send_notification_to_user
+            game_name = getattr(game, "name", None) or f"Game by {invitation.inviter.username}"
+            await send_notification_to_user(
+                db, invitation.inviter_id, "invitation",
+                title="Invitation accepted",
+                body=f"{current_user.username} accepted your invitation to {game_name}.",
+                game_id=game_id,
+            )
+        except Exception as e:
+            logger.warning(f"Push notification error for invitation accept: {e}")
     except Exception as e:
         logger.error(f"WebSocket notification error for invitation status: {e}")
-    
+
     # No longer creating friendships - removed friends system
-    
+
     # Check if game should transition to READY state and auto-start
     new_player_count = current_players + 1
     
@@ -1689,7 +1726,30 @@ async def make_move(
         await manager.broadcast_to_game(game.id, broadcast_payload)
     except Exception as e: # pragma: no cover
         logger.error(f"WebSocket broadcast error after move in game {game_id}: {e}")
-    
+
+    # Push notifications
+    try:
+        from app.utils.push_notifications import send_notification_to_user
+        game_name = getattr(game, "name", None) or f"Game by {game.creator.username if game.creator else 'Unknown'}"
+        if is_game_over:
+            for p in db_players:
+                if not is_computer_user_id(p.user_id, db):
+                    await send_notification_to_user(
+                        db, p.user_id, "game_completion",
+                        title="Game ended",
+                        body=f"{game_name} has ended.",
+                        game_id=game_id,
+                    )
+        elif game.current_player_id and not is_computer_user_id(game.current_player_id, db):
+            await send_notification_to_user(
+                db, game.current_player_id, "game_move",
+                title="Your turn!",
+                body=f"{current_user.username} played in {game_name}. It's your turn.",
+                game_id=game_id,
+            )
+    except Exception as e:
+        logger.warning(f"Push notification error after move in game {game_id}: {e}")
+
     return response_data
 
 @router.post("/{game_id}/test-move")
@@ -2876,6 +2936,20 @@ async def trigger_computer_move(
             "game_state": game_state_data,
             "recent_moves": get_recent_moves_data(game_id, computer_player.user_id, db)
         })
+
+        # Push notification to next player
+        try:
+            from app.utils.push_notifications import send_notification_to_user
+            if game.current_player_id and not is_computer_user_id(game.current_player_id, db):
+                game_name = getattr(game, "name", None) or "WordBattle"
+                await send_notification_to_user(
+                    db, game.current_player_id, "game_move",
+                    title="Your turn!",
+                    body=f"Computer played in {game_name}. It's your turn.",
+                    game_id=game_id,
+                )
+        except Exception as e:
+            logger.warning(f"Push notification error after computer move in game {game_id}: {e}")
         
         logger.info(f"Computer player made move in game {game_id}: {move_type}")
         

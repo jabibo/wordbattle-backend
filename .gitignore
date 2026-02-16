@@ -44,6 +44,7 @@ scripts/*
 .env
 .env.*
 !.env.example
+!.env.dev.example
 deploy.*.env
 !deploy.*.env.example
 
@@ -70,6 +71,9 @@ cloud_sql_proxy
 # Admin and validation files
 admin_token.txt
 contract_validation_results.json
+
+# Database backups (contain sensitive data)
+backups/
 
 # Archive files
 *.zip

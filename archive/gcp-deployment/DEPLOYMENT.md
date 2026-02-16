@@ -2,6 +2,8 @@
 
 This guide provides step-by-step instructions for deploying the WordBattle backend to Google Cloud Platform using the unified deployment script.
 
+> **Note**: For self-hosted deployment to wordbattle2.de, see [SELF_HOSTED_DEPLOYMENT.md](SELF_HOSTED_DEPLOYMENT.md)
+
 ## 📋 Prerequisites
 
 Before deploying, ensure you have:
