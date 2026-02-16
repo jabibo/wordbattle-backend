@@ -28,7 +28,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Dockerfile.cloudrun
+      dockerfile: Dockerfile
     image: wordbattle-backend:dev
     container_name: wordbattle-backend-dev
     ports:
